@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
 
@@ -11,6 +11,7 @@ type EventRow = {
   org: string;
   event_name: string;
   event_date: string | null;
+  event_time: string | null;
   location: string | null;
 };
 
@@ -31,6 +32,72 @@ type UserData = {
   notes1: string | null;
   notes2: string | null;
 };
+
+// "2026-06-26" -> "Friday, June 26th"
+function formatEventDate(iso: string | null): string {
+  if (!iso) return "";
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const weekday = dt.toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
+  const month = dt.toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });
+  const suffix =
+    d % 10 === 1 && d !== 11 ? "st" :
+    d % 10 === 2 && d !== 12 ? "nd" :
+    d % 10 === 3 && d !== 13 ? "rd" : "th";
+  return `${weekday}, ${month} ${d}${suffix}`;
+}
+
+// Build the "Friday, June 26th, 9:00 AM ET · Location" line.
+function formatEventMeta(ev: EventRow): string {
+  const parts: string[] = [];
+  const date = formatEventDate(ev.event_date);
+  if (date) parts.push(date);
+  if (ev.event_time) parts[parts.length - 1] = `${parts[parts.length - 1]}, ${ev.event_time}`;
+  const left = parts.join("");
+  return ev.location ? `${left} · ${ev.location}` : left;
+}
+
+// Link a fighter name to a Tapology search for that fighter.
+function tapologyUrl(name: string): string {
+  return `https://www.tapology.com/search?term=${encodeURIComponent(name)}&mainSearchFilter=fighters`;
+}
+
+// Textarea that grows with its content instead of scrolling.
+function GrowingTextarea({
+  defaultValue,
+  onBlur,
+  placeholder,
+}: {
+  defaultValue: string;
+  onBlur: (value: string) => void;
+  placeholder: string;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  const resize = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, []);
+
+  useEffect(() => {
+    resize();
+  }, [resize]);
+
+  return (
+    <textarea
+      ref={ref}
+      defaultValue={defaultValue}
+      onInput={resize}
+      onBlur={(e) => onBlur(e.target.value)}
+      placeholder={placeholder}
+      rows={3}
+      className="w-full overflow-hidden rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs focus:border-emerald-500 outline-none resize-none"
+    />
+  );
+}
 
 export default function Home() {
   const [user, setUser] = useState<User | null>(null);
@@ -76,7 +143,7 @@ export default function Home() {
     return (
       <main className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center p-4">
         <div className="w-full max-w-sm space-y-4">
-          <h1 className="text-2xl font-bold text-center">Regionals Matrix</h1>
+          <h1 className="text-2xl font-bold text-center">Tape Notes</h1>
           <p className="text-center text-neutral-400 text-sm">
             {mode === "signin" ? "Sign in to your account" : "Create an account"}
           </p>
@@ -189,7 +256,7 @@ function Matrix({ user }: { user: User }) {
     <main className="min-h-screen bg-neutral-950 text-neutral-100">
       <header className="sticky top-0 z-10 bg-neutral-950/90 backdrop-blur border-b border-neutral-800 px-4 sm:px-6 py-3">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <h1 className="text-lg font-bold">Regionals Matrix</h1>
+          <h1 className="text-lg font-bold">Tape Notes</h1>
           <div className="flex items-center gap-3 text-sm">
             <span className="text-neutral-400 hidden sm:inline">{user.email}</span>
             <button
@@ -227,9 +294,7 @@ function Matrix({ user }: { user: User }) {
                     {ev.org}
                   </span>
                   <h2 className="text-base font-bold">{ev.event_name}</h2>
-                  <p className="text-xs text-neutral-500">
-                    {ev.event_date} {ev.location ? `· ${ev.location}` : ""}
-                  </p>
+                  <p className="text-xs text-neutral-500">{formatEventMeta(ev)}</p>
                 </div>
                 <span className="text-neutral-500 text-xl">{isOpen ? "−" : "+"}</span>
               </button>
@@ -241,50 +306,62 @@ function Matrix({ user }: { user: User }) {
                     return (
                       <div key={f.id} className="p-4 space-y-3">
                         {f.is_main_event && (
-                          <div className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">
+                          <div className="text-[10px] font-bold text-amber-400 uppercase tracking-wider text-center">
                             Main Event
                           </div>
                         )}
-                        {/* price + names row */}
-                        <div className="flex items-center justify-center gap-2 sm:gap-3">
-                          <input
-                            defaultValue={d?.price1 ?? ""}
-                            onBlur={(e) => saveField(f.id, "price1", e.target.value)}
-                            placeholder="–"
-                            className="w-16 text-center rounded-md bg-neutral-800 border border-neutral-700 px-1 py-1 text-sm focus:border-emerald-500 outline-none"
-                          />
-                          <span className="flex-1 text-right text-sm font-medium truncate">
-                            {f.fighter1_name}
-                          </span>
-                          <span className="text-neutral-600 text-xs px-1">VS</span>
-                          <span className="flex-1 text-left text-sm font-medium truncate">
-                            {f.fighter2_name}
-                          </span>
-                          <input
-                            defaultValue={d?.price2 ?? ""}
-                            onBlur={(e) => saveField(f.id, "price2", e.target.value)}
-                            placeholder="–"
-                            className="w-16 text-center rounded-md bg-neutral-800 border border-neutral-700 px-1 py-1 text-sm focus:border-emerald-500 outline-none"
-                          />
+                        {/* names with price beside each */}
+                        <div className="flex items-start justify-center gap-2 sm:gap-3">
+                          <div className="flex-1 flex items-center justify-end gap-2">
+                            
+                              <a href={tapologyUrl(f.fighter1_name)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm font-medium text-right truncate hover:text-emerald-400 hover:underline"
+                            >
+                              {f.fighter1_name}
+                            </a>
+                            <input
+                              defaultValue={d?.price1 ?? ""}
+                              onBlur={(e) => saveField(f.id, "price1", e.target.value)}
+                              placeholder="–"
+                              className="w-14 shrink-0 text-center rounded-md bg-neutral-800 border border-neutral-700 px-1 py-1 text-sm focus:border-emerald-500 outline-none"
+                            />
+                          </div>
+                          <span className="text-neutral-600 text-xs px-1 pt-2">VS</span>
+                          <div className="flex-1 flex items-center justify-start gap-2">
+                            <input
+                              defaultValue={d?.price2 ?? ""}
+                              onBlur={(e) => saveField(f.id, "price2", e.target.value)}
+                              placeholder="–"
+                              className="w-14 shrink-0 text-center rounded-md bg-neutral-800 border border-neutral-700 px-1 py-1 text-sm focus:border-emerald-500 outline-none"
+                            />
+                            
+                              <a href={tapologyUrl(f.fighter2_name)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm font-medium text-left truncate hover:text-emerald-400 hover:underline"
+                            >
+                              {f.fighter2_name}
+                            </a>
+                          </div>
                         </div>
-                        <div className="text-center text-[11px] text-neutral-600">
-                          {f.weight_class}
-                        </div>
+                        {f.weight_class && (
+                          <div className="text-center text-[11px] text-neutral-600">
+                            {f.weight_class}
+                          </div>
+                        )}
                         {/* two-column notes */}
                         <div className="grid grid-cols-2 gap-2">
-                          <textarea
+                          <GrowingTextarea
                             defaultValue={d?.notes1 ?? ""}
-                            onBlur={(e) => saveField(f.id, "notes1", e.target.value)}
+                            onBlur={(v) => saveField(f.id, "notes1", v)}
                             placeholder={`Notes: ${f.fighter1_name}`}
-                            rows={3}
-                            className="rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs focus:border-emerald-500 outline-none resize-y"
                           />
-                          <textarea
+                          <GrowingTextarea
                             defaultValue={d?.notes2 ?? ""}
-                            onBlur={(e) => saveField(f.id, "notes2", e.target.value)}
+                            onBlur={(v) => saveField(f.id, "notes2", v)}
                             placeholder={`Notes: ${f.fighter2_name}`}
-                            rows={3}
-                            className="rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs focus:border-emerald-500 outline-none resize-y"
                           />
                         </div>
                       </div>
