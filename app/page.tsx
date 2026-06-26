@@ -34,6 +34,28 @@ type UserData = {
 };
 
 // "2026-06-26" -> "Friday, June 26th"
+// Convert "7:00 PM ET" -> minutes since midnight, for sorting. No time sorts last.
+function timeToMinutes(t: string | null): number {
+  if (!t) return 99999;
+  const m = t.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  if (!m) return 99999;
+  let h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  const pm = m[3].toUpperCase() === "PM";
+  if (pm && h !== 12) h += 12;
+  if (!pm && h === 12) h = 0;
+  return h * 60 + min;
+}
+
+// Sort events by date, then by start time within the same date.
+function sortEvents(rows: EventRow[]): EventRow[] {
+  return [...rows].sort((a, b) => {
+    const da = a.event_date ?? "";
+    const db = b.event_date ?? "";
+    if (da !== db) return da < db ? -1 : 1;
+    return timeToMinutes(a.event_time) - timeToMinutes(b.event_time);
+  });
+}
 function formatEventDate(iso: string | null): string {
   if (!iso) return "";
   const [y, m, d] = iso.split("-").map(Number);
@@ -206,7 +228,7 @@ function Matrix({ user }: { user: User }) {
       .from("user_fight_data")
       .select("fight_id, price1, price2, notes1, notes2");
 
-    setEvents(ev ?? []);
+    setEvents(sortEvents(ev ?? []));
     setFights(fg ?? []);
     const map: Record<string, UserData> = {};
     (ud ?? []).forEach((row) => (map[row.fight_id] = row));
