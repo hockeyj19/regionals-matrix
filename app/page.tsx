@@ -303,9 +303,7 @@ function Matrix({ user }: { user: User }) {
     setUserData(map);
 
     // open all events by default
-    const open: Record<string, boolean> = {};
-    (ev ?? []).forEach((e) => (open[e.id] = true));
-    setOpenEvents(open);
+    setOpenEvents({});
     setLoadingData(false);
   }, []);
 
