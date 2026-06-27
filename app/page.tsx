@@ -281,6 +281,7 @@ function Matrix({ user }: { user: User }) {
   const [userData, setUserData] = useState<Record<string, UserData>>({});
   const [openEvents, setOpenEvents] = useState<Record<string, boolean>>({});
   const [loadingData, setLoadingData] = useState(true);
+  const [ufcOnly, setUfcOnly] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoadingData(true);
@@ -358,12 +359,27 @@ function Matrix({ user }: { user: User }) {
       </header>
 
       <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-4">
+        <div className="flex justify-end">
+          <button
+            onClick={() => setUfcOnly((v) => !v)}
+            className={`rounded-lg border px-3 py-1 text-sm ${
+              ufcOnly
+                ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
+                : "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
+            }`}
+          >
+            {ufcOnly ? "UFC only ✓" : "UFC only"}
+          </button>
+        </div>
+
         {loadingData && <p className="text-neutral-500">Loading fights…</p>}
         {!loadingData && events.length === 0 && (
           <p className="text-neutral-500">No events yet.</p>
         )}
 
-        {events.map((ev) => {
+        {events
+          .filter((ev) => !ufcOnly || ev.org === "UFC")
+          .map((ev) => {
           const evFights = fights.filter((f) => f.event_id === ev.id);
           const isOpen = openEvents[ev.id];
           return (
