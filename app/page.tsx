@@ -37,6 +37,22 @@ type UserData = {
   notes2: string | null;
 };
 
+type FighterNote = {
+  fighter_id: string;
+  fighter_name: string | null;
+  notes: string | null;
+  tags: string[] | null;
+  updated_at: string | null;
+};
+
+type NoteHistoryRow = {
+  id: string;
+  fighter_id: string;
+  notes: string | null;
+  event_context: string | null;
+  created_at: string;
+};
+
 // "2026-06-26" -> "Friday, June 26th"
 // Convert "7:00 PM ET" -> minutes since midnight, for sorting. No time sorts last.
 function timeToMinutes(t: string | null): number {
@@ -278,7 +294,9 @@ function Matrix({ user }: { user: User }) {
   const [events, setEvents] = useState<EventRow[]>([]);
   const [fights, setFights] = useState<FightRow[]>([]);
   const [userData, setUserData] = useState<Record<string, UserData>>({});
-  const [fighterNotes, setFighterNotes] = useState<Record<string, string>>({});
+  const [fighterNotes, setFighterNotes] = useState<Record<string, FighterNote>>({});
+  const [noteHistory, setNoteHistory] = useState<NoteHistoryRow[]>([]);
+  const [view, setView] = useState<"events" | "fighters">("events");
   const [openEvents, setOpenEvents] = useState<Record<string, boolean>>({});
   const [loadingData, setLoadingData] = useState(true);
   const [ufcOnly, setUfcOnly] = useState(false);
@@ -298,7 +316,11 @@ function Matrix({ user }: { user: User }) {
       .select("fight_id, price1, price2, notes1, notes2");
     const { data: fn } = await supabase
       .from("user_fighter_notes")
-      .select("fighter_id, notes");
+      .select("fighter_id, fighter_name, notes, tags, updated_at");
+    const { data: nh } = await supabase
+      .from("user_fighter_note_history")
+      .select("id, fighter_id, notes, event_context, created_at")
+      .order("created_at", { ascending: false });
 
     setEvents(sortEvents(ev ?? []));
     setFights(fg ?? []);
@@ -306,9 +328,10 @@ function Matrix({ user }: { user: User }) {
     (ud ?? []).forEach((row) => (map[row.fight_id] = row));
     setUserData(map);
 
-    const nmap: Record<string, string> = {};
-    (fn ?? []).forEach((row) => (nmap[row.fighter_id] = row.notes ?? ""));
+    const nmap: Record<string, FighterNote> = {};
+    (fn ?? []).forEach((row) => (nmap[row.fighter_id] = row));
     setFighterNotes(nmap);
+    setNoteHistory(nh ?? []);
 
     // open all events by default
     setOpenEvents({});
@@ -349,15 +372,73 @@ function Matrix({ user }: { user: User }) {
   }
 
   // save a fighter's permanent scouting notes (shared across all their fights)
-  async function saveFighterNote(fighterId: string, fighterName: string, value: string) {
-    setFighterNotes((prev) => ({ ...prev, [fighterId]: value }));
+  async function saveFighterNote(
+    fighterId: string,
+    fighterName: string,
+    value: string,
+    context: string
+  ) {
+    const prevNotes = fighterNotes[fighterId]?.notes ?? "";
+    const now = new Date().toISOString();
+    setFighterNotes((prev) => ({
+      ...prev,
+      [fighterId]: {
+        fighter_id: fighterId,
+        fighter_name: fighterName,
+        notes: value,
+        tags: prev[fighterId]?.tags ?? [],
+        updated_at: now,
+      },
+    }));
     await supabase.from("user_fighter_notes").upsert(
       {
         user_id: user.id,
         fighter_id: fighterId,
         fighter_name: fighterName,
         notes: value,
-        updated_at: new Date().toISOString(),
+        updated_at: now,
+      },
+      { onConflict: "user_id,fighter_id" }
+    );
+
+    // snapshot to history whenever the note actually changes
+    if (value.trim() !== "" && value.trim() !== prevNotes.trim()) {
+      const { data: h } = await supabase
+        .from("user_fighter_note_history")
+        .insert({
+          user_id: user.id,
+          fighter_id: fighterId,
+          fighter_name: fighterName,
+          notes: value,
+          event_context: context,
+        })
+        .select("id, fighter_id, notes, event_context, created_at")
+        .single();
+      if (h) setNoteHistory((prev) => [h, ...prev]);
+    }
+  }
+
+  // save a fighter's tags (comma-separated input -> text[])
+  async function saveFighterTags(fighterId: string, fighterName: string, raw: string) {
+    const tags = raw.split(",").map((t) => t.trim()).filter(Boolean);
+    const now = new Date().toISOString();
+    setFighterNotes((prev) => ({
+      ...prev,
+      [fighterId]: {
+        fighter_id: fighterId,
+        fighter_name: fighterName,
+        notes: prev[fighterId]?.notes ?? "",
+        tags,
+        updated_at: now,
+      },
+    }));
+    await supabase.from("user_fighter_notes").upsert(
+      {
+        user_id: user.id,
+        fighter_id: fighterId,
+        fighter_name: fighterName,
+        tags,
+        updated_at: now,
       },
       { onConflict: "user_id,fighter_id" }
     );
@@ -367,7 +448,31 @@ function Matrix({ user }: { user: User }) {
     <main className="min-h-screen bg-neutral-950 text-neutral-100">
       <header className="sticky top-0 z-10 bg-neutral-950/90 backdrop-blur border-b border-neutral-800 px-4 sm:px-6 py-3">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <h1 className="text-lg font-bold">Tape Notes</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-lg font-bold">Tape Notes</h1>
+            <nav className="flex gap-1">
+              <button
+                onClick={() => setView("events")}
+                className={`rounded-lg border px-3 py-1 text-sm ${
+                  view === "events"
+                    ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
+                    : "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
+                }`}
+              >
+                Events
+              </button>
+              <button
+                onClick={() => setView("fighters")}
+                className={`rounded-lg border px-3 py-1 text-sm ${
+                  view === "fighters"
+                    ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
+                    : "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
+                }`}
+              >
+                Fighters
+              </button>
+            </nav>
+          </div>
           <div className="flex items-center gap-3 text-sm">
             <span className="text-neutral-400 hidden sm:inline">{user.email}</span>
             <button
@@ -380,6 +485,14 @@ function Matrix({ user }: { user: User }) {
         </div>
       </header>
 
+      {view === "fighters" ? (
+        <FighterLibrary
+          notes={fighterNotes}
+          history={noteHistory}
+          onSaveNote={saveFighterNote}
+          onSaveTags={saveFighterTags}
+        />
+      ) : (
       <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-4">
         <div className="flex justify-end">
           <button
@@ -482,8 +595,10 @@ function Matrix({ user }: { user: User }) {
                         <div className="grid grid-cols-2 gap-2">
                           {f1id ? (
                             <GrowingTextarea
-                              defaultValue={fighterNotes[f1id] ?? ""}
-                              onBlur={(v) => saveFighterNote(f1id, f.fighter1_name, v)}
+                              defaultValue={fighterNotes[f1id]?.notes ?? ""}
+                              onBlur={(v) =>
+                                saveFighterNote(f1id, f.fighter1_name, v, `${ev.org} — ${ev.event_name}`)
+                              }
                             />
                           ) : (
                             <GrowingTextarea
@@ -493,8 +608,10 @@ function Matrix({ user }: { user: User }) {
                           )}
                           {f2id ? (
                             <GrowingTextarea
-                              defaultValue={fighterNotes[f2id] ?? ""}
-                              onBlur={(v) => saveFighterNote(f2id, f.fighter2_name, v)}
+                              defaultValue={fighterNotes[f2id]?.notes ?? ""}
+                              onBlur={(v) =>
+                                saveFighterNote(f2id, f.fighter2_name, v, `${ev.org} — ${ev.event_name}`)
+                              }
                             />
                           ) : (
                             <GrowingTextarea
@@ -512,6 +629,151 @@ function Matrix({ user }: { user: User }) {
           );
         })}
       </div>
+      )}
     </main>
+  );
+}
+
+function FighterLibrary({
+  notes,
+  history,
+  onSaveNote,
+  onSaveTags,
+}: {
+  notes: Record<string, FighterNote>;
+  history: NoteHistoryRow[];
+  onSaveNote: (fighterId: string, fighterName: string, value: string, context: string) => void;
+  onSaveTags: (fighterId: string, fighterName: string, raw: string) => void;
+}) {
+  const [q, setQ] = useState("");
+  const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [openHistory, setOpenHistory] = useState<Record<string, boolean>>({});
+
+  const all = Object.values(notes);
+  const allTags = Array.from(new Set(all.flatMap((n) => n.tags ?? []))).sort();
+
+  const needle = q.trim().toLowerCase();
+  const filtered = all
+    .filter((n) => {
+      if (activeTag && !(n.tags ?? []).includes(activeTag)) return false;
+      if (!needle) return true;
+      const hay = `${n.fighter_name ?? ""} ${n.notes ?? ""} ${(n.tags ?? []).join(" ")}`.toLowerCase();
+      return hay.includes(needle);
+    })
+    .sort((a, b) => (b.updated_at ?? "").localeCompare(a.updated_at ?? ""));
+
+  function formatWhen(iso: string): string {
+    return new Date(iso).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-4">
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Search fighters, notes, tags"
+        className="w-full rounded-lg bg-neutral-900 border border-neutral-700 px-3 py-2 text-sm outline-none focus:border-neutral-500"
+      />
+
+      {allTags.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {allTags.map((t) => (
+            <button
+              key={t}
+              onClick={() => setActiveTag(activeTag === t ? null : t)}
+              className={`rounded-full border px-3 py-0.5 text-xs ${
+                activeTag === t
+                  ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
+                  : "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <p className="text-xs text-neutral-500">
+        {filtered.length} fighter{filtered.length === 1 ? "" : "s"}
+      </p>
+
+      {all.length === 0 && (
+        <p className="text-neutral-500">
+          No fighter notes yet. Write some on the Events tab and they will collect here.
+        </p>
+      )}
+
+      {filtered.map((n) => {
+        const fh = history.filter((h) => h.fighter_id === n.fighter_id);
+        const isOpen = openHistory[n.fighter_id];
+        return (
+          <div
+            key={n.fighter_id}
+            className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4 space-y-3"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <a
+                href={tapologyUrl(n.fighter_name ?? "")}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm font-bold hover:text-emerald-400 hover:underline"
+              >
+                {n.fighter_name}
+              </a>
+              {n.updated_at && (
+                <span className="text-[11px] text-neutral-600">
+                  updated {formatWhen(n.updated_at)}
+                </span>
+              )}
+            </div>
+
+            <GrowingTextarea
+              defaultValue={n.notes ?? ""}
+              onBlur={(v) => onSaveNote(n.fighter_id, n.fighter_name ?? "", v, "Library")}
+            />
+
+            <input
+              defaultValue={(n.tags ?? []).join(", ")}
+              onBlur={(e) => onSaveTags(n.fighter_id, n.fighter_name ?? "", e.target.value)}
+              placeholder="Tags (comma-separated)"
+              className="w-full rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
+            />
+
+            {fh.length > 0 && (
+              <div>
+                <button
+                  onClick={() =>
+                    setOpenHistory((prev) => ({
+                      ...prev,
+                      [n.fighter_id]: !prev[n.fighter_id],
+                    }))
+                  }
+                  className="text-xs text-neutral-500 hover:text-neutral-300"
+                >
+                  {isOpen ? "Hide history" : `History (${fh.length})`}
+                </button>
+                {isOpen && (
+                  <div className="mt-2 space-y-2 border-l border-neutral-800 pl-3">
+                    {fh.map((h) => (
+                      <div key={h.id} className="text-xs">
+                        <div className="text-neutral-600">
+                          {formatWhen(h.created_at)}
+                          {h.event_context ? ` · ${h.event_context}` : ""}
+                        </div>
+                        <div className="text-neutral-400 whitespace-pre-wrap">{h.notes}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
