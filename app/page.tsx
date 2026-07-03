@@ -159,6 +159,26 @@ function sideBtn(active: boolean): string {
   }`;
 }
 
+function TrashIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="w-4 h-4"
+    >
+      <path d="M3 6h18" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+    </svg>
+  );
+}
+
 // Textarea that grows with its content instead of scrolling.
 function GrowingTextarea({
   defaultValue,
@@ -439,6 +459,7 @@ function Matrix({ user }: { user: User }) {
     context: string
   ) {
     const prevNotes = fighterNotes[fighterId]?.notes ?? "";
+    if (value === prevNotes) return; // nothing changed, don't write
     const now = new Date().toISOString();
     setFighterNotes((prev) => ({
       ...prev,
@@ -481,6 +502,8 @@ function Matrix({ user }: { user: User }) {
   // save a fighter's tags (comma-separated input -> text[])
   async function saveFighterTags(fighterId: string, fighterName: string, raw: string) {
     const tags = raw.split(",").map((t) => t.trim()).filter(Boolean);
+    const prevTags = (fighterNotes[fighterId]?.tags ?? []).join(",");
+    if (tags.join(",") === prevTags) return; // nothing changed, don't write
     const now = new Date().toISOString();
     setFighterNotes((prev) => ({
       ...prev,
@@ -763,7 +786,13 @@ function FighterLibrary({
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [openHistory, setOpenHistory] = useState<Record<string, boolean>>({});
 
-  const all = Object.values(notes);
+  // only show fighters that still have something: a note, tags, or history
+  const all = Object.values(notes).filter((n) => {
+    const hasNote = (n.notes ?? "").trim() !== "";
+    const hasTags = (n.tags ?? []).length > 0;
+    const hasHistory = history.some((h) => h.fighter_id === n.fighter_id);
+    return hasNote || hasTags || hasHistory;
+  });
   const allTags = Array.from(new Set(all.flatMap((n) => n.tags ?? []))).sort();
 
   const needle = q.trim().toLowerCase();
@@ -882,9 +911,9 @@ function FighterLibrary({
                           <button
                             onClick={() => onDeleteHistory(h.id)}
                             title="Delete this entry"
-                            className="text-neutral-600 hover:text-red-400 px-1"
+                            className="shrink-0 rounded-md p-1.5 text-neutral-500 hover:text-red-400 hover:bg-neutral-800"
                           >
-                            ×
+                            <TrashIcon />
                           </button>
                         </div>
                         <div className="text-neutral-400 whitespace-pre-wrap">{h.notes}</div>
@@ -1212,9 +1241,9 @@ function BetTracker({
                 <button
                   onClick={() => onDelete(b.id)}
                   title="Delete bet"
-                  className="text-neutral-600 hover:text-red-400 px-1"
+                  className="shrink-0 rounded-md p-1.5 text-neutral-500 hover:text-red-400 hover:bg-neutral-800"
                 >
-                  ×
+                  <TrashIcon />
                 </button>
               </div>
             </div>
