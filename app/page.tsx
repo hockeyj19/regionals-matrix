@@ -22,6 +22,8 @@ type FightRow = {
   event_id: string;
   fighter1_name: string;
   fighter2_name: string;
+  fighter1_id: string | null;
+  fighter2_id: string | null;
   weight_class: string | null;
   is_main_event: boolean;
   bout_order: number | null;
@@ -91,11 +93,9 @@ function tapologyUrl(name: string): string {
 function GrowingTextarea({
   defaultValue,
   onBlur,
-  placeholder,
 }: {
   defaultValue: string;
   onBlur: (value: string) => void;
-  placeholder: string;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -116,7 +116,6 @@ function GrowingTextarea({
       defaultValue={defaultValue}
       onInput={resize}
       onBlur={(e) => onBlur(e.target.value)}
-      placeholder={placeholder}
       rows={3}
       className="w-full overflow-hidden rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs focus:border-emerald-500 outline-none resize-none"
     />
@@ -279,6 +278,7 @@ function Matrix({ user }: { user: User }) {
   const [events, setEvents] = useState<EventRow[]>([]);
   const [fights, setFights] = useState<FightRow[]>([]);
   const [userData, setUserData] = useState<Record<string, UserData>>({});
+  const [fighterNotes, setFighterNotes] = useState<Record<string, string>>({});
   const [openEvents, setOpenEvents] = useState<Record<string, boolean>>({});
   const [loadingData, setLoadingData] = useState(true);
   const [ufcOnly, setUfcOnly] = useState(false);
@@ -296,12 +296,19 @@ function Matrix({ user }: { user: User }) {
     const { data: ud } = await supabase
       .from("user_fight_data")
       .select("fight_id, price1, price2, notes1, notes2");
+    const { data: fn } = await supabase
+      .from("user_fighter_notes")
+      .select("fighter_id, notes");
 
     setEvents(sortEvents(ev ?? []));
     setFights(fg ?? []);
     const map: Record<string, UserData> = {};
     (ud ?? []).forEach((row) => (map[row.fight_id] = row));
     setUserData(map);
+
+    const nmap: Record<string, string> = {};
+    (fn ?? []).forEach((row) => (nmap[row.fighter_id] = row.notes ?? ""));
+    setFighterNotes(nmap);
 
     // open all events by default
     setOpenEvents({});
@@ -338,6 +345,21 @@ function Matrix({ user }: { user: User }) {
         notes2: updated.notes2,
       },
       { onConflict: "user_id,fight_id" }
+    );
+  }
+
+  // save a fighter's permanent scouting notes (shared across all their fights)
+  async function saveFighterNote(fighterId: string, fighterName: string, value: string) {
+    setFighterNotes((prev) => ({ ...prev, [fighterId]: value }));
+    await supabase.from("user_fighter_notes").upsert(
+      {
+        user_id: user.id,
+        fighter_id: fighterId,
+        fighter_name: fighterName,
+        notes: value,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,fighter_id" }
     );
   }
 
@@ -407,6 +429,8 @@ function Matrix({ user }: { user: User }) {
                 <div className="divide-y divide-neutral-800 border-t border-neutral-800">
                   {evFights.map((f) => {
                     const d = userData[f.id];
+                    const f1id = f.fighter1_id;
+                    const f2id = f.fighter2_id;
                     return (
                       <div key={f.id} className="p-4 space-y-3">
                         {f.is_main_event && (
@@ -428,7 +452,6 @@ function Matrix({ user }: { user: User }) {
                             <input
                               defaultValue={d?.price1 ?? ""}
                               onBlur={(e) => saveField(f.id, "price1", e.target.value)}
-                              placeholder="–"
                               className="w-14 shrink-0 text-center rounded-md bg-neutral-800 border border-neutral-700 px-1 py-1 text-sm focus:border-emerald-500 outline-none"
                             />
                           </div>
@@ -437,7 +460,6 @@ function Matrix({ user }: { user: User }) {
                             <input
                               defaultValue={d?.price2 ?? ""}
                               onBlur={(e) => saveField(f.id, "price2", e.target.value)}
-                              placeholder="–"
                               className="w-14 shrink-0 text-center rounded-md bg-neutral-800 border border-neutral-700 px-1 py-1 text-sm focus:border-emerald-500 outline-none"
                             />
                             
@@ -455,18 +477,31 @@ function Matrix({ user }: { user: User }) {
                             {f.weight_class}
                           </div>
                         )}
-                        {/* two-column notes */}
+                        {/* per-fighter notes (permanent profile), with a
+                            per-fight fallback when a fighter has no stable id */}
                         <div className="grid grid-cols-2 gap-2">
-                          <GrowingTextarea
-                            defaultValue={d?.notes1 ?? ""}
-                            onBlur={(v) => saveField(f.id, "notes1", v)}
-                            placeholder={`Notes: ${f.fighter1_name}`}
-                          />
-                          <GrowingTextarea
-                            defaultValue={d?.notes2 ?? ""}
-                            onBlur={(v) => saveField(f.id, "notes2", v)}
-                            placeholder={`Notes: ${f.fighter2_name}`}
-                          />
+                          {f1id ? (
+                            <GrowingTextarea
+                              defaultValue={fighterNotes[f1id] ?? ""}
+                              onBlur={(v) => saveFighterNote(f1id, f.fighter1_name, v)}
+                            />
+                          ) : (
+                            <GrowingTextarea
+                              defaultValue={d?.notes1 ?? ""}
+                              onBlur={(v) => saveField(f.id, "notes1", v)}
+                            />
+                          )}
+                          {f2id ? (
+                            <GrowingTextarea
+                              defaultValue={fighterNotes[f2id] ?? ""}
+                              onBlur={(v) => saveFighterNote(f2id, f.fighter2_name, v)}
+                            />
+                          ) : (
+                            <GrowingTextarea
+                              defaultValue={d?.notes2 ?? ""}
+                              onBlur={(v) => saveField(f.id, "notes2", v)}
+                            />
+                          )}
                         </div>
                       </div>
                     );
