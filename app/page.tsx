@@ -53,6 +53,21 @@ type NoteHistoryRow = {
   created_at: string;
 };
 
+type NewBet = {
+  selection: string;
+  event_context: string | null;
+  event_date: string | null;
+  fighter_id: string | null;
+  odds: number;
+  stake: number;
+};
+
+type BetRow = NewBet & {
+  id: string;
+  result: string;
+  placed_at: string;
+};
+
 // "2026-06-26" -> "Friday, June 26th"
 // Convert "7:00 PM ET" -> minutes since midnight, for sorting. No time sorts last.
 function timeToMinutes(t: string | null): number {
@@ -103,6 +118,45 @@ function formatEventMeta(ev: EventRow): string {
 // Link a fighter name to a Tapology search for that fighter.
 function tapologyUrl(name: string): string {
   return `https://www.tapology.com/search?term=${encodeURIComponent(name)}&mainSearchFilter=fighters`;
+}
+
+// American-odds profit (in units) for a settled bet; pending/push = 0
+function betProfit(b: BetRow): number {
+  if (b.result === "win")
+    return Number(b.stake) * (b.odds > 0 ? b.odds / 100 : 100 / Math.abs(b.odds));
+  if (b.result === "loss") return -Number(b.stake);
+  return 0;
+}
+
+function fmtOdds(o: number): string {
+  return o > 0 ? `+${o}` : `${o}`;
+}
+
+function fmtUnits(u: number): string {
+  const r = Math.round(u * 100) / 100;
+  return `${r > 0 ? "+" : ""}${r}u`;
+}
+
+function fmtDate(iso: string): string {
+  const d = iso.length === 10 ? new Date(`${iso}T12:00:00`) : new Date(iso);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+// validate American odds + units inputs; returns parsed values or an error string
+function parseBetInputs(odds: string, stake: string): { odds: number; stake: number } | string {
+  const o = parseInt(odds, 10);
+  const s = parseFloat(stake);
+  if (isNaN(o) || Math.abs(o) < 100) return "Odds must be American, e.g. -150 or +130.";
+  if (isNaN(s) || s <= 0) return "Units must be a positive number.";
+  return { odds: o, stake: s };
+}
+
+function sideBtn(active: boolean): string {
+  return `rounded-md border px-2 py-1 text-xs truncate ${
+    active
+      ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
+      : "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
+  }`;
 }
 
 // Textarea that grows with its content instead of scrolling.
@@ -296,7 +350,8 @@ function Matrix({ user }: { user: User }) {
   const [userData, setUserData] = useState<Record<string, UserData>>({});
   const [fighterNotes, setFighterNotes] = useState<Record<string, FighterNote>>({});
   const [noteHistory, setNoteHistory] = useState<NoteHistoryRow[]>([]);
-  const [view, setView] = useState<"events" | "fighters">("events");
+  const [view, setView] = useState<"events" | "fighters" | "bets">("events");
+  const [bets, setBets] = useState<BetRow[]>([]);
   const [openEvents, setOpenEvents] = useState<Record<string, boolean>>({});
   const [loadingData, setLoadingData] = useState(true);
   const [ufcOnly, setUfcOnly] = useState(false);
@@ -321,6 +376,10 @@ function Matrix({ user }: { user: User }) {
       .from("user_fighter_note_history")
       .select("id, fighter_id, notes, event_context, created_at")
       .order("created_at", { ascending: false });
+    const { data: bt } = await supabase
+      .from("user_bets")
+      .select("id, selection, event_context, event_date, fighter_id, odds, stake, result, placed_at")
+      .order("placed_at", { ascending: false });
 
     setEvents(sortEvents(ev ?? []));
     setFights(fg ?? []);
@@ -332,6 +391,7 @@ function Matrix({ user }: { user: User }) {
     (fn ?? []).forEach((row) => (nmap[row.fighter_id] = row));
     setFighterNotes(nmap);
     setNoteHistory(nh ?? []);
+    setBets(bt ?? []);
 
     // open all events by default
     setOpenEvents({});
@@ -444,6 +504,34 @@ function Matrix({ user }: { user: User }) {
     );
   }
 
+  // delete a single note-history entry
+  async function deleteHistoryEntry(id: string) {
+    setNoteHistory((prev) => prev.filter((h) => h.id !== id));
+    await supabase.from("user_fighter_note_history").delete().eq("id", id);
+  }
+
+  // log a bet (from a fight card or the Bets tab)
+  async function addBet(bet: NewBet) {
+    const { data: b } = await supabase
+      .from("user_bets")
+      .insert({ user_id: user.id, ...bet })
+      .select("id, selection, event_context, event_date, fighter_id, odds, stake, result, placed_at")
+      .single();
+    if (b) setBets((prev) => [b, ...prev]);
+  }
+
+  // settle / unsettle a bet
+  async function setBetResult(id: string, result: string) {
+    setBets((prev) => prev.map((b) => (b.id === id ? { ...b, result } : b)));
+    await supabase.from("user_bets").update({ result }).eq("id", id);
+  }
+
+  // delete a bet
+  async function deleteBet(id: string) {
+    setBets((prev) => prev.filter((b) => b.id !== id));
+    await supabase.from("user_bets").delete().eq("id", id);
+  }
+
   return (
     <main className="min-h-screen bg-neutral-950 text-neutral-100">
       <header className="sticky top-0 z-10 bg-neutral-950/90 backdrop-blur border-b border-neutral-800 px-4 sm:px-6 py-3">
@@ -471,6 +559,16 @@ function Matrix({ user }: { user: User }) {
               >
                 Fighters
               </button>
+              <button
+                onClick={() => setView("bets")}
+                className={`rounded-lg border px-3 py-1 text-sm ${
+                  view === "bets"
+                    ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
+                    : "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
+                }`}
+              >
+                Bets
+              </button>
             </nav>
           </div>
           <div className="flex items-center gap-3 text-sm">
@@ -491,6 +589,14 @@ function Matrix({ user }: { user: User }) {
           history={noteHistory}
           onSaveNote={saveFighterNote}
           onSaveTags={saveFighterTags}
+          onDeleteHistory={deleteHistoryEntry}
+        />
+      ) : view === "bets" ? (
+        <BetTracker
+          bets={bets}
+          onAdd={addBet}
+          onSetResult={setBetResult}
+          onDelete={deleteBet}
         />
       ) : (
       <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-4">
@@ -620,6 +726,12 @@ function Matrix({ user }: { user: User }) {
                             />
                           )}
                         </div>
+                        <QuickBet
+                          fight={f}
+                          eventLabel={`${ev.org} — ${ev.event_name}`}
+                          eventDate={ev.event_date}
+                          onAdd={addBet}
+                        />
                       </div>
                     );
                   })}
@@ -639,11 +751,13 @@ function FighterLibrary({
   history,
   onSaveNote,
   onSaveTags,
+  onDeleteHistory,
 }: {
   notes: Record<string, FighterNote>;
   history: NoteHistoryRow[];
   onSaveNote: (fighterId: string, fighterName: string, value: string, context: string) => void;
   onSaveTags: (fighterId: string, fighterName: string, raw: string) => void;
+  onDeleteHistory: (id: string) => void;
 }) {
   const [q, setQ] = useState("");
   const [activeTag, setActiveTag] = useState<string | null>(null);
@@ -760,9 +874,18 @@ function FighterLibrary({
                   <div className="mt-2 space-y-2 border-l border-neutral-800 pl-3">
                     {fh.map((h) => (
                       <div key={h.id} className="text-xs">
-                        <div className="text-neutral-600">
-                          {formatWhen(h.created_at)}
-                          {h.event_context ? ` · ${h.event_context}` : ""}
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-neutral-600">
+                            {formatWhen(h.created_at)}
+                            {h.event_context ? ` · ${h.event_context}` : ""}
+                          </div>
+                          <button
+                            onClick={() => onDeleteHistory(h.id)}
+                            title="Delete this entry"
+                            className="text-neutral-600 hover:text-red-400 px-1"
+                          >
+                            ×
+                          </button>
                         </div>
                         <div className="text-neutral-400 whitespace-pre-wrap">{h.notes}</div>
                       </div>
@@ -771,6 +894,330 @@ function FighterLibrary({
                 )}
               </div>
             )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function QuickBet({
+  fight,
+  eventLabel,
+  eventDate,
+  onAdd,
+}: {
+  fight: FightRow;
+  eventLabel: string;
+  eventDate: string | null;
+  onAdd: (bet: NewBet) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [side, setSide] = useState<1 | 2>(1);
+  const [odds, setOdds] = useState("");
+  const [stake, setStake] = useState("");
+  const [error, setError] = useState("");
+
+  function submit() {
+    const parsed = parseBetInputs(odds, stake);
+    if (typeof parsed === "string") {
+      setError(parsed);
+      return;
+    }
+    onAdd({
+      selection: side === 1 ? fight.fighter1_name : fight.fighter2_name,
+      event_context: eventLabel,
+      event_date: eventDate,
+      fighter_id: side === 1 ? fight.fighter1_id : fight.fighter2_id,
+      odds: parsed.odds,
+      stake: parsed.stake,
+    });
+    setOpen(false);
+    setSide(1);
+    setOdds("");
+    setStake("");
+    setError("");
+  }
+
+  if (!open) {
+    return (
+      <div className="text-center">
+        <button
+          onClick={() => setOpen(true)}
+          className="text-xs text-neutral-500 hover:text-emerald-400"
+        >
+          + Log bet
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-md border border-neutral-800 bg-neutral-900/60 p-2 space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+        <button onClick={() => setSide(1)} className={sideBtn(side === 1)}>
+          {fight.fighter1_name}
+        </button>
+        <button onClick={() => setSide(2)} className={sideBtn(side === 2)}>
+          {fight.fighter2_name}
+        </button>
+      </div>
+      <div className="flex gap-2">
+        <input
+          value={odds}
+          onChange={(e) => setOdds(e.target.value)}
+          placeholder="Odds (-150)"
+          className="w-24 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
+        />
+        <input
+          value={stake}
+          onChange={(e) => setStake(e.target.value)}
+          placeholder="Units"
+          className="w-20 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
+        />
+        <button
+          onClick={submit}
+          className="rounded-md bg-emerald-600 hover:bg-emerald-500 px-3 py-1 text-xs font-medium"
+        >
+          Save
+        </button>
+        <button
+          onClick={() => {
+            setOpen(false);
+            setError("");
+          }}
+          className="rounded-md border border-neutral-700 px-3 py-1 text-xs text-neutral-400 hover:bg-neutral-900"
+        >
+          Cancel
+        </button>
+      </div>
+      {error && <p className="text-xs text-amber-400">{error}</p>}
+    </div>
+  );
+}
+
+function BetTracker({
+  bets,
+  onAdd,
+  onSetResult,
+  onDelete,
+}: {
+  bets: BetRow[];
+  onAdd: (bet: NewBet) => void;
+  onSetResult: (id: string, result: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [selection, setSelection] = useState("");
+  const [context, setContext] = useState("");
+  const [odds, setOdds] = useState("");
+  const [stake, setStake] = useState("");
+  const [error, setError] = useState("");
+
+  const settled = bets.filter((b) => b.result !== "pending");
+  const wins = settled.filter((b) => b.result === "win").length;
+  const losses = settled.filter((b) => b.result === "loss").length;
+  const pushes = settled.filter((b) => b.result === "push").length;
+  const staked = settled.reduce((s, b) => s + Number(b.stake), 0);
+  const profit = settled.reduce((s, b) => s + betProfit(b), 0);
+  const roi = staked > 0 ? (profit / staked) * 100 : 0;
+  const pendingCount = bets.length - settled.length;
+
+  // ROI over time: month buckets by event date (falls back to when placed)
+  const months: Record<string, { staked: number; profit: number; n: number }> = {};
+  settled.forEach((b) => {
+    const key = (b.event_date ?? b.placed_at).slice(0, 7);
+    if (!months[key]) months[key] = { staked: 0, profit: 0, n: 0 };
+    months[key].staked += Number(b.stake);
+    months[key].profit += betProfit(b);
+    months[key].n += 1;
+  });
+  const monthKeys = Object.keys(months).sort();
+
+  function submit() {
+    if (!selection.trim()) {
+      setError("Enter what the bet is on.");
+      return;
+    }
+    const parsed = parseBetInputs(odds, stake);
+    if (typeof parsed === "string") {
+      setError(parsed);
+      return;
+    }
+    onAdd({
+      selection: selection.trim(),
+      event_context: context.trim() || null,
+      event_date: null,
+      fighter_id: null,
+      odds: parsed.odds,
+      stake: parsed.stake,
+    });
+    setSelection("");
+    setContext("");
+    setOdds("");
+    setStake("");
+    setError("");
+  }
+
+  const profitTone = profit >= 0 ? "text-emerald-400" : "text-red-400";
+
+  return (
+    <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
+          <p className="text-[11px] text-neutral-500 uppercase tracking-wide">Record</p>
+          <p className="text-lg font-bold">{wins}-{losses}-{pushes}</p>
+        </div>
+        <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
+          <p className="text-[11px] text-neutral-500 uppercase tracking-wide">Units staked</p>
+          <p className="text-lg font-bold">{Math.round(staked * 100) / 100}u</p>
+        </div>
+        <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
+          <p className="text-[11px] text-neutral-500 uppercase tracking-wide">Profit</p>
+          <p className={`text-lg font-bold ${profitTone}`}>{fmtUnits(profit)}</p>
+        </div>
+        <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
+          <p className="text-[11px] text-neutral-500 uppercase tracking-wide">ROI</p>
+          <p className={`text-lg font-bold ${profitTone}`}>
+            {roi >= 0 ? "+" : ""}{roi.toFixed(1)}%
+          </p>
+        </div>
+      </div>
+      {pendingCount > 0 && (
+        <p className="text-xs text-neutral-500">
+          {pendingCount} pending bet{pendingCount === 1 ? "" : "s"} not counted above.
+        </p>
+      )}
+
+      <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3 space-y-2">
+        <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">Log a bet</p>
+        <input
+          value={selection}
+          onChange={(e) => setSelection(e.target.value)}
+          placeholder="Selection (e.g. McGregor ML, over 2.5 rounds)"
+          className="w-full rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm outline-none focus:border-emerald-500"
+        />
+        <div className="flex gap-2">
+          <input
+            value={context}
+            onChange={(e) => setContext(e.target.value)}
+            placeholder="Event (optional)"
+            className="flex-1 min-w-0 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm outline-none focus:border-emerald-500"
+          />
+          <input
+            value={odds}
+            onChange={(e) => setOdds(e.target.value)}
+            placeholder="Odds (-150)"
+            className="w-24 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm outline-none focus:border-emerald-500"
+          />
+          <input
+            value={stake}
+            onChange={(e) => setStake(e.target.value)}
+            placeholder="Units"
+            className="w-20 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm outline-none focus:border-emerald-500"
+          />
+          <button
+            onClick={submit}
+            className="rounded-md bg-emerald-600 hover:bg-emerald-500 px-3 py-1 text-sm font-medium"
+          >
+            Add
+          </button>
+        </div>
+        {error && <p className="text-xs text-amber-400">{error}</p>}
+      </div>
+
+      {monthKeys.length > 0 && (
+        <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
+          <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide mb-2">
+            ROI by month
+          </p>
+          <div className="space-y-1">
+            {monthKeys.map((m) => {
+              const v = months[m];
+              const mroi = v.staked > 0 ? (v.profit / v.staked) * 100 : 0;
+              return (
+                <div key={m} className="flex items-center justify-between text-xs gap-2">
+                  <span className="text-neutral-400 w-16 shrink-0">{m}</span>
+                  <span className="text-neutral-600 flex-1 text-center">
+                    {v.n} bet{v.n === 1 ? "" : "s"} · {Math.round(v.staked * 100) / 100}u
+                  </span>
+                  <span className={v.profit >= 0 ? "text-emerald-400" : "text-red-400"}>
+                    {fmtUnits(v.profit)} ({mroi >= 0 ? "+" : ""}{mroi.toFixed(1)}%)
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {bets.length === 0 && (
+        <p className="text-neutral-500">
+          No bets logged yet. Add one above, or use the + Log bet button on any fight card.
+        </p>
+      )}
+
+      {bets.map((b) => {
+        const p = betProfit(b);
+        return (
+          <div key={b.id} className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-sm font-medium truncate">
+                  {b.selection}{" "}
+                  <span className="text-neutral-500">
+                    {fmtOdds(b.odds)} · {Number(b.stake)}u
+                  </span>
+                </p>
+                <p className="text-[11px] text-neutral-600 truncate">
+                  {b.event_context ? `${b.event_context} · ` : ""}
+                  {fmtDate(b.event_date ?? b.placed_at)}
+                </p>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                {b.result !== "pending" && (
+                  <span className={`text-xs mr-1 ${p >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                    {fmtUnits(p)}
+                  </span>
+                )}
+                <button
+                  onClick={() => onSetResult(b.id, b.result === "win" ? "pending" : "win")}
+                  className={`rounded border px-1.5 py-0.5 text-[11px] font-bold ${
+                    b.result === "win"
+                      ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
+                      : "border-neutral-700 text-neutral-500 hover:bg-neutral-900"
+                  }`}
+                >
+                  W
+                </button>
+                <button
+                  onClick={() => onSetResult(b.id, b.result === "loss" ? "pending" : "loss")}
+                  className={`rounded border px-1.5 py-0.5 text-[11px] font-bold ${
+                    b.result === "loss"
+                      ? "border-red-500 bg-red-600/20 text-red-300"
+                      : "border-neutral-700 text-neutral-500 hover:bg-neutral-900"
+                  }`}
+                >
+                  L
+                </button>
+                <button
+                  onClick={() => onSetResult(b.id, b.result === "push" ? "pending" : "push")}
+                  className={`rounded border px-1.5 py-0.5 text-[11px] font-bold ${
+                    b.result === "push"
+                      ? "border-amber-500 bg-amber-600/20 text-amber-300"
+                      : "border-neutral-700 text-neutral-500 hover:bg-neutral-900"
+                  }`}
+                >
+                  P
+                </button>
+                <button
+                  onClick={() => onDelete(b.id)}
+                  title="Delete bet"
+                  className="text-neutral-600 hover:text-red-400 px-1"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
           </div>
         );
       })}
