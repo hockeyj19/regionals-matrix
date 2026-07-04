@@ -102,6 +102,10 @@ export function BetTracker({
       event_start: null,
       fighter_id: null,
       book: null,
+      price_check: null,
+      market_best: null,
+      market_book: null,
+      market_checked_at: null,
       bet_type: "other",
       prop_method: null,
       prop_round: null,
@@ -339,6 +343,11 @@ export function BetTracker({
                       verified
                     </span>
                   )}
+                  {b.price_check === "verified" && (
+                    <span className="ml-1 text-[10px] uppercase tracking-wide text-amber-300">
+                      market ✓
+                    </span>
+                  )}
                 </p>
                 <p className="text-[11px] text-neutral-600 truncate">
                   {b.book ? `${b.book} · ` : ""}
@@ -354,6 +363,12 @@ export function BetTracker({
                       Not leaderboard-eligible (no pre-start timestamp)
                     </p>
                   )}
+                {b.price_check === "above_market" && b.market_best !== null && (
+                  <p className="text-[11px] text-amber-500/80">
+                    Above board when logged (best {fmtOdds(b.market_best)}
+                    {b.market_book ? ` @ ${b.market_book}` : ""})
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 {b.result !== "pending" && (

@@ -51,6 +51,10 @@ export type NewBet = {
   event_start: string | null;
   fighter_id: string | null;
   book: string | null;
+  price_check: string | null;
+  market_best: number | null;
+  market_book: string | null;
+  market_checked_at: string | null;
   bet_type: string;
   prop_method: string | null;
   prop_round: number | null;
@@ -112,4 +116,7 @@ export type PublicBet = {
   book: string | null;
   result: string;
   placed_at: string;
+  price_check: string | null;
+  market_best: number | null;
+  market_book: string | null;
 };

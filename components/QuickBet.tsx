@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { FightRow, NewBet } from "@/lib/types";
 import { BOOKS, eventStartISO, parseBetInputs, sideBtn } from "@/lib/format";
+import { checkPrice } from "@/lib/odds";
 
 const BET_TYPE_OPTIONS = [
   { key: "moneyline", label: "ML" },
@@ -52,7 +53,7 @@ export function QuickBet({
     if (t === "method_round" && method === "decision") setMethod("ko_tko");
   }
 
-  function submit() {
+  async function submit() {
     if (!book) {
       setError("Pick the book you bet at.");
       return;
@@ -81,6 +82,34 @@ export function QuickBet({
     const name = side === 1 ? fight.fighter1_name : fight.fighter2_name;
     const fid = side === 1 ? fight.fighter1_id : fight.fighter2_id;
     const effectiveType = betType === "totals" ? ouSide : betType;
+
+    // market check: pin the live board against the claimed moneyline price.
+    // Exchanges (Polymarket/Kalshi) are exempt - the sportsbook feed can't see them.
+    let priceCheck: string | null = null;
+    let marketBest: number | null = null;
+    let marketBook: string | null = null;
+    let checkedAt: string | null = null;
+    if (effectiveType === "moneyline" && book !== "Polymarket" && book !== "Kalshi") {
+      checkedAt = new Date().toISOString();
+      try {
+        const res = await fetch("/api/odds");
+        const data = await res.json();
+        const sideName = side === 1 ? fight.fighter1_name : fight.fighter2_name;
+        const c = checkPrice(
+          data.events ?? [],
+          fight.fighter1_name,
+          fight.fighter2_name,
+          sideName,
+          parsed.odds
+        );
+        priceCheck = c.price_check;
+        marketBest = c.market_best;
+        marketBook = c.market_book;
+      } catch {
+        priceCheck = "no_data";
+      }
+    }
+
     const methodLabel =
       method === "ko_tko" ? "KO/TKO" : method === "submission" ? "Submission" : "Decision";
     let selection = name;
@@ -95,6 +124,10 @@ export function QuickBet({
       event_date: eventDate,
       event_start: eventStartISO(eventDate, eventTime),
       book,
+      price_check: priceCheck,
+      market_best: marketBest,
+      market_book: marketBook,
+      market_checked_at: checkedAt,
       // for over/under bets the fighter id is just a bout locator for the grader
       fighter_id: needsSide ? fid : fight.fighter1_id ?? fight.fighter2_id,
       bet_type: effectiveType,

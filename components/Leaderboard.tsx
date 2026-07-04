@@ -234,7 +234,16 @@ export function Leaderboard({ user }: { user: User }) {
                   {b.book ? `${b.book} · ` : ""}
                   {b.event_context ? `${b.event_context} · ` : ""}
                   {fmtDate(b.event_date ?? b.placed_at)}
+                  {b.price_check === "verified" && (
+                    <span className="ml-1 uppercase tracking-wide text-amber-300"> market ✓</span>
+                  )}
                 </p>
+                {b.price_check === "above_market" && b.market_best !== null && (
+                  <p className="text-[11px] text-amber-500/80">
+                    Above board when logged (best {fmtOdds(b.market_best)}
+                    {b.market_book ? ` @ ${b.market_book}` : ""})
+                  </p>
+                )}
                 {reporting === b.id && (
                   <div className="flex gap-2 mt-1">
                     <input
