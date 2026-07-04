@@ -15,6 +15,7 @@ type EventRow = {
   event_date: string | null;
   event_time: string | null;
   location: string | null;
+  source_url: string | null;
 };
 
 type FightRow = {
@@ -58,6 +59,11 @@ type NewBet = {
   event_context: string | null;
   event_date: string | null;
   fighter_id: string | null;
+  bet_type: string;
+  prop_method: string | null;
+  prop_round: number | null;
+  ou_line: number | null;
+  event_source_url: string | null;
   odds: number;
   stake: number;
 };
@@ -66,6 +72,7 @@ type BetRow = NewBet & {
   id: string;
   result: string;
   placed_at: string;
+  grade_note: string | null;
 };
 
 // "2026-06-26" -> "Friday, June 26th"
@@ -398,7 +405,7 @@ function Matrix({ user }: { user: User }) {
       .order("created_at", { ascending: false });
     const { data: bt } = await supabase
       .from("user_bets")
-      .select("id, selection, event_context, event_date, fighter_id, odds, stake, result, placed_at")
+      .select("id, selection, event_context, event_date, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note")
       .order("placed_at", { ascending: false });
 
     setEvents(sortEvents(ev ?? []));
@@ -538,7 +545,7 @@ function Matrix({ user }: { user: User }) {
     const { data: b } = await supabase
       .from("user_bets")
       .insert({ user_id: user.id, ...bet })
-      .select("id, selection, event_context, event_date, fighter_id, odds, stake, result, placed_at")
+      .select("id, selection, event_context, event_date, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note")
       .single();
     if (b) setBets((prev) => [b, ...prev]);
   }
@@ -753,6 +760,7 @@ function Matrix({ user }: { user: User }) {
                           fight={f}
                           eventLabel={`${ev.org} — ${ev.event_name}`}
                           eventDate={ev.event_date}
+                          eventSourceUrl={ev.source_url}
                           onAdd={addBet}
                         />
                       </div>
@@ -930,22 +938,48 @@ function FighterLibrary({
   );
 }
 
+const BET_TYPE_OPTIONS = [
+  { key: "moneyline", label: "ML" },
+  { key: "method", label: "Method" },
+  { key: "round", label: "Round" },
+  { key: "method_round", label: "Method+Rd" },
+  { key: "over", label: "Over" },
+  { key: "under", label: "Under" },
+];
+
 function QuickBet({
   fight,
   eventLabel,
   eventDate,
+  eventSourceUrl,
   onAdd,
 }: {
   fight: FightRow;
   eventLabel: string;
   eventDate: string | null;
+  eventSourceUrl: string | null;
   onAdd: (bet: NewBet) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [side, setSide] = useState<1 | 2>(1);
+  const [betType, setBetType] = useState("moneyline");
+  const [method, setMethod] = useState("ko_tko");
+  const [round, setRound] = useState("");
+  const [line, setLine] = useState("2.5");
   const [odds, setOdds] = useState("");
   const [stake, setStake] = useState("");
   const [error, setError] = useState("");
+
+  const needsSide = betType !== "over" && betType !== "under";
+  const needsMethod = betType === "method" || betType === "method_round";
+  const needsRound = betType === "round" || betType === "method_round";
+  const needsLine = betType === "over" || betType === "under";
+
+  function pickType(t: string) {
+    setBetType(t);
+    setError("");
+    if (t === "method_round" && method === "decision") setMethod("ko_tko");
+  }
 
   function submit() {
     const parsed = parseBetInputs(odds, stake);
@@ -953,18 +987,53 @@ function QuickBet({
       setError(parsed);
       return;
     }
+    let propRound: number | null = null;
+    if (needsRound) {
+      propRound = parseInt(round, 10);
+      if (isNaN(propRound) || propRound < 1 || propRound > 5) {
+        setError("Round must be 1-5.");
+        return;
+      }
+    }
+    let ouLine: number | null = null;
+    if (needsLine) {
+      ouLine = parseFloat(line);
+      if (isNaN(ouLine) || ouLine <= 0 || Math.round(ouLine * 2) % 2 !== 1) {
+        setError("Use a half line like 1.5 or 2.5.");
+        return;
+      }
+    }
+    const name = side === 1 ? fight.fighter1_name : fight.fighter2_name;
+    const fid = side === 1 ? fight.fighter1_id : fight.fighter2_id;
+    const methodLabel =
+      method === "ko_tko" ? "KO/TKO" : method === "submission" ? "Submission" : "Decision";
+    let selection = name;
+    if (betType === "method") selection = `${name} by ${methodLabel}`;
+    else if (betType === "round") selection = `${name} in R${propRound}`;
+    else if (betType === "method_round") selection = `${name} by ${methodLabel} in R${propRound}`;
+    else if (betType === "over" || betType === "under")
+      selection = `${betType === "over" ? "Over" : "Under"} ${ouLine} — ${fight.fighter1_name} vs ${fight.fighter2_name}`;
     onAdd({
-      selection: side === 1 ? fight.fighter1_name : fight.fighter2_name,
+      selection,
       event_context: eventLabel,
       event_date: eventDate,
-      fighter_id: side === 1 ? fight.fighter1_id : fight.fighter2_id,
+      // for over/under bets the fighter id is just a bout locator for the grader
+      fighter_id: needsSide ? fid : fight.fighter1_id ?? fight.fighter2_id,
+      bet_type: betType,
+      prop_method: needsMethod ? method : null,
+      prop_round: propRound,
+      ou_line: ouLine,
+      event_source_url: eventSourceUrl,
       odds: parsed.odds,
       stake: parsed.stake,
     });
     setOpen(false);
     setSide(1);
+    setBetType("moneyline");
     setOdds("");
     setStake("");
+    setRound("");
+    setLine("2.5");
     setError("");
   }
 
@@ -983,15 +1052,51 @@ function QuickBet({
 
   return (
     <div className="rounded-md border border-neutral-800 bg-neutral-900/60 p-2 space-y-2">
-      <div className="grid grid-cols-2 gap-2">
-        <button onClick={() => setSide(1)} className={sideBtn(side === 1)}>
-          {fight.fighter1_name}
-        </button>
-        <button onClick={() => setSide(2)} className={sideBtn(side === 2)}>
-          {fight.fighter2_name}
-        </button>
+      <div className="flex flex-wrap gap-1">
+        {BET_TYPE_OPTIONS.map((t) => (
+          <button key={t.key} onClick={() => pickType(t.key)} className={sideBtn(betType === t.key)}>
+            {t.label}
+          </button>
+        ))}
       </div>
-      <div className="flex gap-2">
+      {needsSide && (
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={() => setSide(1)} className={sideBtn(side === 1)}>
+            {fight.fighter1_name}
+          </button>
+          <button onClick={() => setSide(2)} className={sideBtn(side === 2)}>
+            {fight.fighter2_name}
+          </button>
+        </div>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {needsMethod && (
+          <select
+            value={method}
+            onChange={(e) => setMethod(e.target.value)}
+            className="rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
+          >
+            <option value="ko_tko">KO/TKO</option>
+            <option value="submission">Submission</option>
+            {betType !== "method_round" && <option value="decision">Decision</option>}
+          </select>
+        )}
+        {needsRound && (
+          <input
+            value={round}
+            onChange={(e) => setRound(e.target.value)}
+            placeholder="Rd (1-5)"
+            className="w-20 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
+          />
+        )}
+        {needsLine && (
+          <input
+            value={line}
+            onChange={(e) => setLine(e.target.value)}
+            placeholder="Line (2.5)"
+            className="w-20 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
+          />
+        )}
         <input
           value={odds}
           onChange={(e) => setOdds(e.target.value)}
@@ -1077,6 +1182,11 @@ function BetTracker({
       event_context: context.trim() || null,
       event_date: null,
       fighter_id: null,
+      bet_type: "other",
+      prop_method: null,
+      prop_round: null,
+      ou_line: null,
+      event_source_url: null,
       odds: parsed.odds,
       stake: parsed.stake,
     });
@@ -1201,6 +1311,9 @@ function BetTracker({
                   {b.event_context ? `${b.event_context} · ` : ""}
                   {fmtDate(b.event_date ?? b.placed_at)}
                 </p>
+                {b.grade_note && (
+                  <p className="text-[11px] text-neutral-500 italic truncate">{b.grade_note}</p>
+                )}
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 {b.result !== "pending" && (
