@@ -12,6 +12,7 @@ import type {
   NewBet,
   BetRow,
   MatrixData,
+  ReviewRow,
 } from "@/lib/types";
 import { sortEvents, formatEventMeta, tapologyUrl } from "@/lib/format";
 import { GridIcon, DollarIcon } from "@/components/icons";
@@ -58,6 +59,7 @@ export function Matrix({ user }: { user: User }) {
   const [noteHistory, setNoteHistory] = useState<NoteHistoryRow[]>([]);
   const [view, setView] = useState<"events" | "fighters" | "bets">("events");
   const [bets, setBets] = useState<BetRow[]>([]);
+  const [reviews, setReviews] = useState<ReviewRow[]>([]);
   const [matrixData, setMatrixData] = useState<Record<string, MatrixData>>({});
   const [openMatrix, setOpenMatrix] = useState<Record<string, boolean>>({});
   const [openBet, setOpenBet] = useState<Record<string, boolean>>({});
@@ -96,6 +98,12 @@ export function Matrix({ user }: { user: User }) {
     const { data: mx } = await supabase
       .from("user_fight_matrix")
       .select("fight_id, data");
+    const { data: rv } = await supabase
+      .from("user_fight_review")
+      .select(
+        "id, fight_id, org, event_name, event_date, fighter1_name, fighter2_name, weight_class, price1, price2, matrix, winner_name, f1_result, method, result_round, result_time"
+      )
+      .order("event_date", { ascending: false });
 
     setEvents(sortEvents(ev ?? []));
     setFights(fg ?? []);
@@ -112,6 +120,7 @@ export function Matrix({ user }: { user: User }) {
     (mx ?? []).forEach((row) => (mmap[row.fight_id] = row.data ?? {}));
     matrixRef.current = mmap;
     setMatrixData(mmap);
+    setReviews(rv ?? []);
 
     // open all events by default
     setOpenEvents({});
@@ -339,6 +348,7 @@ export function Matrix({ user }: { user: User }) {
       ) : view === "bets" ? (
         <BetTracker
           bets={bets}
+          reviews={reviews}
           events={events}
           fights={fights}
           onAdd={addBet}

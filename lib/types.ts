@@ -67,3 +67,22 @@ export type BetRow = NewBet & {
 
 // per-market cells for one fight: { win_tko: { f1o, f1v, f2v, f2o }, ... }
 export type MatrixData = Record<string, Record<string, string>>;
+
+export type ReviewRow = {
+  id: string;
+  fight_id: string;
+  org: string | null;
+  event_name: string | null;
+  event_date: string | null;
+  fighter1_name: string | null;
+  fighter2_name: string | null;
+  weight_class: string | null;
+  price1: string | null;
+  price2: string | null;
+  matrix: MatrixData | null;
+  winner_name: string | null;
+  f1_result: string | null;
+  method: string | null;
+  result_round: string | null;
+  result_time: string | null;
+};

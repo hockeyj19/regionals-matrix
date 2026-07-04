@@ -1,13 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import type { BetRow, EventRow, FightRow, NewBet } from "@/lib/types";
+import type { BetRow, EventRow, FightRow, NewBet, ReviewRow } from "@/lib/types";
 import { betProfit, fmtDate, fmtOdds, fmtUnits, parseBetInputs, sideBtn } from "@/lib/format";
-import { TrashIcon } from "@/components/icons";
+import { ReviewIcon, TrashIcon } from "@/components/icons";
 import { QuickBet } from "@/components/QuickBet";
+import { ReviewArchive } from "@/components/ReviewArchive";
 
 export function BetTracker({
   bets,
+  reviews,
   events,
   fights,
   onAdd,
@@ -15,6 +17,7 @@ export function BetTracker({
   onDelete,
 }: {
   bets: BetRow[];
+  reviews: ReviewRow[];
   events: EventRow[];
   fights: FightRow[];
   onAdd: (bet: NewBet) => void;
@@ -29,6 +32,7 @@ export function BetTracker({
   const [scope, setScope] = useState<"verified" | "all">("verified");
   const [selEventId, setSelEventId] = useState("");
   const [selFightId, setSelFightId] = useState("");
+  const [openReview, setOpenReview] = useState(false);
 
   const selEvent = events.find((ev) => ev.id === selEventId) ?? null;
   const selFight = fights.find((f) => f.id === selFightId) ?? null;
@@ -54,6 +58,31 @@ export function BetTracker({
     months[key].n += 1;
   });
   const monthKeys = Object.keys(months).sort();
+
+  // bankroll curve: cumulative units across settled bets in fight order
+  const chron = [...settled].sort((a, b) =>
+    (a.event_date ?? a.placed_at).localeCompare(b.event_date ?? b.placed_at)
+  );
+  let running = 0;
+  const cumulative = chron.map((b) => (running += betProfit(b)));
+
+  // results by organization (from the event context on each bet)
+  const orgs: Record<
+    string,
+    { n: number; w: number; l: number; p: number; staked: number; profit: number }
+  > = {};
+  settled.forEach((b) => {
+    const key = (b.event_context ?? "").split(" — ")[0].trim() || "Other";
+    if (!orgs[key]) orgs[key] = { n: 0, w: 0, l: 0, p: 0, staked: 0, profit: 0 };
+    const o = orgs[key];
+    o.n += 1;
+    if (b.result === "win") o.w += 1;
+    else if (b.result === "loss") o.l += 1;
+    else o.p += 1;
+    o.staked += Number(b.stake);
+    o.profit += betProfit(b);
+  });
+  const orgKeys = Object.keys(orgs).sort((a, b) => orgs[b].n - orgs[a].n);
 
   function submit() {
     if (!selection.trim()) {
@@ -89,22 +118,40 @@ export function BetTracker({
 
   return (
     <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-4">
-      <div className="flex justify-end gap-1">
-        <button onClick={() => setScope("verified")} className={sideBtn(scope === "verified")}>
-          Verified
+      <div className="flex items-center justify-between">
+        <button
+          onClick={() => setOpenReview((v) => !v)}
+          title="Review archive"
+          className={`rounded-md border p-1.5 ${
+            openReview
+              ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
+              : reviews.length > 0
+              ? "border-emerald-700 text-emerald-400 hover:bg-neutral-900"
+              : "border-neutral-700 text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900"
+          }`}
+        >
+          <ReviewIcon />
         </button>
-        <button onClick={() => setScope("all")} className={sideBtn(scope === "all")}>
-          All bets
-        </button>
+        <div className="flex gap-1">
+          <button onClick={() => setScope("verified")} className={sideBtn(scope === "verified")}>
+            Verified
+          </button>
+          <button onClick={() => setScope("all")} className={sideBtn(scope === "all")}>
+            All bets
+          </button>
+        </div>
       </div>
+      {openReview && <ReviewArchive rows={reviews} />}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
           <p className="text-[11px] text-neutral-500 uppercase tracking-wide">Record</p>
           <p className="text-lg font-bold">{wins}-{losses}-{pushes}</p>
         </div>
         <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
-          <p className="text-[11px] text-neutral-500 uppercase tracking-wide">Units staked</p>
-          <p className="text-lg font-bold">{Math.round(staked * 100) / 100}u</p>
+          <p className="text-[11px] text-neutral-500 uppercase tracking-wide">Avg stake</p>
+          <p className="text-lg font-bold">
+            {settled.length ? Math.round((staked / settled.length) * 100) / 100 : 0}u
+          </p>
         </div>
         <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
           <p className="text-[11px] text-neutral-500 uppercase tracking-wide">Profit</p>
@@ -121,6 +168,18 @@ export function BetTracker({
         <p className="text-xs text-neutral-500">
           {pendingCount} pending bet{pendingCount === 1 ? "" : "s"} not counted above.
         </p>
+      )}
+
+      {settled.length >= 2 && (
+        <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
+              Bankroll
+            </p>
+            <span className={`text-xs ${profitTone}`}>{fmtUnits(profit)}</span>
+          </div>
+          <BankrollCurve values={cumulative} />
+        </div>
       )}
 
       <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3 space-y-2">
@@ -239,6 +298,31 @@ export function BetTracker({
         </div>
       )}
 
+      {orgKeys.length > 0 && (
+        <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
+          <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide mb-2">
+            Results by org
+          </p>
+          <div className="space-y-1">
+            {orgKeys.map((k) => {
+              const o = orgs[k];
+              const oroi = o.staked > 0 ? (o.profit / o.staked) * 100 : 0;
+              return (
+                <div key={k} className="flex items-center justify-between text-xs gap-2">
+                  <span className="text-neutral-400 truncate">{k}</span>
+                  <span className="text-neutral-600 shrink-0">
+                    {o.w}-{o.l}-{o.p}
+                  </span>
+                  <span className={`shrink-0 ${o.profit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                    {fmtUnits(o.profit)} ({oroi >= 0 ? "+" : ""}{oroi.toFixed(1)}%)
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {bets.length === 0 && (
         <p className="text-neutral-500">
           No bets logged yet. Add one above, or use the + Log bet button on any fight card.
@@ -319,5 +403,34 @@ export function BetTracker({
         );
       })}
     </div>
+  );
+}
+
+function BankrollCurve({ values }: { values: number[] }) {
+  const pts = [0, ...values];
+  const min = Math.min(0, ...pts);
+  const max = Math.max(0, ...pts);
+  const span = max - min || 1;
+  const W = 100;
+  const H = 32;
+  const x = (i: number) => (pts.length > 1 ? (i / (pts.length - 1)) * W : 0);
+  const y = (v: number) => H - ((v - min) / span) * H;
+  const d = pts
+    .map((v, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(2)},${y(v).toFixed(2)}`)
+    .join(" ");
+  const color = pts[pts.length - 1] >= 0 ? "#34d399" : "#f87171";
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-24">
+      <line
+        x1="0"
+        y1={y(0)}
+        x2={W}
+        y2={y(0)}
+        stroke="#404040"
+        strokeDasharray="2 2"
+        vectorEffect="non-scaling-stroke"
+      />
+      <path d={d} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+    </svg>
   );
 }
