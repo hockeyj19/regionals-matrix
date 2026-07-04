@@ -624,6 +624,8 @@ function Matrix({ user }: { user: User }) {
       ) : view === "bets" ? (
         <BetTracker
           bets={bets}
+          events={events}
+          fights={fights}
           onAdd={addBet}
           onSetResult={setBetResult}
           onDelete={deleteBet}
@@ -953,14 +955,16 @@ function QuickBet({
   eventDate,
   eventSourceUrl,
   onAdd,
+  embedded = false,
 }: {
   fight: FightRow;
   eventLabel: string;
   eventDate: string | null;
   eventSourceUrl: string | null;
   onAdd: (bet: NewBet) => void;
+  embedded?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(embedded);
   const [side, setSide] = useState<1 | 2>(1);
   const [betType, setBetType] = useState("moneyline");
   const [method, setMethod] = useState("ko_tko");
@@ -1027,7 +1031,7 @@ function QuickBet({
       odds: parsed.odds,
       stake: parsed.stake,
     });
-    setOpen(false);
+    setOpen(embedded);
     setSide(1);
     setBetType("moneyline");
     setOdds("");
@@ -1115,15 +1119,17 @@ function QuickBet({
         >
           Save
         </button>
-        <button
-          onClick={() => {
-            setOpen(false);
-            setError("");
-          }}
-          className="rounded-md border border-neutral-700 px-3 py-1 text-xs text-neutral-400 hover:bg-neutral-900"
-        >
-          Cancel
-        </button>
+        {!embedded && (
+          <button
+            onClick={() => {
+              setOpen(false);
+              setError("");
+            }}
+            className="rounded-md border border-neutral-700 px-3 py-1 text-xs text-neutral-400 hover:bg-neutral-900"
+          >
+            Cancel
+          </button>
+        )}
       </div>
       {error && <p className="text-xs text-amber-400">{error}</p>}
     </div>
@@ -1132,11 +1138,15 @@ function QuickBet({
 
 function BetTracker({
   bets,
+  events,
+  fights,
   onAdd,
   onSetResult,
   onDelete,
 }: {
   bets: BetRow[];
+  events: EventRow[];
+  fights: FightRow[];
   onAdd: (bet: NewBet) => void;
   onSetResult: (id: string, result: string) => void;
   onDelete: (id: string) => void;
@@ -1146,15 +1156,23 @@ function BetTracker({
   const [odds, setOdds] = useState("");
   const [stake, setStake] = useState("");
   const [error, setError] = useState("");
+  const [scope, setScope] = useState<"verified" | "all">("verified");
+  const [selEventId, setSelEventId] = useState("");
+  const [selFightId, setSelFightId] = useState("");
 
-  const settled = bets.filter((b) => b.result !== "pending");
+  const selEvent = events.find((ev) => ev.id === selEventId) ?? null;
+  const selFight = fights.find((f) => f.id === selFightId) ?? null;
+
+  // "verified" = structured bets tied to a fight (auto-graded); "all" adds manual ones
+  const scoped = scope === "verified" ? bets.filter((b) => b.bet_type !== "other") : bets;
+  const settled = scoped.filter((b) => b.result !== "pending");
   const wins = settled.filter((b) => b.result === "win").length;
   const losses = settled.filter((b) => b.result === "loss").length;
   const pushes = settled.filter((b) => b.result === "push").length;
   const staked = settled.reduce((s, b) => s + Number(b.stake), 0);
   const profit = settled.reduce((s, b) => s + betProfit(b), 0);
   const roi = staked > 0 ? (profit / staked) * 100 : 0;
-  const pendingCount = bets.length - settled.length;
+  const pendingCount = scoped.length - settled.length;
 
   // ROI over time: month buckets by event date (falls back to when placed)
   const months: Record<string, { staked: number; profit: number; n: number }> = {};
@@ -1201,6 +1219,14 @@ function BetTracker({
 
   return (
     <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-4">
+      <div className="flex justify-end gap-1">
+        <button onClick={() => setScope("verified")} className={sideBtn(scope === "verified")}>
+          Verified
+        </button>
+        <button onClick={() => setScope("all")} className={sideBtn(scope === "all")}>
+          All bets
+        </button>
+      </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
           <p className="text-[11px] text-neutral-500 uppercase tracking-wide">Record</p>
@@ -1228,7 +1254,61 @@ function BetTracker({
       )}
 
       <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3 space-y-2">
-        <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">Log a bet</p>
+        <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
+          Verified bet
+        </p>
+        <p className="text-[11px] text-neutral-600">
+          Tied to a fight on the board and auto-graded from results.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <select
+            value={selEventId}
+            onChange={(e) => {
+              setSelEventId(e.target.value);
+              setSelFightId("");
+            }}
+            className="flex-1 min-w-0 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm outline-none focus:border-emerald-500"
+          >
+            <option value="">Pick an event</option>
+            {events.map((ev) => (
+              <option key={ev.id} value={ev.id}>
+                {ev.org} — {ev.event_name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={selFightId}
+            onChange={(e) => setSelFightId(e.target.value)}
+            disabled={!selEventId}
+            className="flex-1 min-w-0 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm outline-none focus:border-emerald-500 disabled:opacity-50"
+          >
+            <option value="">Pick a fight</option>
+            {fights
+              .filter((f) => f.event_id === selEventId)
+              .map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.fighter1_name} vs {f.fighter2_name}
+                </option>
+              ))}
+          </select>
+        </div>
+        {selEvent && selFight && (
+          <QuickBet
+            key={selFight.id}
+            fight={selFight}
+            eventLabel={`${selEvent.org} — ${selEvent.event_name}`}
+            eventDate={selEvent.event_date}
+            eventSourceUrl={selEvent.source_url}
+            onAdd={onAdd}
+            embedded
+          />
+        )}
+      </div>
+
+      <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3 space-y-2">
+        <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
+          Unverified bet (you grade it)
+        </p>
         <input
           value={selection}
           onChange={(e) => setSelection(e.target.value)}
@@ -1306,6 +1386,11 @@ function BetTracker({
                   <span className="text-neutral-500">
                     {fmtOdds(b.odds)} · {Number(b.stake)}u
                   </span>
+                  {b.bet_type !== "other" && (
+                    <span className="ml-2 text-[10px] uppercase tracking-wide text-emerald-500">
+                      verified
+                    </span>
+                  )}
                 </p>
                 <p className="text-[11px] text-neutral-600 truncate">
                   {b.event_context ? `${b.event_context} · ` : ""}
