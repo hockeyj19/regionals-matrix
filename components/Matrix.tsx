@@ -23,6 +23,7 @@ import { FighterLibrary } from "@/components/FighterLibrary";
 import { BetTracker } from "@/components/BetTracker";
 import { Leaderboard } from "@/components/Leaderboard";
 import { AdminPanel } from "@/components/AdminPanel";
+import { EVENTS_README, InfoButton, ReadMePanel } from "@/components/ReadMe";
 
 // per-promotion accent color for event headers
 const ORG_COLORS: Record<string, string> = {
@@ -95,6 +96,7 @@ export function Matrix({ user }: { user: User }) {
     "events"
   );
   const [isAdmin, setIsAdmin] = useState(false);
+  const [showEventsInfo, setShowEventsInfo] = useState(false);
   const [bets, setBets] = useState<BetRow[]>([]);
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
   const [matrixData, setMatrixData] = useState<Record<string, MatrixData>>({});
@@ -461,7 +463,8 @@ export function Matrix({ user }: { user: User }) {
         />
       ) : (
       <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-4">
-        <div className="flex justify-end">
+        <div className="flex items-center justify-between">
+          <InfoButton open={showEventsInfo} onClick={() => setShowEventsInfo((v) => !v)} />
           <button
             onClick={() => setUfcOnly((v) => !v)}
             className={`rounded-lg border px-3 py-1 text-sm ${
@@ -473,6 +476,7 @@ export function Matrix({ user }: { user: User }) {
             {ufcOnly ? "UFC only ✓" : "UFC only"}
           </button>
         </div>
+        {showEventsInfo && <ReadMePanel paragraphs={EVENTS_README} />}
 
         {loadingData && <p className="text-neutral-500">Loading fights…</p>}
         {!loadingData && events.length === 0 && (

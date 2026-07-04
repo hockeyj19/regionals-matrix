@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import type { LeaderboardRow, PublicBet } from "@/lib/types";
 import { SHARP_BOOKS, SOFT_BOOKS, bookTier, fmtDate, fmtOdds, fmtUnits, sideBtn } from "@/lib/format";
 import { FlagIcon } from "@/components/icons";
+import { InfoButton, LEADERBOARD_README, ReadMePanel } from "@/components/ReadMe";
 
 const MIN_BETS_TO_RANK = 5;
 
@@ -32,6 +33,7 @@ export function Leaderboard({ user }: { user: User }) {
   const [reporting, setReporting] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(true);
+  const [showInfo, setShowInfo] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -283,7 +285,8 @@ export function Leaderboard({ user }: { user: User }) {
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex gap-1">
+        <div className="flex items-center gap-1">
+          <InfoButton open={showInfo} onClick={() => setShowInfo((v) => !v)} />
           <button onClick={() => setTier("sharp")} className={sideBtn(tier === "sharp")}>
             Sharp books
           </button>
@@ -303,6 +306,7 @@ export function Leaderboard({ user }: { user: User }) {
           </button>
         </div>
       </div>
+      {showInfo && <ReadMePanel paragraphs={LEADERBOARD_README} />}
       <div className="flex flex-wrap items-center gap-1">
         <span className="text-[11px] text-neutral-500 uppercase tracking-wide mr-1">
           {tier === "sharp" ? "Sharp board books" : "Soft board books"}

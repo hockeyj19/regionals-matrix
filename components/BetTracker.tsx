@@ -6,6 +6,7 @@ import { betProfit, fmtDate, fmtOdds, fmtUnits, parseBetInputs, sideBtn } from "
 import { TrashIcon } from "@/components/icons";
 import { QuickBet } from "@/components/QuickBet";
 import { ReviewArchive } from "@/components/ReviewArchive";
+import { BETS_README, InfoButton, ReadMePanel } from "@/components/ReadMe";
 
 export function BetTracker({
   bets,
@@ -32,6 +33,7 @@ export function BetTracker({
   const [scope, setScope] = useState<"verified" | "all">("verified");
   const [selEventId, setSelEventId] = useState("");
   const [selFightId, setSelFightId] = useState("");
+  const [showInfo, setShowInfo] = useState(false);
 
   const selEvent = events.find((ev) => ev.id === selEventId) ?? null;
   const selFight = fights.find((f) => f.id === selFightId) ?? null;
@@ -119,14 +121,18 @@ export function BetTracker({
 
   return (
     <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-4">
-      <div className="flex justify-end gap-1">
-        <button onClick={() => setScope("verified")} className={sideBtn(scope === "verified")}>
-          Verified
-        </button>
-        <button onClick={() => setScope("all")} className={sideBtn(scope === "all")}>
-          All bets
-        </button>
+      <div className="flex items-center justify-between">
+        <InfoButton open={showInfo} onClick={() => setShowInfo((v) => !v)} />
+        <div className="flex gap-1">
+          <button onClick={() => setScope("verified")} className={sideBtn(scope === "verified")}>
+            Verified
+          </button>
+          <button onClick={() => setScope("all")} className={sideBtn(scope === "all")}>
+            All bets
+          </button>
+        </div>
       </div>
+      {showInfo && <ReadMePanel paragraphs={BETS_README} />}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
           <p className="text-[11px] text-neutral-500 uppercase tracking-wide">Record</p>
