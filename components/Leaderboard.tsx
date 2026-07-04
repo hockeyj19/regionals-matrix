@@ -18,6 +18,8 @@ type Agg = {
   pushes: number;
   staked: number;
   profit: number;
+  clv_sum: number;
+  clv_n: number;
 };
 
 export function Leaderboard({ user }: { user: User }) {
@@ -27,7 +29,7 @@ export function Leaderboard({ user }: { user: User }) {
   const [msg, setMsg] = useState("");
   const [tier, setTier] = useState<"sharp" | "soft">("sharp");
   const [ufcOnly, setUfcOnly] = useState(false);
-  const [sortBy, setSortBy] = useState<"profit" | "roi">("profit");
+  const [sortBy, setSortBy] = useState<"profit" | "roi" | "clv">("profit");
   const [openUser, setOpenUser] = useState<string | null>(null);
   const [userBets, setUserBets] = useState<Record<string, PublicBet[]>>({});
   const [reporting, setReporting] = useState<string | null>(null);
@@ -113,6 +115,8 @@ export function Leaderboard({ user }: { user: User }) {
           pushes: 0,
           staked: 0,
           profit: 0,
+          clv_sum: 0,
+          clv_n: 0,
         };
       }
       const a = byUser[r.username];
@@ -122,11 +126,18 @@ export function Leaderboard({ user }: { user: User }) {
       a.pushes += Number(r.pushes);
       a.staked += Number(r.staked);
       a.profit += Number(r.profit);
+      a.clv_sum += Number(r.clv_sum);
+      a.clv_n += Number(r.clv_n);
     });
 
   const roi = (r: Agg) => (r.staked > 0 ? (r.profit / r.staked) * 100 : 0);
+  const avgClv = (r: Agg) => (r.clv_n > 0 ? r.clv_sum / r.clv_n : -Infinity);
   const sorted = Object.values(byUser).sort((a, b) =>
-    sortBy === "profit" ? b.profit - a.profit : roi(b) - roi(a)
+    sortBy === "profit"
+      ? b.profit - a.profit
+      : sortBy === "roi"
+      ? roi(b) - roi(a)
+      : avgClv(b) - avgClv(a)
   );
   const ranked = sorted.filter((r) => r.bets >= MIN_BETS_TO_RANK);
   const building = sorted.filter((r) => r.bets < MIN_BETS_TO_RANK);
@@ -150,6 +161,7 @@ export function Leaderboard({ user }: { user: User }) {
 
   function renderRow(r: Agg, rank: number | null) {
     const rroi = roi(r);
+    const rclv = r.clv_n > 0 ? r.clv_sum / r.clv_n : null;
     const isOpen = openUser === r.username;
     const bets = visibleBets(r.username);
     return (
@@ -186,6 +198,13 @@ export function Leaderboard({ user }: { user: User }) {
           >
             {rroi >= 0 ? "+" : ""}
             {rroi.toFixed(1)}%
+          </span>
+          <span
+            className={`text-xs shrink-0 w-14 text-right ${
+              rclv === null ? "text-neutral-700" : rclv >= 0 ? "text-emerald-400" : "text-red-400"
+            }`}
+          >
+            {rclv === null ? "—" : `${rclv >= 0 ? "+" : ""}${rclv.toFixed(1)}`}
           </span>
         </button>
         {isOpen && (
@@ -242,6 +261,15 @@ export function Leaderboard({ user }: { user: User }) {
                   <p className="text-[11px] text-amber-500/80">
                     Above board when logged (best {fmtOdds(b.market_best)}
                     {b.market_book ? ` @ ${b.market_book}` : ""})
+                  </p>
+                )}
+                {b.clv !== null && (
+                  <p className="text-[11px] text-neutral-500">
+                    CLV{" "}
+                    <span className={Number(b.clv) >= 0 ? "text-emerald-400" : "text-red-400"}>
+                      {Number(b.clv) >= 0 ? "+" : ""}
+                      {Number(b.clv).toFixed(2)}
+                    </span>
                   </p>
                 )}
                 {reporting === b.id && (
@@ -312,6 +340,9 @@ export function Leaderboard({ user }: { user: User }) {
           </button>
           <button onClick={() => setSortBy("roi")} className={sideBtn(sortBy === "roi")}>
             ROI
+          </button>
+          <button onClick={() => setSortBy("clv")} className={sideBtn(sortBy === "clv")}>
+            CLV
           </button>
         </div>
       </div>

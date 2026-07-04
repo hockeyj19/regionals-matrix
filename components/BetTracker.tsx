@@ -85,6 +85,14 @@ export function BetTracker({
   });
   const orgKeys = Object.keys(orgs).sort((a, b) => orgs[b].n - orgs[a].n);
 
+  const clvBets = scoped.filter((b) => b.clv !== null);
+  const avgClv = clvBets.length
+    ? clvBets.reduce((s, b) => s + Number(b.clv), 0) / clvBets.length
+    : null;
+  const beatRate = clvBets.length
+    ? (clvBets.filter((b) => Number(b.clv) > 0).length / clvBets.length) * 100
+    : null;
+
   function submit() {
     if (!selection.trim()) {
       setError("Enter what the bet is on.");
@@ -106,6 +114,8 @@ export function BetTracker({
       market_best: null,
       market_book: null,
       market_checked_at: null,
+      close_odds: null,
+      clv: null,
       bet_type: "other",
       prop_method: null,
       prop_round: null,
@@ -158,6 +168,20 @@ export function BetTracker({
             {roi >= 0 ? "+" : ""}{roi.toFixed(1)}%
           </p>
         </div>
+        {avgClv !== null && (
+          <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
+            <p className="text-[11px] text-neutral-500 uppercase tracking-wide">Avg CLV</p>
+            <p className={`text-lg font-bold ${avgClv >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+              {avgClv >= 0 ? "+" : ""}{avgClv.toFixed(2)}
+            </p>
+          </div>
+        )}
+        {beatRate !== null && (
+          <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
+            <p className="text-[11px] text-neutral-500 uppercase tracking-wide">Beat close</p>
+            <p className="text-lg font-bold">{beatRate.toFixed(0)}%</p>
+          </div>
+        )}
       </div>
       {pendingCount > 0 && (
         <p className="text-xs text-neutral-500">
@@ -367,6 +391,15 @@ export function BetTracker({
                   <p className="text-[11px] text-amber-500/80">
                     Above board when logged (best {fmtOdds(b.market_best)}
                     {b.market_book ? ` @ ${b.market_book}` : ""})
+                  </p>
+                )}
+                {b.clv !== null && b.close_odds !== null && (
+                  <p className="text-[11px] text-neutral-500">
+                    Closed {fmtOdds(b.close_odds)} · CLV{" "}
+                    <span className={Number(b.clv) >= 0 ? "text-emerald-400" : "text-red-400"}>
+                      {Number(b.clv) >= 0 ? "+" : ""}
+                      {Number(b.clv).toFixed(2)}
+                    </span>
                   </p>
                 )}
               </div>

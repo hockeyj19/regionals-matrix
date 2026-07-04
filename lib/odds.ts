@@ -83,3 +83,21 @@ export function checkPrice(
     market_book: best.book,
   };
 }
+
+// --- Closing Line Value ---
+// American odds -> implied probability (vig included; fine for CLV deltas).
+export function impliedProb(odds: number): number {
+  return odds > 0 ? 100 / (odds + 100) : -odds / (-odds + 100);
+}
+
+// CLV in percentage points of implied probability. Positive = you got a
+// better number than the close (beat the market). Uses probability space so
+// +120 -> +140 and -140 -> -120 are measured on the same scale.
+export function clvPct(yourOdds: number, closeOdds: number): number {
+  return (impliedProb(closeOdds) - impliedProb(yourOdds)) * 100;
+}
+
+// "Beat the close" = your price paid more than the closing price.
+export function beatClose(yourOdds: number, closeOdds: number): boolean {
+  return impliedProb(yourOdds) < impliedProb(closeOdds);
+}

@@ -128,6 +128,8 @@ export function QuickBet({
       market_best: marketBest,
       market_book: marketBook,
       market_checked_at: checkedAt,
+      close_odds: null,
+      clv: null,
       // for over/under bets the fighter id is just a bout locator for the grader
       fighter_id: needsSide ? fid : fight.fighter1_id ?? fight.fighter2_id,
       bet_type: effectiveType,

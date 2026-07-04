@@ -132,7 +132,7 @@ export function Matrix({ user }: { user: User }) {
       .order("created_at", { ascending: false });
     const { data: bt } = await supabase
       .from("user_bets")
-      .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, book, price_check, market_best, market_book, market_checked_at")
+      .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, book, price_check, market_best, market_book, market_checked_at, close_odds, clv")
       .order("placed_at", { ascending: false });
     const { data: mx } = await supabase
       .from("user_fight_matrix")
@@ -322,7 +322,7 @@ export function Matrix({ user }: { user: User }) {
     const { data: b } = await supabase
       .from("user_bets")
       .insert({ user_id: user.id, ...bet })
-      .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, book, price_check, market_best, market_book, market_checked_at")
+      .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, book, price_check, market_best, market_book, market_checked_at, close_odds, clv")
       .single();
     if (b) setBets((prev) => [b, ...prev]);
   }

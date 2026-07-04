@@ -55,6 +55,8 @@ export type NewBet = {
   market_best: number | null;
   market_book: string | null;
   market_checked_at: string | null;
+  close_odds: number | null;
+  clv: number | null;
   bet_type: string;
   prop_method: string | null;
   prop_round: number | null;
@@ -103,6 +105,8 @@ export type LeaderboardRow = {
   pushes: number;
   staked: number;
   profit: number;
+  clv_sum: number;
+  clv_n: number;
 };
 
 export type PublicBet = {
@@ -119,4 +123,5 @@ export type PublicBet = {
   price_check: string | null;
   market_best: number | null;
   market_book: string | null;
+  clv: number | null;
 };
