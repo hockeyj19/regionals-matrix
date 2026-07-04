@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import type { LeaderboardRow, PublicBet } from "@/lib/types";
-import { bookTier, fmtDate, fmtOdds, fmtUnits, sideBtn } from "@/lib/format";
+import { SHARP_BOOKS, SOFT_BOOKS, bookTier, fmtDate, fmtOdds, fmtUnits, sideBtn } from "@/lib/format";
 import { FlagIcon } from "@/components/icons";
 
 const MIN_BETS_TO_RANK = 5;
@@ -303,10 +303,20 @@ export function Leaderboard({ user }: { user: User }) {
           </button>
         </div>
       </div>
+      <div className="flex flex-wrap items-center gap-1">
+        <span className="text-[11px] text-neutral-500 uppercase tracking-wide mr-1">
+          {tier === "sharp" ? "Sharp board books" : "Soft board books"}
+        </span>
+        {(tier === "sharp" ? SHARP_BOOKS : SOFT_BOOKS).map((b) => (
+          <span
+            key={b}
+            className="rounded-full border border-emerald-800 bg-emerald-600/10 px-2 py-0.5 text-[11px] text-emerald-300"
+          >
+            {b}
+          </span>
+        ))}
+      </div>
       <p className="text-xs text-neutral-500">
-        {tier === "sharp"
-          ? "Sharp board: BetOnline.ag, Pinnacle, Polymarket, Kalshi."
-          : "Soft board: Bet365, DraftKings, FanDuel, BetMGM, Caesars, BetRivers, Bovada."}{" "}
         Verified bets only, logged before the event started. Picks go public at start time.
       </p>
 

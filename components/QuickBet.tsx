@@ -6,11 +6,10 @@ import { BOOKS, eventStartISO, parseBetInputs, sideBtn } from "@/lib/format";
 
 const BET_TYPE_OPTIONS = [
   { key: "moneyline", label: "ML" },
-  { key: "method", label: "Method" },
-  { key: "round", label: "Round" },
-  { key: "method_round", label: "Method+Rd" },
-  { key: "over", label: "Over" },
-  { key: "under", label: "Under" },
+  { key: "method", label: "Methods" },
+  { key: "round", label: "Rounds" },
+  { key: "method_round", label: "Methods+Rounds" },
+  { key: "totals", label: "Totals" },
 ];
 
 export function QuickBet({
@@ -33,6 +32,7 @@ export function QuickBet({
   const [open, setOpen] = useState(embedded);
   const [side, setSide] = useState<1 | 2>(1);
   const [betType, setBetType] = useState("moneyline");
+  const [ouSide, setOuSide] = useState<"over" | "under">("over");
   const [method, setMethod] = useState("ko_tko");
   const [round, setRound] = useState("");
   const [line, setLine] = useState("2.5");
@@ -41,10 +41,10 @@ export function QuickBet({
   const [book, setBook] = useState("");
   const [error, setError] = useState("");
 
-  const needsSide = betType !== "over" && betType !== "under";
+  const needsSide = betType !== "totals";
   const needsMethod = betType === "method" || betType === "method_round";
   const needsRound = betType === "round" || betType === "method_round";
-  const needsLine = betType === "over" || betType === "under";
+  const needsLine = betType === "totals";
 
   function pickType(t: string) {
     setBetType(t);
@@ -80,14 +80,15 @@ export function QuickBet({
     }
     const name = side === 1 ? fight.fighter1_name : fight.fighter2_name;
     const fid = side === 1 ? fight.fighter1_id : fight.fighter2_id;
+    const effectiveType = betType === "totals" ? ouSide : betType;
     const methodLabel =
       method === "ko_tko" ? "KO/TKO" : method === "submission" ? "Submission" : "Decision";
     let selection = name;
     if (betType === "method") selection = `${name} by ${methodLabel}`;
     else if (betType === "round") selection = `${name} in R${propRound}`;
     else if (betType === "method_round") selection = `${name} by ${methodLabel} in R${propRound}`;
-    else if (betType === "over" || betType === "under")
-      selection = `${betType === "over" ? "Over" : "Under"} ${ouLine} — ${fight.fighter1_name} vs ${fight.fighter2_name}`;
+    else if (betType === "totals")
+      selection = `${ouSide === "over" ? "Over" : "Under"} ${ouLine} — ${fight.fighter1_name} vs ${fight.fighter2_name}`;
     onAdd({
       selection,
       event_context: eventLabel,
@@ -96,7 +97,7 @@ export function QuickBet({
       book,
       // for over/under bets the fighter id is just a bout locator for the grader
       fighter_id: needsSide ? fid : fight.fighter1_id ?? fight.fighter2_id,
-      bet_type: betType,
+      bet_type: effectiveType,
       prop_method: needsMethod ? method : null,
       prop_round: propRound,
       ou_line: ouLine,
@@ -107,6 +108,7 @@ export function QuickBet({
     setOpen(embedded);
     setSide(1);
     setBetType("moneyline");
+    setOuSide("over");
     setOdds("");
     setStake("");
     setRound("");
@@ -143,6 +145,16 @@ export function QuickBet({
           </button>
           <button onClick={() => setSide(2)} className={sideBtn(side === 2)}>
             {fight.fighter2_name}
+          </button>
+        </div>
+      )}
+      {needsLine && (
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={() => setOuSide("over")} className={sideBtn(ouSide === "over")}>
+            Over
+          </button>
+          <button onClick={() => setOuSide("under")} className={sideBtn(ouSide === "under")}>
+            Under
           </button>
         </div>
       )}
