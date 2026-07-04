@@ -46,6 +46,38 @@ function orgColor(org: string): string {
   return ORG_COLORS[org] ?? "text-emerald-400";
 }
 
+function PastNotes({
+  history,
+  fighterId,
+  context,
+}: {
+  history: NoteHistoryRow[];
+  fighterId: string;
+  context: string;
+}) {
+  const past = history.filter(
+    (h) =>
+      h.fighter_id === fighterId &&
+      h.event_context !== context &&
+      (h.notes ?? "").trim() !== ""
+  );
+  if (past.length === 0) return null;
+  const shown = past.slice(0, 3);
+  return (
+    <div className="space-y-1 border-l border-neutral-800 pl-2">
+      {shown.map((h) => (
+        <p key={h.id} className="text-[11px] text-neutral-500 whitespace-pre-wrap">
+          <span className="text-neutral-600">{h.event_context ?? "Library"} · </span>
+          {h.notes}
+        </p>
+      ))}
+      {past.length > 3 && (
+        <p className="text-[11px] text-neutral-600">+{past.length - 3} more in the Fighters tab</p>
+      )}
+    </div>
+  );
+}
+
 function fightHasMatrix(d?: MatrixData): boolean {
   if (!d) return false;
   return Object.values(d).some((m) =>
@@ -170,15 +202,21 @@ export function Matrix({ user }: { user: User }) {
     );
   }
 
-  // save a fighter's permanent scouting notes (shared across all their fights)
+  // save a note for a fighter. Each entry belongs to the booking it was
+  // written for (the event context): editing during the same booking updates
+  // that entry, a new booking gets a fresh one. The profile blob mirrors the
+  // latest text so the Fighters tab and its filters keep working.
   async function saveFighterNote(
     fighterId: string,
     fighterName: string,
     value: string,
     context: string
   ) {
-    const prevNotes = fighterNotes[fighterId]?.notes ?? "";
+    const latest = noteHistory.find((h) => h.fighter_id === fighterId);
+    const sameContext = !!latest && (latest.event_context ?? "Library") === context;
+    const prevNotes = sameContext && latest ? latest.notes ?? "" : "";
     if (value === prevNotes) return; // nothing changed, don't write
+
     const now = new Date().toISOString();
     setFighterNotes((prev) => ({
       ...prev,
@@ -201,8 +239,24 @@ export function Matrix({ user }: { user: User }) {
       { onConflict: "user_id,fighter_id" }
     );
 
-    // snapshot to history whenever the note actually changes
-    if (value.trim() !== "" && value.trim() !== prevNotes.trim()) {
+    if (value.trim() === "") {
+      // clearing the box removes this booking's entry
+      if (sameContext && latest) {
+        setNoteHistory((prev) => prev.filter((h) => h.id !== latest.id));
+        await supabase.from("user_fighter_note_history").delete().eq("id", latest.id);
+      }
+      return;
+    }
+
+    if (sameContext && latest) {
+      setNoteHistory((prev) =>
+        prev.map((h) => (h.id === latest.id ? { ...h, notes: value } : h))
+      );
+      await supabase
+        .from("user_fighter_note_history")
+        .update({ notes: value })
+        .eq("id", latest.id);
+    } else {
       const { data: h } = await supabase
         .from("user_fighter_note_history")
         .insert({
@@ -244,6 +298,15 @@ export function Matrix({ user }: { user: User }) {
       },
       { onConflict: "user_id,fighter_id" }
     );
+  }
+
+  // the note written for THIS booking (empty for a fresh matchup)
+  function noteFor(fighterId: string, ev: EventRow): string {
+    const ctx = `${ev.org} — ${ev.event_name}`;
+    const h = noteHistory.find(
+      (x) => x.fighter_id === fighterId && x.event_context === ctx
+    );
+    return h?.notes ?? "";
   }
 
   // delete a single note-history entry
@@ -537,12 +600,19 @@ export function Matrix({ user }: { user: User }) {
                             per-fight fallback when a fighter has no stable id */}
                         <div className="grid grid-cols-2 gap-2">
                           {f1id ? (
-                            <GrowingTextarea
-                              defaultValue={fighterNotes[f1id]?.notes ?? ""}
-                              onBlur={(v) =>
-                                saveFighterNote(f1id, f.fighter1_name, v, `${ev.org} — ${ev.event_name}`)
-                              }
-                            />
+                            <div className="space-y-1">
+                              <GrowingTextarea
+                                defaultValue={noteFor(f1id, ev)}
+                                onBlur={(v) =>
+                                  saveFighterNote(f1id, f.fighter1_name, v, `${ev.org} — ${ev.event_name}`)
+                                }
+                              />
+                              <PastNotes
+                                history={noteHistory}
+                                fighterId={f1id}
+                                context={`${ev.org} — ${ev.event_name}`}
+                              />
+                            </div>
                           ) : (
                             <GrowingTextarea
                               defaultValue={d?.notes1 ?? ""}
@@ -550,12 +620,19 @@ export function Matrix({ user }: { user: User }) {
                             />
                           )}
                           {f2id ? (
-                            <GrowingTextarea
-                              defaultValue={fighterNotes[f2id]?.notes ?? ""}
-                              onBlur={(v) =>
-                                saveFighterNote(f2id, f.fighter2_name, v, `${ev.org} — ${ev.event_name}`)
-                              }
-                            />
+                            <div className="space-y-1">
+                              <GrowingTextarea
+                                defaultValue={noteFor(f2id, ev)}
+                                onBlur={(v) =>
+                                  saveFighterNote(f2id, f.fighter2_name, v, `${ev.org} — ${ev.event_name}`)
+                                }
+                              />
+                              <PastNotes
+                                history={noteHistory}
+                                fighterId={f2id}
+                                context={`${ev.org} — ${ev.event_name}`}
+                              />
+                            </div>
                           ) : (
                             <GrowingTextarea
                               defaultValue={d?.notes2 ?? ""}

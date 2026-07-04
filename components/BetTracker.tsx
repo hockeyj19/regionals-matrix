@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { BetRow, EventRow, FightRow, NewBet, ReviewRow } from "@/lib/types";
 import { betProfit, fmtDate, fmtOdds, fmtUnits, parseBetInputs, sideBtn } from "@/lib/format";
-import { ReviewIcon, TrashIcon } from "@/components/icons";
+import { TrashIcon } from "@/components/icons";
 import { QuickBet } from "@/components/QuickBet";
 import { ReviewArchive } from "@/components/ReviewArchive";
 
@@ -32,7 +32,6 @@ export function BetTracker({
   const [scope, setScope] = useState<"verified" | "all">("verified");
   const [selEventId, setSelEventId] = useState("");
   const [selFightId, setSelFightId] = useState("");
-  const [openReview, setOpenReview] = useState(false);
 
   const selEvent = events.find((ev) => ev.id === selEventId) ?? null;
   const selFight = fights.find((f) => f.id === selFightId) ?? null;
@@ -120,30 +119,14 @@ export function BetTracker({
 
   return (
     <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <button
-          onClick={() => setOpenReview((v) => !v)}
-          title="Review archive"
-          className={`rounded-md border p-1.5 ${
-            openReview
-              ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
-              : reviews.length > 0
-              ? "border-emerald-700 text-emerald-400 hover:bg-neutral-900"
-              : "border-neutral-700 text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900"
-          }`}
-        >
-          <ReviewIcon />
+      <div className="flex justify-end gap-1">
+        <button onClick={() => setScope("verified")} className={sideBtn(scope === "verified")}>
+          Verified
         </button>
-        <div className="flex gap-1">
-          <button onClick={() => setScope("verified")} className={sideBtn(scope === "verified")}>
-            Verified
-          </button>
-          <button onClick={() => setScope("all")} className={sideBtn(scope === "all")}>
-            All bets
-          </button>
-        </div>
+        <button onClick={() => setScope("all")} className={sideBtn(scope === "all")}>
+          All bets
+        </button>
       </div>
-      {openReview && <ReviewArchive rows={reviews} />}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
           <p className="text-[11px] text-neutral-500 uppercase tracking-wide">Record</p>
@@ -275,6 +258,8 @@ export function BetTracker({
         </div>
         {error && <p className="text-xs text-amber-400">{error}</p>}
       </div>
+
+      <ReviewArchive rows={reviews} />
 
       {monthKeys.length > 0 && (
         <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
