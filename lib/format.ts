@@ -109,3 +109,47 @@ export const MATRIX_MARKETS: [string, string][] = [
   ["over_05_td", "Over 0.5 Takedowns"],
   ["over_15_td", "Over 1.5 Takedowns"],
 ];
+
+// Event start as an ISO timestamp from the scraped date + "H:MM AM/PM ET" time.
+// ET offset is approximated by month (Apr-Oct daylight time); no listed time
+// falls back to end-of-day ET, which is lenient by design.
+export function eventStartISO(eventDate: string | null, eventTime: string | null): string | null {
+  if (!eventDate) return null;
+  let hh = 23;
+  let mm = 59;
+  const m = (eventTime ?? "").match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  if (m) {
+    hh = parseInt(m[1], 10) % 12;
+    if (m[3].toUpperCase() === "PM") hh += 12;
+    mm = parseInt(m[2], 10);
+  }
+  const mo = Number(eventDate.split("-")[1]);
+  const offset = mo >= 4 && mo <= 10 ? "-04:00" : "-05:00";
+  const d = new Date(
+    `${eventDate}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00${offset}`
+  );
+  return isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+export const SHARP_BOOKS = ["BetOnline.ag", "Pinnacle", "Polymarket", "Kalshi"];
+export const SOFT_BOOKS = ["Bet365", "DraftKings", "FanDuel", "BetMGM", "Caesars", "BetRivers", "Bovada"];
+export const BOOKS = [
+  "BetOnline.ag",
+  "Pinnacle",
+  "Bet365",
+  "DraftKings",
+  "FanDuel",
+  "BetMGM",
+  "Caesars",
+  "BetRivers",
+  "Bovada",
+  "Polymarket",
+  "Kalshi",
+];
+
+export function bookTier(book: string | null): "sharp" | "soft" | null {
+  if (!book) return null;
+  if (SHARP_BOOKS.includes(book)) return "sharp";
+  if (SOFT_BOOKS.includes(book)) return "soft";
+  return null;
+}

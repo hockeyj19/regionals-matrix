@@ -21,6 +21,8 @@ import { QuickBet } from "@/components/QuickBet";
 import { FightMatrix } from "@/components/FightMatrix";
 import { FighterLibrary } from "@/components/FighterLibrary";
 import { BetTracker } from "@/components/BetTracker";
+import { Leaderboard } from "@/components/Leaderboard";
+import { AdminPanel } from "@/components/AdminPanel";
 
 // per-promotion accent color for event headers
 const ORG_COLORS: Record<string, string> = {
@@ -57,7 +59,10 @@ export function Matrix({ user }: { user: User }) {
   const [userData, setUserData] = useState<Record<string, UserData>>({});
   const [fighterNotes, setFighterNotes] = useState<Record<string, FighterNote>>({});
   const [noteHistory, setNoteHistory] = useState<NoteHistoryRow[]>([]);
-  const [view, setView] = useState<"events" | "fighters" | "bets">("events");
+  const [view, setView] = useState<"events" | "fighters" | "bets" | "leaderboard" | "admin">(
+    "events"
+  );
+  const [isAdmin, setIsAdmin] = useState(false);
   const [bets, setBets] = useState<BetRow[]>([]);
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
   const [matrixData, setMatrixData] = useState<Record<string, MatrixData>>({});
@@ -93,11 +98,15 @@ export function Matrix({ user }: { user: User }) {
       .order("created_at", { ascending: false });
     const { data: bt } = await supabase
       .from("user_bets")
-      .select("id, selection, event_context, event_date, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note")
+      .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, book")
       .order("placed_at", { ascending: false });
     const { data: mx } = await supabase
       .from("user_fight_matrix")
       .select("fight_id, data");
+    const { data: prof } = await supabase
+      .from("profiles")
+      .select("is_admin")
+      .eq("user_id", user.id);
     const { data: rv } = await supabase
       .from("user_fight_review")
       .select(
@@ -121,11 +130,12 @@ export function Matrix({ user }: { user: User }) {
     matrixRef.current = mmap;
     setMatrixData(mmap);
     setReviews(rv ?? []);
+    setIsAdmin(prof && prof.length > 0 ? !!prof[0].is_admin : false);
 
     // open all events by default
     setOpenEvents({});
     setLoadingData(false);
-  }, []);
+  }, [user.id]);
 
   useEffect(() => {
     loadData();
@@ -247,7 +257,7 @@ export function Matrix({ user }: { user: User }) {
     const { data: b } = await supabase
       .from("user_bets")
       .insert({ user_id: user.id, ...bet })
-      .select("id, selection, event_context, event_date, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note")
+      .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, book")
       .single();
     if (b) setBets((prev) => [b, ...prev]);
   }
@@ -291,7 +301,12 @@ export function Matrix({ user }: { user: User }) {
       <header className="sticky top-0 z-10 bg-neutral-950/90 backdrop-blur border-b border-neutral-800 px-4 sm:px-6 py-3">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <h1 className="text-lg font-bold">Tape Notes</h1>
+            <h1 className="text-lg font-bold flex items-center gap-2">
+              MMA Matrix
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-emerald-400 border border-emerald-800 rounded px-1 py-0.5">
+                beta
+              </span>
+            </h1>
             <nav className="flex gap-1">
               <button
                 onClick={() => setView("events")}
@@ -323,6 +338,28 @@ export function Matrix({ user }: { user: User }) {
               >
                 Bets
               </button>
+              <button
+                onClick={() => setView("leaderboard")}
+                className={`rounded-lg border px-3 py-1 text-sm ${
+                  view === "leaderboard"
+                    ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
+                    : "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
+                }`}
+              >
+                Leaderboard
+              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => setView("admin")}
+                  className={`rounded-lg border px-3 py-1 text-sm ${
+                    view === "admin"
+                      ? "border-amber-500 bg-amber-600/20 text-amber-300"
+                      : "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
+                  }`}
+                >
+                  Admin
+                </button>
+              )}
             </nav>
           </div>
           <div className="flex items-center gap-3 text-sm">
@@ -345,6 +382,10 @@ export function Matrix({ user }: { user: User }) {
           onSaveTags={saveFighterTags}
           onDeleteHistory={deleteHistoryEntry}
         />
+      ) : view === "admin" && isAdmin ? (
+        <AdminPanel />
+      ) : view === "leaderboard" ? (
+        <Leaderboard user={user} />
       ) : view === "bets" ? (
         <BetTracker
           bets={bets}
@@ -536,6 +577,7 @@ export function Matrix({ user }: { user: User }) {
                             fight={f}
                             eventLabel={`${ev.org} — ${ev.event_name}`}
                             eventDate={ev.event_date}
+                            eventTime={ev.event_time}
                             eventSourceUrl={ev.source_url}
                             onAdd={addBet}
                             embedded

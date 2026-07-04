@@ -98,7 +98,9 @@ export function BetTracker({
       selection: selection.trim(),
       event_context: context.trim() || null,
       event_date: null,
+      event_start: null,
       fighter_id: null,
+      book: null,
       bet_type: "other",
       prop_method: null,
       prop_round: null,
@@ -227,6 +229,7 @@ export function BetTracker({
             fight={selFight}
             eventLabel={`${selEvent.org} — ${selEvent.event_name}`}
             eventDate={selEvent.event_date}
+            eventTime={selEvent.event_time}
             eventSourceUrl={selEvent.source_url}
             onAdd={onAdd}
             embedded
@@ -347,12 +350,19 @@ export function BetTracker({
                   )}
                 </p>
                 <p className="text-[11px] text-neutral-600 truncate">
+                  {b.book ? `${b.book} · ` : ""}
                   {b.event_context ? `${b.event_context} · ` : ""}
                   {fmtDate(b.event_date ?? b.placed_at)}
                 </p>
                 {b.grade_note && (
                   <p className="text-[11px] text-neutral-500 italic truncate">{b.grade_note}</p>
                 )}
+                {b.bet_type !== "other" &&
+                  (!b.event_start || b.placed_at >= b.event_start) && (
+                    <p className="text-[11px] text-amber-500/80">
+                      Not leaderboard-eligible (no pre-start timestamp)
+                    </p>
+                  )}
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 {b.result !== "pending" && (

@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Tape Notes",
-  description: "Fight cards, scouting notes, and bet tracking for MMA handicapping",
+  title: "MMA Matrix (beta)",
+  description: "Verified MMA betting records, scouting notes, and handicapping tools",
 };
 
 export const viewport: Viewport = {

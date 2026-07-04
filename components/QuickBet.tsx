@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { FightRow, NewBet } from "@/lib/types";
-import { parseBetInputs, sideBtn } from "@/lib/format";
+import { BOOKS, eventStartISO, parseBetInputs, sideBtn } from "@/lib/format";
 
 const BET_TYPE_OPTIONS = [
   { key: "moneyline", label: "ML" },
@@ -17,6 +17,7 @@ export function QuickBet({
   fight,
   eventLabel,
   eventDate,
+  eventTime,
   eventSourceUrl,
   onAdd,
   embedded = false,
@@ -24,6 +25,7 @@ export function QuickBet({
   fight: FightRow;
   eventLabel: string;
   eventDate: string | null;
+  eventTime: string | null;
   eventSourceUrl: string | null;
   onAdd: (bet: NewBet) => void;
   embedded?: boolean;
@@ -36,6 +38,7 @@ export function QuickBet({
   const [line, setLine] = useState("2.5");
   const [odds, setOdds] = useState("");
   const [stake, setStake] = useState("");
+  const [book, setBook] = useState("");
   const [error, setError] = useState("");
 
   const needsSide = betType !== "over" && betType !== "under";
@@ -50,6 +53,10 @@ export function QuickBet({
   }
 
   function submit() {
+    if (!book) {
+      setError("Pick the book you bet at.");
+      return;
+    }
     const parsed = parseBetInputs(odds, stake);
     if (typeof parsed === "string") {
       setError(parsed);
@@ -85,6 +92,8 @@ export function QuickBet({
       selection,
       event_context: eventLabel,
       event_date: eventDate,
+      event_start: eventStartISO(eventDate, eventTime),
+      book,
       // for over/under bets the fighter id is just a bout locator for the grader
       fighter_id: needsSide ? fid : fight.fighter1_id ?? fight.fighter2_id,
       bet_type: betType,
@@ -138,6 +147,18 @@ export function QuickBet({
         </div>
       )}
       <div className="flex flex-wrap gap-2">
+        <select
+          value={book}
+          onChange={(e) => setBook(e.target.value)}
+          className="rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
+        >
+          <option value="">Book</option>
+          {BOOKS.map((b) => (
+            <option key={b} value={b}>
+              {b}
+            </option>
+          ))}
+        </select>
         {needsMethod && (
           <select
             value={method}

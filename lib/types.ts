@@ -48,7 +48,9 @@ export type NewBet = {
   selection: string;
   event_context: string | null;
   event_date: string | null;
+  event_start: string | null;
   fighter_id: string | null;
+  book: string | null;
   bet_type: string;
   prop_method: string | null;
   prop_round: number | null;
@@ -85,4 +87,29 @@ export type ReviewRow = {
   method: string | null;
   result_round: string | null;
   result_time: string | null;
+};
+
+export type LeaderboardRow = {
+  username: string;
+  tier: string;
+  org: string;
+  bets: number;
+  wins: number;
+  losses: number;
+  pushes: number;
+  staked: number;
+  profit: number;
+};
+
+export type PublicBet = {
+  id: string;
+  username: string;
+  selection: string;
+  event_context: string | null;
+  event_date: string | null;
+  odds: number;
+  stake: number;
+  book: string | null;
+  result: string;
+  placed_at: string;
 };
