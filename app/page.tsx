@@ -75,6 +75,9 @@ type BetRow = NewBet & {
   grade_note: string | null;
 };
 
+// per-market cells for one fight: { win_tko: { f1o, f1v, f2v, f2o }, ... }
+type MatrixData = Record<string, Record<string, string>>;
+
 // "2026-06-26" -> "Friday, June 26th"
 // Convert "7:00 PM ET" -> minutes since midnight, for sorting. No time sorts last.
 function timeToMinutes(t: string | null): number {
@@ -185,6 +188,62 @@ function TrashIcon() {
     </svg>
   );
 }
+
+function GridIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="w-4 h-4"
+    >
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M3 9h18" />
+      <path d="M3 15h18" />
+      <path d="M9 3v18" />
+      <path d="M15 3v18" />
+    </svg>
+  );
+}
+
+function DollarIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="w-4 h-4"
+    >
+      <path d="M12 2v20" />
+      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+    </svg>
+  );
+}
+
+const matrixCell =
+  "w-full rounded bg-neutral-800 border border-neutral-700 px-1 py-0.5 text-xs text-center outline-none focus:border-emerald-500";
+
+const MATRIX_MARKETS: [string, string][] = [
+  ["win_tko", "Win by TKO"],
+  ["win_sub", "Win by Sub"],
+  ["win_dec", "Win by Dec"],
+  ["ml", "ML"],
+  ["wins_itd", "Wins ITD"],
+  ["no_dec", "No Dec / Goes Dec"],
+  ["itd_only", "ITD Only"],
+  ["dec_only", "Dec Only"],
+  ["sub_only", "Sub Only"],
+  ["most_sig_strikes", "Most Significant Strikes"],
+  ["most_takedowns", "Most Takedowns"],
+  ["over_05_td", "Over 0.5 Takedowns"],
+  ["over_15_td", "Over 1.5 Takedowns"],
+];
 
 // Textarea that grows with its content instead of scrolling.
 function GrowingTextarea({
@@ -379,6 +438,9 @@ function Matrix({ user }: { user: User }) {
   const [noteHistory, setNoteHistory] = useState<NoteHistoryRow[]>([]);
   const [view, setView] = useState<"events" | "fighters" | "bets">("events");
   const [bets, setBets] = useState<BetRow[]>([]);
+  const [matrixData, setMatrixData] = useState<Record<string, MatrixData>>({});
+  const [openMatrix, setOpenMatrix] = useState<Record<string, boolean>>({});
+  const [openBet, setOpenBet] = useState<Record<string, boolean>>({});
   const [openEvents, setOpenEvents] = useState<Record<string, boolean>>({});
   const [loadingData, setLoadingData] = useState(true);
   const [ufcOnly, setUfcOnly] = useState(false);
@@ -407,6 +469,9 @@ function Matrix({ user }: { user: User }) {
       .from("user_bets")
       .select("id, selection, event_context, event_date, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note")
       .order("placed_at", { ascending: false });
+    const { data: mx } = await supabase
+      .from("user_fight_matrix")
+      .select("fight_id, data");
 
     setEvents(sortEvents(ev ?? []));
     setFights(fg ?? []);
@@ -419,6 +484,9 @@ function Matrix({ user }: { user: User }) {
     setFighterNotes(nmap);
     setNoteHistory(nh ?? []);
     setBets(bt ?? []);
+    const mmap: Record<string, MatrixData> = {};
+    (mx ?? []).forEach((row) => (mmap[row.fight_id] = row.data ?? {}));
+    setMatrixData(mmap);
 
     // open all events by default
     setOpenEvents({});
@@ -562,6 +630,25 @@ function Matrix({ user }: { user: User }) {
     await supabase.from("user_bets").delete().eq("id", id);
   }
 
+  // save one cell of a fight's handicapping matrix
+  async function saveMatrixCell(fightId: string, market: string, cell: string, value: string) {
+    const current = matrixData[fightId] ?? {};
+    const updated: MatrixData = {
+      ...current,
+      [market]: { ...(current[market] ?? {}), [cell]: value },
+    };
+    setMatrixData((prev) => ({ ...prev, [fightId]: updated }));
+    await supabase.from("user_fight_matrix").upsert(
+      {
+        user_id: user.id,
+        fight_id: fightId,
+        data: updated,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,fight_id" }
+    );
+  }
+
   return (
     <main className="min-h-screen bg-neutral-950 text-neutral-100">
       <header className="sticky top-0 z-10 bg-neutral-950/90 backdrop-blur border-b border-neutral-800 px-4 sm:px-6 py-3">
@@ -683,7 +770,35 @@ function Matrix({ user }: { user: User }) {
                     const f1id = f.fighter1_id;
                     const f2id = f.fighter2_id;
                     return (
-                      <div key={f.id} className="p-4 space-y-3">
+                      <div key={f.id} className="relative p-4 space-y-3">
+                        <div className="absolute left-2 top-2 flex gap-1">
+                          <button
+                            onClick={() =>
+                              setOpenMatrix((prev) => ({ ...prev, [f.id]: !prev[f.id] }))
+                            }
+                            title="Handicapping matrix"
+                            className={`rounded-md border p-1.5 ${
+                              openMatrix[f.id]
+                                ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
+                                : "border-neutral-700 text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900"
+                            }`}
+                          >
+                            <GridIcon />
+                          </button>
+                          <button
+                            onClick={() =>
+                              setOpenBet((prev) => ({ ...prev, [f.id]: !prev[f.id] }))
+                            }
+                            title="Log a bet"
+                            className={`rounded-md border p-1.5 ${
+                              openBet[f.id]
+                                ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
+                                : "border-neutral-700 text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900"
+                            }`}
+                          >
+                            <DollarIcon />
+                          </button>
+                        </div>
                         {f.is_main_event && (
                           <div className="text-[10px] font-bold text-amber-400 uppercase tracking-wider text-center">
                             Main Event
@@ -758,13 +873,25 @@ function Matrix({ user }: { user: User }) {
                             />
                           )}
                         </div>
-                        <QuickBet
-                          fight={f}
-                          eventLabel={`${ev.org} — ${ev.event_name}`}
-                          eventDate={ev.event_date}
-                          eventSourceUrl={ev.source_url}
-                          onAdd={addBet}
-                        />
+                        {openMatrix[f.id] && (
+                          <FightMatrix
+                            fight={f}
+                            data={matrixData[f.id] ?? {}}
+                            onSave={(market, cell, value) =>
+                              saveMatrixCell(f.id, market, cell, value)
+                            }
+                          />
+                        )}
+                        {openBet[f.id] && (
+                          <QuickBet
+                            fight={f}
+                            eventLabel={`${ev.org} — ${ev.event_name}`}
+                            eventDate={ev.event_date}
+                            eventSourceUrl={ev.source_url}
+                            onAdd={addBet}
+                            embedded
+                          />
+                        )}
                       </div>
                     );
                   })}
@@ -1448,6 +1575,73 @@ function BetTracker({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function FightMatrix({
+  fight,
+  data,
+  onSave,
+}: {
+  fight: FightRow;
+  data: MatrixData;
+  onSave: (market: string, cell: string, value: string) => void;
+}) {
+  return (
+    <div className="rounded-md border border-neutral-800 bg-neutral-900/60 overflow-x-auto">
+      <div className="min-w-[560px]">
+        <div className="grid grid-cols-[4rem_1fr_11rem_1fr_4rem] gap-1 items-center px-2 py-1.5 border-b border-neutral-800">
+          <span className="text-[10px] text-neutral-500 uppercase tracking-wide text-center">
+            Odds+
+          </span>
+          <span className="text-[11px] font-semibold text-neutral-300 text-center truncate">
+            {fight.fighter1_name}
+          </span>
+          <span />
+          <span className="text-[11px] font-semibold text-neutral-300 text-center truncate">
+            {fight.fighter2_name}
+          </span>
+          <span className="text-[10px] text-neutral-500 uppercase tracking-wide text-center">
+            Odds+
+          </span>
+        </div>
+        <div className="divide-y divide-neutral-800/70">
+          {MATRIX_MARKETS.map(([key, label]) => {
+            const row = data[key] ?? {};
+            return (
+              <div
+                key={key}
+                className="grid grid-cols-[4rem_1fr_11rem_1fr_4rem] gap-1 items-center px-2 py-1"
+              >
+                <input
+                  defaultValue={row.f1o ?? ""}
+                  onBlur={(e) => onSave(key, "f1o", e.target.value)}
+                  className={matrixCell}
+                />
+                <input
+                  defaultValue={row.f1v ?? ""}
+                  onBlur={(e) => onSave(key, "f1v", e.target.value)}
+                  className={matrixCell}
+                />
+                <span className="text-[11px] font-semibold text-amber-400/90 text-center px-1">
+                  {label}
+                </span>
+                <input
+                  defaultValue={row.f2v ?? ""}
+                  onBlur={(e) => onSave(key, "f2v", e.target.value)}
+                  className={matrixCell}
+                />
+                <input
+                  defaultValue={row.f2o ?? ""}
+                  onBlur={(e) => onSave(key, "f2o", e.target.value)}
+                  className={matrixCell}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
