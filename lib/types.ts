@@ -71,6 +71,7 @@ export type BetRow = NewBet & {
   result: string;
   placed_at: string;
   grade_note: string | null;
+  settled_by: string | null; // 'auto' (scraper) | 'user' | null - server-controlled
 };
 
 // per-market cells for one fight: { win_tko: { f1o, f1v, f2v, f2o }, ... }

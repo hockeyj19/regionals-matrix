@@ -14,7 +14,7 @@ import type {
   MatrixData,
   ReviewRow,
 } from "@/lib/types";
-import { sortEvents, formatEventMeta, tapologyUrl } from "@/lib/format";
+import { eventStarted, sortEvents, formatEventMeta, tapologyUrl } from "@/lib/format";
 import { GridIcon, DollarIcon } from "@/components/icons";
 import { GrowingTextarea } from "@/components/GrowingTextarea";
 import { QuickBet } from "@/components/QuickBet";
@@ -132,7 +132,7 @@ export function Matrix({ user }: { user: User }) {
       .order("created_at", { ascending: false });
     const { data: bt } = await supabase
       .from("user_bets")
-      .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, book, price_check, market_best, market_book, market_checked_at, close_odds, clv")
+      .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, settled_by, book, price_check, market_best, market_book, market_checked_at, close_odds, clv")
       .order("placed_at", { ascending: false });
     const { data: mx } = await supabase
       .from("user_fight_matrix")
@@ -322,21 +322,32 @@ export function Matrix({ user }: { user: User }) {
     const { data: b } = await supabase
       .from("user_bets")
       .insert({ user_id: user.id, ...bet })
-      .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, book, price_check, market_best, market_book, market_checked_at, close_odds, clv")
+      .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, settled_by, book, price_check, market_best, market_book, market_checked_at, close_odds, clv")
       .single();
     if (b) setBets((prev) => [b, ...prev]);
   }
 
-  // settle / unsettle a bet
+  // settle / unsettle a bet. A DB trigger enforces the same rules server-side:
+  // no grading before the event starts, and auto-graded results are final.
   async function setBetResult(id: string, result: string) {
-    setBets((prev) => prev.map((b) => (b.id === id ? { ...b, result } : b)));
-    await supabase.from("user_bets").update({ result }).eq("id", id);
+    const bet = bets.find((b) => b.id === id);
+    if (!bet) return;
+    if (bet.settled_by === "auto") return;
+    if (result !== "pending" && bet.bet_type !== "other" && !eventStarted(bet.event_start))
+      return;
+    const settled_by = result === "pending" ? null : "user";
+    setBets((prev) => prev.map((b) => (b.id === id ? { ...b, result, settled_by } : b)));
+    const { error } = await supabase.from("user_bets").update({ result }).eq("id", id);
+    if (error) loadData(); // server said no - resync so the UI stays honest
   }
 
-  // delete a bet
+  // delete a bet - verified bets lock once their event starts (admin voids after)
   async function deleteBet(id: string) {
+    const bet = bets.find((b) => b.id === id);
+    if (bet && bet.bet_type !== "other" && eventStarted(bet.event_start)) return;
     setBets((prev) => prev.filter((b) => b.id !== id));
-    await supabase.from("user_bets").delete().eq("id", id);
+    const { error } = await supabase.from("user_bets").delete().eq("id", id);
+    if (error) loadData();
   }
 
   // save one cell of a fight's handicapping matrix (via ref + ordered queue)

@@ -52,6 +52,11 @@ export function tapologyUrl(name: string): string {
   return `https://www.tapology.com/search?term=${encodeURIComponent(name)}&mainSearchFilter=fighters`;
 }
 
+// Has this bet's event started? Null start = never locks (unverified bets).
+export function eventStarted(eventStart: string | null): boolean {
+  return !!eventStart && new Date(eventStart).getTime() <= Date.now();
+}
+
 // American-odds profit (in units) for a settled bet; pending/push = 0
 export function betProfit(b: BetRow): number {
   if (b.result === "win")

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { BetRow, EventRow, FightRow, NewBet, ReviewRow } from "@/lib/types";
-import { betProfit, fmtDate, fmtOdds, fmtUnits, parseBetInputs, sideBtn } from "@/lib/format";
+import { betProfit, eventStarted, fmtDate, fmtOdds, fmtUnits, parseBetInputs, sideBtn } from "@/lib/format";
 import { TrashIcon } from "@/components/icons";
 import { QuickBet } from "@/components/QuickBet";
 import { ReviewArchive } from "@/components/ReviewArchive";
@@ -353,6 +353,16 @@ export function BetTracker({
 
       {bets.map((b) => {
         const p = betProfit(b);
+        const verified = b.bet_type !== "other";
+        const started = eventStarted(b.event_start);
+        const autoFinal = b.settled_by === "auto";
+        // unverified bets grade any time; verified ones only after the event
+        // starts, and never once the scraper has settled them from results
+        const canGrade = verified ? started && !autoFinal : true;
+        // verified bets lock at start: from then on only an admin void removes them
+        const canDelete = verified ? !started : true;
+        const needsManual =
+          b.result === "pending" && !!b.grade_note && /settle manually/i.test(b.grade_note);
         return (
           <div key={b.id} className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
             <div className="flex items-center justify-between gap-2">
@@ -379,7 +389,13 @@ export function BetTracker({
                   {fmtDate(b.event_date ?? b.placed_at)}
                 </p>
                 {b.grade_note && (
-                  <p className="text-[11px] text-neutral-500 italic truncate">{b.grade_note}</p>
+                  <p
+                    className={`text-[11px] italic truncate ${
+                      needsManual ? "text-amber-400" : "text-neutral-500"
+                    }`}
+                  >
+                    {b.grade_note}
+                  </p>
                 )}
                 {b.bet_type !== "other" &&
                   (!b.event_start || b.placed_at >= b.event_start) && (
@@ -409,6 +425,24 @@ export function BetTracker({
                     {fmtUnits(p)}
                   </span>
                 )}
+                {verified && !started && (
+                  <span
+                    title="Grading opens at event start; results auto-grade from the scrape"
+                    className="text-[10px] uppercase tracking-wide text-neutral-500 border border-neutral-800 rounded px-1.5 py-0.5"
+                  >
+                    locks at start
+                  </span>
+                )}
+                {autoFinal && (
+                  <span
+                    title="Settled automatically from official results - final"
+                    className="text-[10px] uppercase tracking-wide text-emerald-500 border border-emerald-900 rounded px-1.5 py-0.5"
+                  >
+                    auto ✓
+                  </span>
+                )}
+                {canGrade && (
+                <>
                 <button
                   onClick={() => onSetResult(b.id, b.result === "win" ? "pending" : "win")}
                   className={`rounded border px-1.5 py-0.5 text-[11px] font-bold ${
@@ -439,13 +473,17 @@ export function BetTracker({
                 >
                   P
                 </button>
-                <button
-                  onClick={() => onDelete(b.id)}
-                  title="Delete bet"
-                  className="shrink-0 rounded-md p-1.5 text-neutral-500 hover:text-red-400 hover:bg-neutral-800"
-                >
-                  <TrashIcon />
-                </button>
+                </>
+                )}
+                {canDelete && (
+                  <button
+                    onClick={() => onDelete(b.id)}
+                    title="Delete bet"
+                    className="shrink-0 rounded-md p-1.5 text-neutral-500 hover:text-red-400 hover:bg-neutral-800"
+                  >
+                    <TrashIcon />
+                  </button>
+                )}
               </div>
             </div>
           </div>
