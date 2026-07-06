@@ -134,7 +134,7 @@ export function Matrix({ user }: { user: User }) {
       .order("created_at", { ascending: false });
     const { data: bt } = await supabase
       .from("user_bets")
-      .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, settled_by, delete_requested_at, book, price_check, market_best, market_book, market_checked_at, close_odds, clv")
+      .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, settled_by, delete_requested_at, published_at, book, price_check, market_best, market_book, market_checked_at, close_odds, clv")
       .order("placed_at", { ascending: false });
     const { data: mx } = await supabase
       .from("user_fight_matrix")
@@ -324,7 +324,7 @@ export function Matrix({ user }: { user: User }) {
     const { data: b } = await supabase
       .from("user_bets")
       .insert({ user_id: user.id, ...bet })
-      .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, settled_by, delete_requested_at, book, price_check, market_best, market_book, market_checked_at, close_odds, clv")
+      .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, settled_by, delete_requested_at, published_at, book, price_check, market_best, market_book, market_checked_at, close_odds, clv")
       .single();
     if (b) setBets((prev) => [b, ...prev]);
   }
@@ -351,6 +351,21 @@ export function Matrix({ user }: { user: User }) {
     if (bet && bet.bet_type !== "other") return;
     setBets((prev) => prev.filter((b) => b.id !== id));
     const { error } = await supabase.from("user_bets").delete().eq("id", id);
+    if (error) loadData();
+  }
+
+  // make a verified pick visible on the public profile before its event
+  // starts. One-way by design - a shared pick can't be quietly unshared -
+  // and the DB stamps the share time itself, so it can't be backdated.
+  async function publishBet(id: string) {
+    const stamp = new Date().toISOString();
+    setBets((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, published_at: stamp } : b))
+    );
+    const { error } = await supabase
+      .from("user_bets")
+      .update({ published_at: stamp })
+      .eq("id", id);
     if (error) loadData();
   }
 
@@ -449,7 +464,7 @@ export function Matrix({ user }: { user: User }) {
                     : "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
                 }`}
               >
-                Verified Leaderboard
+                Leaderboard
               </button>
               {isAdmin && (
                 <button
@@ -511,6 +526,7 @@ export function Matrix({ user }: { user: User }) {
           onSetResult={setBetResult}
           onDelete={deleteBet}
           onRequestDelete={requestBetDelete}
+          onPublish={publishBet}
         />
       ) : (
       <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-4">

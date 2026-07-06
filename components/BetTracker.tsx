@@ -17,6 +17,7 @@ export function BetTracker({
   onSetResult,
   onDelete,
   onRequestDelete,
+  onPublish,
 }: {
   bets: BetRow[];
   reviews: ReviewRow[];
@@ -26,6 +27,7 @@ export function BetTracker({
   onSetResult: (id: string, result: string) => void;
   onDelete: (id: string) => void;
   onRequestDelete: (id: string, requested: boolean) => void;
+  onPublish: (id: string) => void;
 }) {
   const [selection, setSelection] = useState("");
   const [context, setContext] = useState("");
@@ -367,6 +369,11 @@ export function BetTracker({
         const canDelete = !verified;
         const needsManual =
           b.result === "pending" && !!b.grade_note && /settle manually/i.test(b.grade_note);
+        // pre-start picks can be shared to the public profile early; only
+        // leaderboard-eligible bets (logged before start) qualify
+        const canPublish =
+          verified && !started && !b.published_at &&
+          !!b.event_start && b.placed_at < b.event_start;
         return (
           <div key={b.id} className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
             <div className="flex items-center justify-between gap-2">
@@ -478,6 +485,23 @@ export function BetTracker({
                   P
                 </button>
                 </>
+                )}
+                {canPublish && (
+                  <button
+                    onClick={() => onPublish(b.id)}
+                    title="Show this pick on your public profile now instead of at event start. This can't be undone - shared picks stay shared."
+                    className="rounded border border-emerald-800 px-1.5 py-0.5 text-[11px] text-emerald-500 hover:bg-neutral-900"
+                  >
+                    make public
+                  </button>
+                )}
+                {verified && !started && b.published_at && (
+                  <span
+                    title="Visible on your public profile before the event"
+                    className="text-[10px] uppercase tracking-wide text-emerald-400 border border-emerald-900 rounded px-1.5 py-0.5"
+                  >
+                    public
+                  </span>
                 )}
                 {verified && !b.delete_requested_at && (
                   <button

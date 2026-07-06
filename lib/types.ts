@@ -73,6 +73,7 @@ export type BetRow = NewBet & {
   grade_note: string | null;
   settled_by: string | null; // 'auto' (scraper) | 'user' | null - server-controlled
   delete_requested_at: string | null; // owner asked for removal (verified bets)
+  published_at: string | null; // owner made the pick public before event start
 };
 
 // per-market cells for one fight: { win_tko: { f1o, f1v, f2v, f2o }, ... }
@@ -116,6 +117,8 @@ export type PublicBet = {
   username: string;
   selection: string;
   bet_type: string | null;
+  event_start: string | null;
+  published_at: string | null;
   event_context: string | null;
   event_date: string | null;
   odds: number;

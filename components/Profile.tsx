@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import type { PublicBet } from "@/lib/types";
-import { betProfit, bookTier, fmtDate, fmtOdds, fmtUnits } from "@/lib/format";
+import { betProfit, bookTier, fmtDate, fmtOdds, fmtUnits, sideBtn } from "@/lib/format";
 
 /**
  * Public tipster profile. Everything here is computed from the same
@@ -66,6 +66,11 @@ export function Profile({
   const [searchMsg, setSearchMsg] = useState("");
   const [selfLoaded, setSelfLoaded] = useState(false);
   const [nowTs] = useState(() => Date.now()); // frozen per mount, keeps render pure
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarMsg, setAvatarMsg] = useState("");
+  const [histFilter, setHistFilter] = useState<"all" | "win" | "loss" | "push" | "live">("all");
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let alive = true;
@@ -93,6 +98,11 @@ export function Profile({
       .select("*")
       .eq("username", username)
       .order("placed_at", { ascending: false });
+    const { data: prof } = await supabase
+      .from("public_profiles")
+      .select("avatar_url")
+      .eq("username", username);
+    setAvatarUrl(prof && prof.length > 0 ? prof[0].avatar_url : null);
     setPicks(data ?? []);
     setLoadedFor(username);
   }, []);
@@ -102,6 +112,41 @@ export function Profile({
   }, [shown, load]);
 
   const loading = !!shown && loadedFor !== shown;
+  const isSelf = !!shown && shown === selfName;
+
+  async function onAvatarFile(e: ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f || !isSelf) return;
+    if (!f.type.startsWith("image/")) {
+      setAvatarMsg("Pick an image file.");
+      return;
+    }
+    if (f.size > 2 * 1024 * 1024) {
+      setAvatarMsg("Keep it under 2MB.");
+      return;
+    }
+    setAvatarBusy(true);
+    setAvatarMsg("");
+    const path = `${user.id}.png`;
+    const { error: upErr } = await supabase.storage
+      .from("avatars")
+      .upload(path, f, { upsert: true, contentType: f.type });
+    if (upErr) {
+      setAvatarMsg("Upload failed - has the avatar SQL been run?");
+      setAvatarBusy(false);
+      return;
+    }
+    const { data: pub } = supabase.storage.from("avatars").getPublicUrl(path);
+    const url = `${pub.publicUrl}?v=${Date.now()}`;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ avatar_url: url })
+      .eq("user_id", user.id);
+    if (error) setAvatarMsg("Could not save the avatar.");
+    else setAvatarUrl(url);
+    setAvatarBusy(false);
+  }
 
   async function findUser() {
     const q = search.trim();
@@ -192,10 +237,28 @@ export function Profile({
 
     const first = picks.length ? picks[picks.length - 1].placed_at : null;
 
+    // "current bets": picks shared before their event started
+    const upcomingIds = new Set(
+      picks
+        .filter((b) => b.event_start && new Date(b.event_start).getTime() > nowTs)
+        .map((b) => b.id)
+    );
+    const upcoming = picks
+      .filter((b) => upcomingIds.has(b.id))
+      .sort((a, b2) => (a.event_date ?? "").localeCompare(b2.event_date ?? ""));
+    const history = picks.filter((b) => !upcomingIds.has(b.id));
+    const live = history.filter((b) => b.result === "pending");
+    const avgStake = overall.n ? overall.staked / overall.n : null;
+    const topOrg =
+      Object.entries(orgs).sort((a, b2) => b2[1].n - a[1].n)[0]?.[0] ?? null;
+    const peak = Math.max(0, ...curve);
+    const trough = Math.min(0, ...curve);
+
     return {
       settled, pending, overall, last30, tiers, orgs, types, books,
       curve, curStreak: cur, curKind, bestStreak, bestWin, avgOdds,
-      avgClv, beatClose, first,
+      avgClv, beatClose, first, upcoming, history, live, avgStake, topOrg,
+      peak, trough,
     };
   }, [picks, nowTs]);
 
@@ -307,27 +370,99 @@ export function Profile({
       {shown && (
         <>
           <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="text-xl font-bold">
-                {shown}
-                {shown === selfName && <span className="text-neutral-600 text-sm"> (you)</span>}
-              </h2>
-              <span className="text-[11px] uppercase tracking-wide text-emerald-500 border border-emerald-900 rounded px-1.5 py-0.5">
-                verified record
-              </span>
+            <div className="flex items-start gap-4">
+              <div className="relative shrink-0">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={
+                    avatarUrl ??
+                    `https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(shown)}`
+                  }
+                  alt={shown}
+                  className="w-16 h-16 rounded-full border border-neutral-800 bg-neutral-900 object-cover"
+                />
+                {isSelf && (
+                  <>
+                    <button
+                      onClick={() => fileRef.current?.click()}
+                      disabled={avatarBusy}
+                      title="Change your display picture"
+                      className="absolute -bottom-1 -right-1 rounded-full border border-neutral-700 bg-neutral-900 px-1.5 py-0.5 text-[10px] text-neutral-400 hover:text-emerald-400"
+                    >
+                      {avatarBusy ? "…" : "edit"}
+                    </button>
+                    <input
+                      ref={fileRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={onAvatarFile}
+                      className="hidden"
+                    />
+                  </>
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h2 className="text-xl font-bold truncate">
+                    {shown}
+                    {isSelf && <span className="text-neutral-600 text-sm"> (you)</span>}
+                  </h2>
+                  <span className="text-[11px] uppercase tracking-wide text-emerald-500 border border-emerald-900 rounded px-1.5 py-0.5">
+                    verified record
+                  </span>
+                </div>
+                <p className="text-xs text-neutral-500 mt-1">
+                  {picks.length} public pick{picks.length === 1 ? "" : "s"}
+                  {stats.upcoming.length > 0 ? ` · ${stats.upcoming.length} upcoming` : ""}
+                  {stats.live.length > 0 ? ` · ${stats.live.length} live` : ""}
+                  {stats.first ? ` · tracking since ${fmtDate(stats.first)}` : ""}
+                  {stats.topOrg ? ` · most active: ${stats.topOrg}` : ""}
+                </p>
+                <p className="text-[11px] text-neutral-600 mt-1">
+                  Every number below comes from verified bets logged before their event
+                  started - the same window the leaderboard scores. Nothing here is
+                  self-reported.
+                </p>
+                {avatarMsg && <p className="text-xs text-amber-400 mt-1">{avatarMsg}</p>}
+              </div>
             </div>
-            <p className="text-xs text-neutral-500 mt-1">
-              {picks.length} public pick{picks.length === 1 ? "" : "s"}
-              {stats.first ? ` · tracking since ${fmtDate(stats.first)}` : ""}
-              {stats.pending.length > 0
-                ? ` · ${stats.pending.length} live/unsettled`
-                : ""}
-            </p>
-            <p className="text-[11px] text-neutral-600 mt-1">
-              Every number below comes from verified bets logged before their event started -
-              the same window the leaderboard scores. Nothing here is self-reported.
-            </p>
           </div>
+
+          {!loading && stats.upcoming.length > 0 && (
+            <div className="rounded-xl border border-emerald-900/60 bg-neutral-900/40 p-3">
+              <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wide mb-2">
+                Upcoming picks · shared before the event
+              </p>
+              <div className="space-y-2">
+                {stats.upcoming.map((b) => (
+                  <div key={b.id} className="border-b border-neutral-900 pb-1 last:border-0">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="truncate">
+                        {b.selection}{" "}
+                        <span className="text-neutral-500">
+                          {fmtOdds(b.odds)} · {Number(b.stake)}u
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-neutral-400">
+                        {fmtDate(b.event_date ?? b.placed_at)}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-neutral-600 truncate">
+                      {b.book ? `${b.book} · ` : ""}
+                      {b.event_context ? `${b.event_context} · ` : ""}
+                      {b.published_at ? `shared ${fmtDate(b.published_at)}` : "shared early"}
+                      {b.price_check === "verified" && (
+                        <span className="ml-1 uppercase tracking-wide text-amber-300">
+                          {" "}
+                          market ✓
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {loading && <p className="text-neutral-500">Loading profile...</p>}
 
@@ -364,14 +499,23 @@ export function Profile({
                 )}
                 {statCard(
                   "Streak",
-                  stats.curKind ? `${stats.curKind}${stats.curStreak}` : "—",
+                  stats.curKind
+                    ? `${stats.curKind}${stats.curStreak}${
+                        stats.bestStreak ? ` · best W${stats.bestStreak}` : ""
+                      }`
+                    : "—",
                   stats.curKind === "W"
                     ? "text-emerald-400"
                     : stats.curKind === "L"
                     ? "text-red-400"
                     : ""
                 )}
-                {statCard("Best win streak", stats.bestStreak ? `W${stats.bestStreak}` : "—")}
+                {statCard(
+                  "Avg stake",
+                  stats.avgStake !== null
+                    ? `${Math.round(stats.avgStake * 100) / 100}u`
+                    : "—"
+                )}
               </div>
 
               {stats.curve.length >= 2 && (
@@ -380,7 +524,13 @@ export function Profile({
                     <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
                       Bankroll · {stats.settled.length} settled picks
                     </p>
-                    <span className={`text-xs ${profitTone}`}>{fmtUnits(o.profit)}</span>
+                    <span className="text-xs text-neutral-500">
+                      peak <span className="text-emerald-400">{fmtUnits(stats.peak)}</span>
+                      {" · "}low{" "}
+                      <span className="text-red-400">{fmtUnits(stats.trough)}</span>
+                      {" · "}
+                      <span className={profitTone}>{fmtUnits(o.profit)}</span>
+                    </span>
                   </div>
                   <ProfileCurve values={stats.curve} />
                 </div>
@@ -428,11 +578,33 @@ export function Profile({
               {breakdown("By book", stats.books)}
 
               <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
-                <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide mb-2">
-                  Verified picks
-                </p>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
+                    Pick history
+                  </p>
+                  <div className="flex gap-1">
+                    {(["all", "win", "loss", "push", "live"] as const).map((f) => (
+                      <button
+                        key={f}
+                        onClick={() => setHistFilter(f)}
+                        className={sideBtn(histFilter === f)}
+                      >
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="space-y-2">
-                  {picks.slice(0, 100).map((b) => (
+                  {stats.history
+                    .filter((b) =>
+                      histFilter === "all"
+                        ? true
+                        : histFilter === "live"
+                        ? b.result === "pending"
+                        : b.result === histFilter
+                    )
+                    .slice(0, 100)
+                    .map((b) => (
                     <div key={b.id} className="border-b border-neutral-900 pb-1 last:border-0">
                       <div className="flex items-center justify-between gap-2 text-xs">
                         <span className="truncate">
@@ -481,7 +653,7 @@ export function Profile({
                       </p>
                     </div>
                   ))}
-                  {picks.length > 100 && (
+                  {stats.history.length > 100 && (
                     <p className="text-[11px] text-neutral-600">Showing the latest 100.</p>
                   )}
                 </div>
@@ -507,8 +679,10 @@ function ProfileCurve({ values }: { values: number[] }) {
     .map((v, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(2)},${y(v).toFixed(2)}`)
     .join(" ");
   const color = pts[pts.length - 1] >= 0 ? "#34d399" : "#f87171";
+  const area = `${d} L${W.toFixed(2)},${H.toFixed(2)} L0,${H.toFixed(2)} Z`;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-32">
+      <path d={area} fill={color} opacity="0.1" />
       <line
         x1="0"
         y1={y(0)}
@@ -519,6 +693,12 @@ function ProfileCurve({ values }: { values: number[] }) {
         vectorEffect="non-scaling-stroke"
       />
       <path d={d} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+      <circle
+        cx={x(pts.length - 1)}
+        cy={y(pts[pts.length - 1])}
+        r="1.5"
+        fill={color}
+      />
     </svg>
   );
 }
