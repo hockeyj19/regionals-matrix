@@ -266,6 +266,17 @@ export function Profile({
   const roi = splitRoi(o);
   const profitTone = o.profit >= 0 ? "text-emerald-400" : "text-red-400";
 
+  function emptyPanel(title: string, hint: string) {
+    return (
+      <div className="rounded-xl border border-dashed border-neutral-800 bg-neutral-900/20 p-3">
+        <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-1">
+          {title}
+        </p>
+        <p className="text-xs text-neutral-600">{hint}</p>
+      </div>
+    );
+  }
+
   function statCard(label: string, value: string, tone = "") {
     return (
       <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
@@ -277,7 +288,8 @@ export function Profile({
 
   function breakdown(title: string, rows: Record<string, Split>) {
     const keys = Object.keys(rows).sort((a, b) => rows[b].n - rows[a].n);
-    if (keys.length === 0) return null;
+    if (keys.length === 0)
+      return emptyPanel(title, "Populates once you have settled picks.");
     return (
       <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
         <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide mb-2">
@@ -428,6 +440,19 @@ export function Profile({
             </div>
           </div>
 
+          {!loading && picks.length > 0 && stats.upcoming.length === 0 && (
+            <div className="rounded-xl border border-dashed border-neutral-800 bg-neutral-900/20 p-3">
+              <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-1">
+                Upcoming picks
+              </p>
+              <p className="text-xs text-neutral-600">
+                {isSelf
+                  ? "Share a pick early with \u201cmake public\u201d on the Bets tab and it shows here before the fight."
+                  : "None shared ahead of their events right now."}
+              </p>
+            </div>
+          )}
+
           {!loading && stats.upcoming.length > 0 && (
             <div className="rounded-xl border border-emerald-900/60 bg-neutral-900/40 p-3">
               <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wide mb-2">
@@ -466,14 +491,26 @@ export function Profile({
 
           {loading && <p className="text-neutral-500">Loading profile...</p>}
 
-          {!loading && picks.length === 0 && (
-            <p className="text-neutral-500">
-              No public picks yet - they appear here once their events start.
-            </p>
-          )}
-
-          {!loading && picks.length > 0 && (
+          {!loading && (
             <>
+              {picks.length === 0 && (
+                <div className="rounded-xl border border-emerald-900/60 bg-neutral-900/40 p-4">
+                  <p className="text-sm text-neutral-300">
+                    {isSelf
+                      ? "This is your dashboard - it fills itself in as you go."
+                      : `${shown} hasn't shared any picks yet.`}
+                  </p>
+                  {isSelf && (
+                    <p className="text-xs text-neutral-500 mt-1">
+                      Log a verified bet on the Bets tab, then hit &ldquo;make public&rdquo;
+                      to share it before the event - or it goes public automatically when the
+                      fight starts. Every card below then tracks itself: record, ROI, CLV,
+                      streaks, and your bankroll curve. No self-reported numbers, ever.
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {statCard("Record", `${o.w}-${o.l}-${o.p}`)}
                 {statCard("Profit", fmtUnits(o.profit), profitTone)}
@@ -518,12 +555,13 @@ export function Profile({
                 )}
               </div>
 
-              {stats.curve.length >= 2 && (
-                <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
-                      Bankroll · {stats.settled.length} settled picks
-                    </p>
+              <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
+                    Bankroll · {stats.settled.length} settled pick
+                    {stats.settled.length === 1 ? "" : "s"}
+                  </p>
+                  {stats.curve.length >= 1 && (
                     <span className="text-xs text-neutral-500">
                       peak <span className="text-emerald-400">{fmtUnits(stats.peak)}</span>
                       {" · "}low{" "}
@@ -531,10 +569,15 @@ export function Profile({
                       {" · "}
                       <span className={profitTone}>{fmtUnits(o.profit)}</span>
                     </span>
-                  </div>
-                  <ProfileCurve values={stats.curve} />
+                  )}
                 </div>
-              )}
+                <ProfileCurve values={stats.curve} />
+                {stats.curve.length < 2 && (
+                  <p className="text-[11px] text-neutral-600 mt-1">
+                    Your bankroll line starts drawing after your first settled pick.
+                  </p>
+                )}
+              </div>
 
               {stats.last30.n > 0 && (
                 <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
@@ -595,6 +638,19 @@ export function Profile({
                   </div>
                 </div>
                 <div className="space-y-2">
+                  {stats.history.filter((b) =>
+                    histFilter === "all"
+                      ? true
+                      : histFilter === "live"
+                      ? b.result === "pending"
+                      : b.result === histFilter
+                  ).length === 0 && (
+                    <p className="text-xs text-neutral-600">
+                      {stats.history.length === 0
+                        ? "No settled picks yet - they land here after each event."
+                        : `No ${histFilter} picks.`}
+                    </p>
+                  )}
                   {stats.history
                     .filter((b) =>
                       histFilter === "all"
@@ -667,7 +723,8 @@ export function Profile({
 }
 
 function ProfileCurve({ values }: { values: number[] }) {
-  const pts = [0, ...values];
+  // always at least a flat baseline: [0] alone renders a centered dashed zero
+  const pts = values.length >= 1 ? [0, ...values] : [0, 0];
   const min = Math.min(0, ...pts);
   const max = Math.max(0, ...pts);
   const span = max - min || 1;
