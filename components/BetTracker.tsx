@@ -16,6 +16,7 @@ export function BetTracker({
   onAdd,
   onSetResult,
   onDelete,
+  onRequestDelete,
 }: {
   bets: BetRow[];
   reviews: ReviewRow[];
@@ -24,6 +25,7 @@ export function BetTracker({
   onAdd: (bet: NewBet) => void;
   onSetResult: (id: string, result: string) => void;
   onDelete: (id: string) => void;
+  onRequestDelete: (id: string, requested: boolean) => void;
 }) {
   const [selection, setSelection] = useState("");
   const [context, setContext] = useState("");
@@ -359,8 +361,10 @@ export function BetTracker({
         // unverified bets grade any time; verified ones only after the event
         // starts, and never once the scraper has settled them from results
         const canGrade = verified ? started && !autoFinal : true;
-        // verified bets lock at start: from then on only an admin void removes them
-        const canDelete = verified ? !started : true;
+        // only unverified bets are user-deletable; verified ones go through a
+        // removal request (pre-start clears on the next scrape, post-start
+        // needs an admin decision) so records can't be quietly curated
+        const canDelete = !verified;
         const needsManual =
           b.result === "pending" && !!b.grade_note && /settle manually/i.test(b.grade_note);
         return (
@@ -474,6 +478,24 @@ export function BetTracker({
                   P
                 </button>
                 </>
+                )}
+                {verified && !b.delete_requested_at && (
+                  <button
+                    onClick={() => onRequestDelete(b.id, true)}
+                    title="Ask for this bet's removal. Before the event starts it clears on the next scrape; after start an admin reviews it."
+                    className="rounded border border-neutral-700 px-1.5 py-0.5 text-[11px] text-neutral-500 hover:text-red-400 hover:bg-neutral-900"
+                  >
+                    request removal
+                  </button>
+                )}
+                {verified && b.delete_requested_at && (
+                  <button
+                    onClick={() => onRequestDelete(b.id, false)}
+                    title="Removal requested - click to cancel the request"
+                    className="rounded border border-amber-700 px-1.5 py-0.5 text-[11px] text-amber-400 hover:bg-neutral-900"
+                  >
+                    requested · cancel
+                  </button>
                 )}
                 {canDelete && (
                   <button

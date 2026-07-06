@@ -22,7 +22,13 @@ type Agg = {
   clv_n: number;
 };
 
-export function Leaderboard({ user }: { user: User }) {
+export function Leaderboard({
+  user,
+  onOpenProfile,
+}: {
+  user: User;
+  onOpenProfile: (username: string) => void;
+}) {
   const [raw, setRaw] = useState<LeaderboardRow[]>([]);
   const [username, setUsername] = useState<string | null>(null);
   const [nameInput, setNameInput] = useState("");
@@ -166,9 +172,9 @@ export function Leaderboard({ user }: { user: User }) {
     const bets = visibleBets(r.username);
     return (
       <div key={r.username} className="rounded-xl border border-neutral-800 bg-neutral-900/40">
-        <button
+        <div
           onClick={() => toggleUser(r.username)}
-          className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-neutral-900/60"
+          className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-neutral-900/60 cursor-pointer"
         >
           <span
             className={`w-6 text-sm font-bold ${
@@ -206,7 +212,17 @@ export function Leaderboard({ user }: { user: User }) {
           >
             {rclv === null ? "—" : `${rclv >= 0 ? "+" : ""}${rclv.toFixed(1)}`}
           </span>
-        </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenProfile(r.username);
+            }}
+            title="Open this user's profile"
+            className="shrink-0 rounded border border-neutral-800 px-1.5 py-0.5 text-[11px] text-neutral-600 hover:text-emerald-400 hover:border-neutral-700"
+          >
+            profile
+          </button>
+        </div>
         {isOpen && (
           <div className="border-t border-neutral-800 p-2 space-y-1">
             {bets.length === 0 && (
@@ -361,7 +377,8 @@ export function Leaderboard({ user }: { user: User }) {
         ))}
       </div>
       <p className="text-xs text-neutral-500">
-        Verified bets only, logged before the event started. Picks go public at start time.
+        Verified bets only - logged at a listed book before the event started. Picks go
+        public at start time. Tap a row to see picks, or open the full profile.
       </p>
 
       {loading && <p className="text-neutral-500">Loading leaderboard...</p>}

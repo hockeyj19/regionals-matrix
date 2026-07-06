@@ -1,4 +1,4 @@
-import type { BetRow, EventRow } from "@/lib/types";
+import type { EventRow } from "@/lib/types";
 
 // "2026-06-26" -> "Friday, June 26th"
 // Convert "7:00 PM ET" -> minutes since midnight, for sorting. No time sorts last.
@@ -57,8 +57,9 @@ export function eventStarted(eventStart: string | null): boolean {
   return !!eventStart && new Date(eventStart).getTime() <= Date.now();
 }
 
-// American-odds profit (in units) for a settled bet; pending/push = 0
-export function betProfit(b: BetRow): number {
+// American-odds profit (in units) for a settled bet; pending/push = 0.
+// Structural so it works on both BetRow and PublicBet.
+export function betProfit(b: { result: string; stake: number; odds: number }): number {
   if (b.result === "win")
     return Number(b.stake) * (b.odds > 0 ? b.odds / 100 : 100 / Math.abs(b.odds));
   if (b.result === "loss") return -Number(b.stake);
@@ -136,7 +137,7 @@ export function eventStartISO(eventDate: string | null, eventTime: string | null
   return isNaN(d.getTime()) ? null : d.toISOString();
 }
 
-export const SHARP_BOOKS = ["BetOnline.ag", "Pinnacle", "Polymarket", "Kalshi"];
+export const SHARP_BOOKS = ["BetOnline.ag", "Pinnacle"];
 export const SOFT_BOOKS = ["Bet365", "DraftKings", "FanDuel", "BetMGM", "Caesars", "BetRivers", "Bovada"];
 export const BOOKS = [
   "BetOnline.ag",
@@ -148,8 +149,6 @@ export const BOOKS = [
   "Caesars",
   "BetRivers",
   "Bovada",
-  "Polymarket",
-  "Kalshi",
 ];
 
 export function bookTier(book: string | null): "sharp" | "soft" | null {

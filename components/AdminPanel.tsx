@@ -4,6 +4,22 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { fmtDate, fmtOdds } from "@/lib/format";
 
+type RemovalRequest = {
+  bet_id: string;
+  owner: string | null;
+  selection: string;
+  odds: number;
+  stake: number;
+  book: string | null;
+  result: string;
+  event_context: string | null;
+  event_date: string | null;
+  event_start: string | null;
+  placed_at: string;
+  delete_requested_at: string;
+  flagged: boolean;
+};
+
 type AdminReport = {
   report_id: string;
   created_at: string;
@@ -27,6 +43,7 @@ type AdminReport = {
 
 export function AdminPanel() {
   const [reports, setReports] = useState<AdminReport[]>([]);
+  const [removals, setRemovals] = useState<RemovalRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
 
@@ -36,7 +53,12 @@ export function AdminPanel() {
       .from("admin_reports")
       .select("*")
       .order("created_at", { ascending: false });
+    const { data: rm } = await supabase
+      .from("admin_delete_requests")
+      .select("*")
+      .order("delete_requested_at", { ascending: false });
     setReports(data ?? []);
+    setRemovals(rm ?? []);
     setLoading(false);
   }, []);
 
@@ -57,6 +79,78 @@ export function AdminPanel() {
     });
     setMsg(error ? "Action failed - are you admin?" : "");
     load();
+  }
+
+  async function clearRemoval(betId: string) {
+    const { error } = await supabase.rpc("admin_clear_delete_request", { p_bet_id: betId });
+    setMsg(error ? "Action failed - are you admin?" : "");
+    load();
+  }
+
+  function removalCard(r: RemovalRequest) {
+    const preStart = !!r.event_start && new Date(r.event_start).getTime() > Date.now();
+    return (
+      <div
+        key={r.bet_id}
+        className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3 space-y-2"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs text-amber-400">
+            {r.owner ?? "unknown"} requested removal
+            {preStart ? " (pre-start - auto-removes on the next scrape)" : " after start"}
+          </p>
+          <span className="text-[11px] text-neutral-600 shrink-0">
+            {fmtDate(r.delete_requested_at)}
+          </span>
+        </div>
+        <div className="text-sm">
+          <span className="font-medium">{r.selection}</span>{" "}
+          <span className="text-neutral-500">
+            {fmtOdds(r.odds)} · {Number(r.stake)}u{r.book ? ` · ${r.book}` : ""}
+          </span>{" "}
+          <span
+            className={
+              r.result === "win"
+                ? "text-emerald-400"
+                : r.result === "loss"
+                ? "text-red-400"
+                : "text-neutral-500"
+            }
+          >
+            {r.result}
+          </span>
+          {r.flagged && (
+            <span className="ml-2 text-[10px] uppercase tracking-wide text-red-400 border border-red-800 rounded px-1">
+              voided
+            </span>
+          )}
+        </div>
+        <p className="text-[11px] text-neutral-600">
+          {r.event_context ? `${r.event_context} · ` : ""}
+          placed {fmtDate(r.placed_at)}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {!preStart && (
+            <button
+              onClick={() => flagBet(r.bet_id, !r.flagged)}
+              className={`rounded-md border px-2 py-1 text-xs ${
+                r.flagged
+                  ? "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
+                  : "border-red-700 text-red-400 hover:bg-neutral-900"
+              }`}
+            >
+              {r.flagged ? "Unvoid bet" : "Void bet"}
+            </button>
+          )}
+          <button
+            onClick={() => clearRemoval(r.bet_id)}
+            className="rounded-md border border-neutral-700 text-neutral-400 px-2 py-1 text-xs hover:bg-neutral-900"
+          >
+            {preStart ? "Deny (keep the bet)" : "Clear request"}
+          </button>
+        </div>
+      </div>
+    );
   }
 
   const open = reports.filter((r) => r.status === "open");
@@ -147,6 +241,14 @@ export function AdminPanel() {
       </p>
       {msg && <p className="text-xs text-amber-400">{msg}</p>}
       {loading && <p className="text-neutral-500">Loading reports...</p>}
+      {!loading && removals.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs text-neutral-600 uppercase tracking-wide">
+            Removal requests ({removals.length})
+          </p>
+          {removals.map(removalCard)}
+        </div>
+      )}
       {!loading && open.length === 0 && (
         <p className="text-neutral-500">No open reports. The people are behaving.</p>
       )}

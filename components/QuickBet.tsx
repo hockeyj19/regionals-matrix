@@ -84,12 +84,11 @@ export function QuickBet({
     const effectiveType = betType === "totals" ? ouSide : betType;
 
     // market check: pin the live board against the claimed moneyline price.
-    // Exchanges (Polymarket/Kalshi) are exempt - the sportsbook feed can't see them.
     let priceCheck: string | null = null;
     let marketBest: number | null = null;
     let marketBook: string | null = null;
     let checkedAt: string | null = null;
-    if (effectiveType === "moneyline" && book !== "Polymarket" && book !== "Kalshi") {
+    if (effectiveType === "moneyline") {
       checkedAt = new Date().toISOString();
       try {
         const res = await fetch("/api/odds");
