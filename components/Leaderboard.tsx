@@ -148,6 +148,13 @@ export function Leaderboard({
   const ranked = sorted.filter((r) => r.bets >= MIN_BETS_TO_RANK);
   const building = sorted.filter((r) => r.bets < MIN_BETS_TO_RANK);
 
+  // your settled verified picks across BOTH boards - fuel for the rank tracker
+  const selfSettled = username
+    ? raw
+        .filter((r) => r.username === username)
+        .reduce((s, r) => s + Number(r.bets), 0)
+    : 0;
+
   const rankColor = (i: number) =>
     i === 0
       ? "text-amber-400"
@@ -383,13 +390,95 @@ export function Leaderboard({
 
       {loading && <p className="text-neutral-500">Loading leaderboard...</p>}
       {!loading && sorted.length === 0 && (
-        <p className="text-neutral-500">
-          Nobody on this board yet. Claim a username and settle verified bets at these books to
-          appear.
-        </p>
+        <div aria-hidden className="space-y-2 select-none">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className={`rounded-xl border border-dashed bg-neutral-900/20 ${
+                i === 0
+                  ? "border-neutral-700"
+                  : i === 1
+                  ? "border-neutral-800 opacity-70"
+                  : "border-neutral-800 opacity-40"
+              }`}
+            >
+              <div className="flex items-center gap-3 px-3 py-2">
+                <span className={`w-6 text-sm font-bold ${rankColor(i)}`}>{i + 1}</span>
+                <span
+                  className={`flex-1 text-sm ${
+                    i === 0 ? "text-neutral-500" : "text-neutral-700"
+                  }`}
+                >
+                  {i === 0 ? "open seat" : "—"}
+                </span>
+                <span className="text-xs text-neutral-700 shrink-0">0-0-0</span>
+                <span className="text-xs text-neutral-700 shrink-0 w-16 text-right">
+                  +0.00u
+                </span>
+                <span className="text-xs text-neutral-700 shrink-0 w-16 text-right">
+                  +0.0%
+                </span>
+                <span className="text-xs text-neutral-700 shrink-0 w-14 text-right">—</span>
+              </div>
+            </div>
+          ))}
+          <p className="text-xs text-neutral-600">
+            The {tier} board is waiting for its first verified record
+            {ufcOnly ? " (the UFC filter is on)" : ""}. First five settled picks take the
+            podium.
+          </p>
+        </div>
       )}
 
       {ranked.map((r, i) => renderRow(r, i))}
+
+      {!loading && selfSettled < MIN_BETS_TO_RANK && (
+        <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
+          <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide mb-2">
+            Your path to the board
+          </p>
+          <div className="space-y-1.5 text-xs">
+            {[
+              {
+                done: Boolean(username),
+                label: username
+                  ? `Username claimed — ${username}`
+                  : "Claim a username (top of this page)",
+              },
+              {
+                done: selfSettled > 0,
+                label: "Log verified picks at a listed book before the fight starts",
+              },
+              {
+                done: selfSettled >= MIN_BETS_TO_RANK,
+                label: `Settle ${MIN_BETS_TO_RANK} - you rank the moment the fifth grades`,
+              },
+            ].map((s, i) => (
+              <p key={i} className="flex items-center gap-2">
+                <span className={s.done ? "text-emerald-400" : "text-neutral-700"}>
+                  {s.done ? "✓" : "○"}
+                </span>
+                <span className={s.done ? "text-neutral-400" : "text-neutral-500"}>
+                  {s.label}
+                </span>
+              </p>
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5 mt-2">
+            {Array.from({ length: MIN_BETS_TO_RANK }).map((_, i) => (
+              <span
+                key={i}
+                className={`h-1.5 w-6 rounded-full ${
+                  i < selfSettled ? "bg-emerald-500" : "bg-neutral-800"
+                }`}
+              />
+            ))}
+            <span className="text-[11px] text-neutral-500 ml-1">
+              {Math.min(selfSettled, MIN_BETS_TO_RANK)} of {MIN_BETS_TO_RANK} settled picks
+            </span>
+          </div>
+        </div>
+      )}
 
       {building.length > 0 && (
         <div className="space-y-2">

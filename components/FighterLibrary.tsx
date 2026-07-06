@@ -88,8 +88,42 @@ export function FighterLibrary({
       </p>
 
       {all.length === 0 && (
-        <p className="text-neutral-500">
-          No fighter notes yet. Write some on the Events tab and they will collect here.
+        <div className="space-y-4">
+          <div className="rounded-xl border border-emerald-900/60 bg-neutral-900/40 p-4">
+            <p className="text-sm font-semibold text-neutral-200">Your scouting book</p>
+            <p className="text-xs text-neutral-500 mt-1">
+              Every note you type on a fight card files itself here under that fighter -
+              and follows them to every future booking, across every org. Tag what
+              matters, then search all of it the moment a line drops.
+            </p>
+            <p className="text-xs text-neutral-500 mt-1">
+              Open any fight on the Events tab and start typing in the notes box - the
+              fighter appears here instantly.
+            </p>
+          </div>
+          <ExampleFighterCard
+            name="Lightweight prospect"
+            note={
+              "Heavy calf kicks from the opening bell, but the tank dips hard after R2 - " +
+              "live dog price against anyone who pressures. Southpaw entries get him " +
+              "countered clean."
+            }
+            tags={["calf-kicks", "fades-late", "southpaw"]}
+          />
+          <ExampleFighterCard
+            name="Regional veteran"
+            note={
+              "Rehydrates badly at 145 - missed weight twice in the last four. " +
+              "Grappling-first, panic-wrestles when hurt. Unders have cashed three straight."
+            }
+            tags={["weight-miss", "wrestle-first", "unders"]}
+          />
+        </div>
+      )}
+
+      {all.length > 0 && filtered.length === 0 && (
+        <p className="text-sm text-neutral-500">
+          No fighters match - clear the search{activeTag ? " or the tag filter" : ""}.
         </p>
       )}
 
@@ -169,6 +203,44 @@ export function FighterLibrary({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function ExampleFighterCard({
+  name,
+  note,
+  tags,
+}: {
+  name: string;
+  note: string;
+  tags: string[];
+}) {
+  return (
+    <div
+      aria-hidden
+      className="rounded-xl border border-dashed border-neutral-800 bg-neutral-900/20 p-4 space-y-3 select-none"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-bold text-neutral-500">{name}</span>
+        <span className="text-[10px] uppercase tracking-wide text-neutral-600 border border-neutral-800 rounded px-1.5 py-0.5">
+          example
+        </span>
+      </div>
+      <div className="rounded-md bg-neutral-800/40 border border-neutral-700/60 px-2 py-1.5 text-sm text-neutral-500 whitespace-pre-wrap">
+        {note}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {tags.map((t) => (
+          <span
+            key={t}
+            className="rounded-full border border-neutral-800 px-3 py-0.5 text-xs text-neutral-600"
+          >
+            {t}
+          </span>
+        ))}
+      </div>
+      <p className="text-xs text-neutral-700">History (2)</p>
     </div>
   );
 }

@@ -299,6 +299,12 @@ export function BetTracker({
 
       <ReviewArchive rows={reviews} />
 
+      {monthKeys.length === 0 && (
+        <GhostPanel
+          title="ROI by month"
+          hint="Builds itself as bets settle - one line per month with volume, profit, and ROI."
+        />
+      )}
       {monthKeys.length > 0 && (
         <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
           <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide mb-2">
@@ -324,6 +330,12 @@ export function BetTracker({
         </div>
       )}
 
+      {orgKeys.length === 0 && (
+        <GhostPanel
+          title="Results by org"
+          hint="Your record split by promotion - UFC vs the regionals - once bets settle."
+        />
+      )}
       {orgKeys.length > 0 && (
         <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
           <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide mb-2">
@@ -350,9 +362,60 @@ export function BetTracker({
       )}
 
       {bets.length === 0 && (
-        <p className="text-neutral-500">
-          No bets logged yet. Add one above, or use the + Log bet button on any fight card.
-        </p>
+        <div className="space-y-3">
+          <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
+            <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide mb-2">
+              How a verified bet lives
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {[
+                { t: "1 · Log it", d: "Pick the fight above, enter your price and stake." },
+                { t: "2 · It locks", d: "At start time: no edits, no deletes, pick goes public." },
+                { t: "3 · It grades", d: "The scrape settles it from official results - final." },
+                { t: "4 · It counts", d: "Profile, leaderboard, CLV - all automatic." },
+              ].map((s) => (
+                <div
+                  key={s.t}
+                  className="rounded-lg border border-neutral-800 bg-neutral-900/30 p-2"
+                >
+                  <p className="text-[11px] font-semibold text-neutral-300">{s.t}</p>
+                  <p className="text-[11px] text-neutral-600 mt-0.5">{s.d}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div
+            aria-hidden
+            className="rounded-xl border border-dashed border-neutral-800 bg-neutral-900/20 px-3 py-2 select-none"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-sm truncate text-neutral-500">
+                  Your first pick <span className="text-neutral-600">-150 · 1u</span>{" "}
+                  <span className="text-[10px] uppercase tracking-wide text-emerald-600/70 border border-emerald-900/50 rounded px-1">
+                    verified
+                  </span>
+                </p>
+                <p className="text-[11px] text-neutral-700 truncate">
+                  BetOnline.ag · UFC — the card you have circled · Saturday night
+                </p>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <span className="text-[10px] uppercase tracking-wide text-neutral-600 border border-neutral-800 rounded px-1.5 py-0.5">
+                  locks at start
+                </span>
+                <span className="rounded border border-neutral-800 px-1.5 py-0.5 text-[11px] text-neutral-700">
+                  make public
+                </span>
+              </div>
+            </div>
+            <p className="text-[11px] text-neutral-700 mt-1">
+              example - your real rows land here, from the form above or the + Log bet
+              button on any fight card
+            </p>
+          </div>
+        </div>
       )}
 
       {bets.map((b) => {
@@ -565,5 +628,16 @@ function BankrollCurve({ values }: { values: number[] }) {
       />
       <path d={d} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
     </svg>
+  );
+}
+
+function GhostPanel({ title, hint }: { title: string; hint: string }) {
+  return (
+    <div className="rounded-xl border border-dashed border-neutral-800 bg-neutral-900/20 p-3">
+      <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-1">
+        {title}
+      </p>
+      <p className="text-xs text-neutral-600">{hint}</p>
+    </div>
   );
 }
