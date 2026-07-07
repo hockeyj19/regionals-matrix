@@ -22,6 +22,7 @@ import { FightMatrix } from "@/components/FightMatrix";
 import { FighterLibrary } from "@/components/FighterLibrary";
 import { BetTracker } from "@/components/BetTracker";
 import { Profile } from "@/components/Profile";
+import { OddsBoard } from "@/components/OddsBoard";
 import { Leaderboard } from "@/components/Leaderboard";
 import { AdminPanel } from "@/components/AdminPanel";
 import { EVENTS_README, InfoButton, ReadMePanel } from "@/components/ReadMe";
@@ -94,7 +95,7 @@ export function Matrix({ user }: { user: User }) {
   const [fighterNotes, setFighterNotes] = useState<Record<string, FighterNote>>({});
   const [noteHistory, setNoteHistory] = useState<NoteHistoryRow[]>([]);
   const [view, setView] = useState<
-    "profile" | "events" | "fighters" | "bets" | "leaderboard" | "admin"
+    "profile" | "events" | "odds" | "fighters" | "bets" | "leaderboard" | "admin"
   >("events");
   const [profileUser, setProfileUser] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -437,6 +438,16 @@ export function Matrix({ user }: { user: User }) {
                 Events
               </button>
               <button
+                onClick={() => setView("odds")}
+                className={`rounded-lg border px-3 py-1 text-sm ${
+                  view === "odds"
+                    ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
+                    : "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
+                }`}
+              >
+                Odds
+              </button>
+              <button
                 onClick={() => setView("fighters")}
                 className={`rounded-lg border px-3 py-1 text-sm ${
                   view === "fighters"
@@ -492,7 +503,9 @@ export function Matrix({ user }: { user: User }) {
         </div>
       </header>
 
-      {view === "profile" ? (
+      {view === "odds" ? (
+        <OddsBoard />
+      ) : view === "profile" ? (
         <Profile
           user={user}
           target={profileUser}

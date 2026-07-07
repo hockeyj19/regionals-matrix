@@ -47,12 +47,36 @@ function samePerson(a: string, b: string): boolean {
   return false;
 }
 
+function exactName(a: string, b: string): boolean {
+  return normName(a) === normName(b) && !!normName(a);
+}
+
+function surnameEq(a: string, b: string): boolean {
+  const ta = normName(a).split(" ").filter(Boolean);
+  const tb = normName(b).split(" ").filter(Boolean);
+  return ta.length > 0 && tb.length > 0 && ta[ta.length - 1] === tb[tb.length - 1];
+}
+
+// A bout matches when both fighters match by the standard rule, OR when one
+// fighter matches unambiguously and the other shares a surname. The relaxed
+// tier resolves nickname aliases ("King Green" on BetOnline vs "Bobby Green"
+// on the card): a card never books the same two surnames twice, so a strong
+// match on one side plus a shared surname on the other identifies the bout.
+function boutMatch(rA: string, rB: string, tA: string, tB: string): boolean {
+  if (samePerson(rA, tA) && samePerson(rB, tB)) return true;
+  if (samePerson(rA, tA) && surnameEq(rB, tB)) return true;
+  if (samePerson(rB, tB) && surnameEq(rA, tA)) return true;
+  if (exactName(rA, tA) && surnameEq(rB, tB)) return true;
+  if (exactName(rB, tB) && surnameEq(rA, tA)) return true;
+  return false;
+}
+
 export async function fetchFightBoard(f1: string, f2: string): Promise<FightBoard> {
   const { data, error } = await supabase.from("bol_current_lines").select("*");
   if (error || !data) return null;
   for (const row of data as LineRow[]) {
-    const forward = samePerson(row.fighter1, f1) && samePerson(row.fighter2, f2);
-    const swapped = samePerson(row.fighter1, f2) && samePerson(row.fighter2, f1);
+    const forward = boutMatch(row.fighter1, row.fighter2, f1, f2);
+    const swapped = boutMatch(row.fighter2, row.fighter1, f1, f2);
     if (!forward && !swapped) continue;
     return {
       side1: forward ? row.fighter1_odds : row.fighter2_odds,
