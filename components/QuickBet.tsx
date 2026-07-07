@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { FightRow, NewBet } from "@/lib/types";
-import { eventStartISO, parseBetInputs, sideBtn } from "@/lib/format";
+import { bookLabel, eventStartISO, parseBetInputs, sideBtn } from "@/lib/format";
 import {
   fetchFightBoard,
   fetchFightProps,
@@ -222,7 +222,7 @@ export function QuickBet({
           title="Verified bets are priced and graded off the BetOnline board"
           className="rounded-md border border-emerald-800 bg-emerald-600/10 px-2 py-1 text-xs text-emerald-300"
         >
-          BetOnline.ag
+          {bookLabel(effectiveBook)}
         </span>
         {needsMethod && (
           <select

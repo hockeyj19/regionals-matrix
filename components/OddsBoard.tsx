@@ -2,227 +2,301 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { fmtAmerican, freshness } from "@/lib/board";
+import { boutMatch, fmtAmerican, freshness } from "@/lib/board";
 import { LineHistoryModal } from "@/components/LineHistoryModal";
+import type { EventRow, FightRow } from "@/lib/types";
 
 /**
- * The Odds board: BetOnline's moneyline for every fight the monitors see,
- * plus how each line has MOVED since it opened - the one thing a multi-book
- * comparison page can't show. Fed entirely by the two BOL bots via the
- * `bol_board` ledger view; single-book by nature (the bots watch BetOnline).
+ * The Odds board: BetOnline moneylines with movement, laid over the app's own
+ * fight cards. The left column is the event list - UFC cards in date order
+ * first, every other promotion after; the right column is the selected card,
+ * main event at the top down to the first prelim. Prices come from the bots'
+ * `bol_board` ledger, matched to each fight by name; every price opens its
+ * movement history. Single book by design - this is BetOnline, the sharp board.
  */
 
 type BoardRow = {
   fight_key: string;
   fighter1: string;
   fighter2: string;
-  schedule: string | null;
   open1: number | null;
   open2: number | null;
   cur1: number | null;
   cur2: number | null;
-  opened_at: string;
   updated_at: string;
 };
 
-// implied win probability from American odds
-function impliedProb(odds: number): number {
-  return odds < 0 ? -odds / (-odds + 100) : 100 / (odds + 100);
-}
+type SidePrice = { open: number | null; cur: number | null; side: 1 | 2 };
+type Matched = { fightKey: string; a: SidePrice; b: SidePrice };
 
-function pct(p: number): string {
-  return `${Math.round(p * 100)}%`;
+function impliedProb(o: number): number {
+  return o < 0 ? -o / (-o + 100) : 100 / (o + 100);
+}
+function pct(o: number | null): string {
+  return o === null ? "—" : `${Math.round(impliedProb(o) * 100)}%`;
+}
+function isUFC(e: EventRow): boolean {
+  return (e.org || "").toUpperCase().includes("UFC");
 }
 
 function Move({ open, cur }: { open: number | null; cur: number | null }) {
-  if (open === null || cur === null || open === cur) {
-    return <span className="text-[11px] text-neutral-600">no move</span>;
-  }
-  const shortened = impliedProb(cur) > impliedProb(open); // line firmed = more likely
-  const tone = shortened ? "text-emerald-400" : "text-red-400";
-  const arrow = shortened ? "▲" : "▼";
+  if (open === null || cur === null || open === cur)
+    return <span className="text-[10px] text-neutral-600">—</span>;
+  const firmed = impliedProb(cur) > impliedProb(open);
   return (
-    <span className={`text-[11px] ${tone}`} title="opened → current">
-      {arrow} {fmtAmerican(open)} → {fmtAmerican(cur)}
+    <span className={`text-[10px] ${firmed ? "text-emerald-400" : "text-red-400"}`}>
+      {firmed ? "▲" : "▼"} {fmtAmerican(open)}
     </span>
   );
 }
 
-function FighterLine({
-  name,
-  open,
-  cur,
+function PriceButton({
+  price,
   onOpen,
+  align,
 }: {
-  name: string;
-  open: number | null;
-  cur: number | null;
+  price: number | null;
   onOpen: () => void;
+  align: "left" | "right";
 }) {
-  const fav = cur !== null && cur < 0;
+  const fav = price !== null && price < 0;
   return (
-    <div className="flex items-center justify-between gap-3 py-1">
-      <span className={`text-sm truncate ${fav ? "text-neutral-100" : "text-neutral-300"}`}>
-        {name}
-      </span>
-      <div className="flex items-center gap-3 shrink-0">
-        <Move open={open} cur={cur} />
-        <span className="text-xs text-neutral-500 w-10 text-right">
-          {cur !== null ? pct(impliedProb(cur)) : "—"}
-        </span>
-        <button
-          onClick={onOpen}
-          disabled={cur === null}
-          title="Chart this line's movement"
-          className={`text-sm font-semibold w-16 text-right rounded px-1 -mx-1 ${
-            cur === null
-              ? "text-neutral-600 cursor-default"
-              : fav
-              ? "text-emerald-300 hover:bg-emerald-600/10 hover:underline"
-              : "text-neutral-200 hover:bg-neutral-800 hover:underline"
-          }`}
-        >
-          {cur !== null ? fmtAmerican(cur) : "—"}
-        </button>
-      </div>
-    </div>
+    <button
+      onClick={onOpen}
+      disabled={price === null}
+      title={price === null ? "No BetOnline line" : "Chart this line's movement"}
+      className={`rounded px-1.5 py-0.5 text-sm font-semibold tabular-nums ${
+        align === "right" ? "text-right" : "text-left"
+      } ${
+        price === null
+          ? "text-neutral-600 cursor-default"
+          : fav
+          ? "text-emerald-300 hover:bg-emerald-600/10 hover:underline"
+          : "text-neutral-200 hover:bg-neutral-800 hover:underline"
+      }`}
+    >
+      {price === null ? "—" : fmtAmerican(price)}
+    </button>
   );
 }
 
-export function OddsBoard() {
-  const [rows, setRows] = useState<BoardRow[]>([]);
+export function OddsBoard({
+  events,
+  fights,
+}: {
+  events: EventRow[];
+  fights: FightRow[];
+}) {
+  const [board, setBoard] = useState<BoardRow[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [q, setQ] = useState("");
-  const [selected, setSelected] = useState<
+  const [selected, setSelected] = useState<string | null>(null);
+  const [chart, setChart] = useState<
     { fightKey: string; side: 1 | 2; name: string } | null
   >(null);
 
   const load = useCallback(async () => {
     const { data } = await supabase.from("bol_board").select("*");
-    setRows((data as BoardRow[]) ?? []);
+    setBoard((data as BoardRow[]) ?? []);
     setLoaded(true);
   }, []);
-
   useEffect(() => {
     load();
   }, [load]);
 
-  const { groups, lastUpdate } = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    const filtered = needle
-      ? rows.filter(
-          (r) =>
-            r.fighter1.toLowerCase().includes(needle) ||
-            r.fighter2.toLowerCase().includes(needle) ||
-            (r.schedule ?? "").toLowerCase().includes(needle)
-        )
-      : rows;
-    const byEvent: Record<string, BoardRow[]> = {};
+  // match one app fight to a ledger row (order-insensitive), keeping each
+  // side's ledger side-number so the movement chart can be opened
+  const matchFight = useCallback(
+    (f: FightRow): Matched | null => {
+      for (const row of board) {
+        const parts = String(row.fight_key).split(" vs ");
+        if (parts.length !== 2) continue;
+        const [ra, rb] = parts;
+        if (boutMatch(ra, rb, f.fighter1_name, f.fighter2_name)) {
+          return {
+            fightKey: row.fight_key,
+            a: { open: row.open1, cur: row.cur1, side: 1 },
+            b: { open: row.open2, cur: row.cur2, side: 2 },
+          };
+        }
+        if (boutMatch(rb, ra, f.fighter1_name, f.fighter2_name)) {
+          return {
+            fightKey: row.fight_key,
+            a: { open: row.open2, cur: row.cur2, side: 2 },
+            b: { open: row.open1, cur: row.cur1, side: 1 },
+          };
+        }
+      }
+      return null;
+    },
+    [board]
+  );
+
+  // events that actually carry BetOnline lines, UFC first then the rest,
+  // each in date order; and the fights per event, main event first
+  const { tabs, lastUpdate } = useMemo(() => {
+    const fightsByEvent: Record<string, FightRow[]> = {};
+    for (const f of fights) (fightsByEvent[f.event_id] ??= []).push(f);
     let last = "";
-    for (const r of filtered) {
-      const key = r.schedule || "Other";
-      (byEvent[key] ??= []).push(r);
-      if (r.updated_at > last) last = r.updated_at;
-    }
-    const order = Object.keys(byEvent).sort((a, b) => {
-      // real UFC events first, the non-UFC "Future Events" bucket last
-      const af = a === "Future Events" || a === "Other";
-      const bf = b === "Future Events" || b === "Other";
-      if (af !== bf) return af ? 1 : -1;
-      return a.localeCompare(b);
+    for (const r of board) if (r.updated_at > last) last = r.updated_at;
+
+    const priced = events
+      .map((ev) => {
+        const evFights = (fightsByEvent[ev.id] ?? [])
+          .slice()
+          .sort((a, b) => (a.bout_order ?? 999) - (b.bout_order ?? 999));
+        const withPrice = evFights.filter((f) => matchFight(f) !== null).length;
+        return { ev, evFights, withPrice };
+      })
+      .filter((x) => x.withPrice > 0);
+
+    priced.sort((x, y) => {
+      const xu = isUFC(x.ev);
+      const yu = isUFC(y.ev);
+      if (xu !== yu) return xu ? -1 : 1;
+      return (x.ev.event_date || "").localeCompare(y.ev.event_date || "");
     });
-    for (const k of order) {
-      byEvent[k].sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
-    }
-    return { groups: order.map((k) => [k, byEvent[k]] as const), lastUpdate: last };
-  }, [rows, q]);
+    return { tabs: priced, lastUpdate: last };
+  }, [events, fights, board, matchFight]);
+
+  // default to the first UFC card (soonest) once data is in
+  useEffect(() => {
+    if (selected || tabs.length === 0) return;
+    const firstUFC = tabs.find((t) => isUFC(t.ev)) ?? tabs[0];
+    setSelected(firstUFC.ev.id);
+  }, [tabs, selected]);
+
+  const active = tabs.find((t) => t.ev.id === selected) ?? tabs[0] ?? null;
 
   return (
-    <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="text-lg font-bold">BetOnline board</h2>
-          <p className="text-[11px] text-neutral-500">
-            Live moneylines and how they&rsquo;ve moved since open — straight from the
-            line-movement monitors.
-            {lastUpdate ? ` Updated ${freshness(lastUpdate)}.` : ""}
-          </p>
-        </div>
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search fighter or event"
-          className="w-52 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm outline-none focus:border-emerald-500"
-        />
+    <div className="max-w-5xl mx-auto p-3 sm:p-4">
+      <div className="mb-3">
+        <h2 className="text-lg font-bold">BetOnline board</h2>
+        <p className="text-[11px] text-neutral-500">
+          Live moneylines and how they&rsquo;ve moved since open — tap any price for its
+          history.
+          {lastUpdate ? ` Updated ${freshness(lastUpdate)}.` : ""}
+        </p>
       </div>
 
       {!loaded && <p className="text-neutral-500">Reading the board…</p>}
 
-      {loaded && rows.length === 0 && (
+      {loaded && tabs.length === 0 && (
         <div className="rounded-xl border border-dashed border-neutral-800 bg-neutral-900/20 p-4">
           <p className="text-sm text-neutral-300">The board is warming up.</p>
           <p className="text-xs text-neutral-600 mt-1">
-            Lines appear here as the BetOnline monitors post them — usually within a minute
-            of a sweep. If this stays empty, check that both line-movement workers are running.
+            Cards appear here as the BetOnline monitors post their lines. If this stays
+            empty, check that both line-movement workers are running.
           </p>
         </div>
       )}
 
-      {loaded && rows.length > 0 && groups.length === 0 && (
-        <p className="text-sm text-neutral-500">No fights match “{q}”.</p>
-      )}
-
-      {groups.map(([event, fights]) => (
-        <div
-          key={event}
-          className="rounded-xl border border-neutral-800 bg-neutral-900/40 overflow-hidden"
-        >
-          <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-800 bg-neutral-900/60">
-            <span className="text-sm font-semibold text-neutral-200">{event}</span>
-            <span className="text-[11px] text-neutral-600">
-              {fights.length} fight{fights.length === 1 ? "" : "s"}
-            </span>
+      {loaded && tabs.length > 0 && active && (
+        <div className="flex gap-3">
+          {/* left: event tabs */}
+          <div className="w-32 sm:w-44 shrink-0 space-y-1">
+            {tabs.map(({ ev }) => {
+              const on = ev.id === active.ev.id;
+              return (
+                <button
+                  key={ev.id}
+                  onClick={() => setSelected(ev.id)}
+                  className={`w-full text-left rounded-lg border px-2 py-1.5 ${
+                    on
+                      ? "border-emerald-500 bg-emerald-600/15"
+                      : "border-neutral-800 hover:bg-neutral-900"
+                  }`}
+                >
+                  <span
+                    className={`block text-xs font-semibold truncate ${
+                      on ? "text-emerald-300" : "text-neutral-300"
+                    }`}
+                  >
+                    {ev.event_name}
+                  </span>
+                  {ev.event_date && (
+                    <span className="block text-[10px] text-neutral-600">
+                      {ev.event_date}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
-          <div className="divide-y divide-neutral-900">
-            {fights.map((f) => (
-              <div key={f.fight_key} className="px-3 py-2">
-                <FighterLine
-                  name={f.fighter1}
-                  open={f.open1}
-                  cur={f.cur1}
-                  onOpen={() =>
-                    setSelected({ fightKey: f.fight_key, side: 1, name: f.fighter1 })
-                  }
-                />
-                <FighterLine
-                  name={f.fighter2}
-                  open={f.open2}
-                  cur={f.cur2}
-                  onOpen={() =>
-                    setSelected({ fightKey: f.fight_key, side: 2, name: f.fighter2 })
-                  }
-                />
-              </div>
-            ))}
+
+          {/* right: the selected card, main event first */}
+          <div className="flex-1 min-w-0 rounded-xl border border-neutral-800 bg-neutral-900/40 overflow-hidden">
+            <div className="px-3 py-2 border-b border-neutral-800 bg-neutral-900/60">
+              <span className="text-sm font-semibold text-neutral-200">
+                {active.ev.event_name}
+              </span>
+            </div>
+            <div className="divide-y divide-neutral-900">
+              {active.evFights.map((f, i) => {
+                const m = matchFight(f);
+                const isMain = f.is_main_event || (i === 0 && !active.evFights.some((x) => x.is_main_event));
+                return (
+                  <div key={f.id} className="px-2 sm:px-3 py-2">
+                    <div className="flex items-center justify-between text-[10px] text-neutral-600 mb-0.5">
+                      <span className={isMain ? "text-amber-400 font-semibold uppercase tracking-wide" : ""}>
+                        {isMain ? "Main Event" : f.weight_class || ""}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-[1fr_auto_auto] items-center gap-x-2">
+                      {/* fighter 1 */}
+                      <span className="text-sm truncate">{f.fighter1_name}</span>
+                      <span className="text-[10px] text-neutral-500 w-9 text-right">
+                        {pct(m ? m.a.cur : null)}
+                      </span>
+                      <div className="flex items-center gap-1 justify-end">
+                        <Move open={m ? m.a.open : null} cur={m ? m.a.cur : null} />
+                        <PriceButton
+                          price={m ? m.a.cur : null}
+                          align="right"
+                          onOpen={() =>
+                            m &&
+                            setChart({ fightKey: m.fightKey, side: m.a.side, name: f.fighter1_name })
+                          }
+                        />
+                      </div>
+                      {/* fighter 2 */}
+                      <span className="text-sm truncate text-neutral-300">{f.fighter2_name}</span>
+                      <span className="text-[10px] text-neutral-500 w-9 text-right">
+                        {pct(m ? m.b.cur : null)}
+                      </span>
+                      <div className="flex items-center gap-1 justify-end">
+                        <Move open={m ? m.b.open : null} cur={m ? m.b.cur : null} />
+                        <PriceButton
+                          price={m ? m.b.cur : null}
+                          align="right"
+                          onOpen={() =>
+                            m &&
+                            setChart({ fightKey: m.fightKey, side: m.b.side, name: f.fighter2_name })
+                          }
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
-      ))}
-
-      {selected && (
-        <LineHistoryModal
-          fightKey={selected.fightKey}
-          side={selected.side}
-          fighterName={selected.name}
-          onClose={() => setSelected(null)}
-        />
       )}
 
-      {loaded && rows.length > 0 && (
-        <p className="text-[11px] text-neutral-600">
-          One book by design — these are BetOnline&rsquo;s lines, the sharp board this platform
-          grades against. The movement (open → current) is the edge a static multi-book table
-          doesn&rsquo;t show.
+      {loaded && tabs.length > 0 && (
+        <p className="text-[11px] text-neutral-600 mt-3">
+          One book by design — BetOnline&rsquo;s lines, the sharp board this platform grades
+          against. Movement (open → current) is the edge a static table doesn&rsquo;t show.
         </p>
+      )}
+
+      {chart && (
+        <LineHistoryModal
+          fightKey={chart.fightKey}
+          side={chart.side}
+          fighterName={chart.name}
+          onClose={() => setChart(null)}
+        />
       )}
     </div>
   );

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import type { LeaderboardRow, PublicBet } from "@/lib/types";
-import { SHARP_BOOKS, SOFT_BOOKS, bookTier, fmtDate, fmtOdds, fmtUnits, sideBtn } from "@/lib/format";
+import { SHARP_BOOKS, SOFT_BOOKS, bookLabel, bookTier, fmtDate, fmtOdds, fmtUnits, sideBtn } from "@/lib/format";
 import { FlagIcon } from "@/components/icons";
 import { InfoButton, LEADERBOARD_README, ReadMePanel } from "@/components/ReadMe";
 
@@ -273,7 +273,7 @@ export function Leaderboard({
                   </span>
                 </div>
                 <p className="text-[11px] text-neutral-600 truncate">
-                  {b.book ? `${b.book} · ` : ""}
+                  {b.book ? `${bookLabel(b.book)} · ` : ""}
                   {b.event_context ? `${b.event_context} · ` : ""}
                   {fmtDate(b.event_date ?? b.placed_at)}
                   {b.price_check === "verified" && (
@@ -374,12 +374,12 @@ export function Leaderboard({
         <span className="text-[11px] text-neutral-500 uppercase tracking-wide mr-1">
           {tier === "sharp" ? "Sharp board books" : "Soft board books"}
         </span>
-        {(tier === "sharp" ? SHARP_BOOKS : SOFT_BOOKS).map((b) => (
+        {(tier === "sharp" ? SHARP_BOOKS : SOFT_BOOKS).map((bk) => (
           <span
-            key={b}
+            key={bk}
             className="rounded-full border border-emerald-800 bg-emerald-600/10 px-2 py-0.5 text-[11px] text-emerald-300"
           >
-            {b}
+            {bookLabel(bk)}
           </span>
         ))}
       </div>

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { BetRow, EventRow, FightRow, NewBet, ReviewRow } from "@/lib/types";
-import { betProfit, eventStarted, fmtDate, fmtOdds, fmtUnits, parseBetInputs, sideBtn } from "@/lib/format";
+import { betProfit, bookLabel, eventStarted, fmtDate, fmtOdds, fmtUnits, parseBetInputs, sideBtn } from "@/lib/format";
 import { TrashIcon } from "@/components/icons";
 import { QuickBet } from "@/components/QuickBet";
 import { ReviewArchive } from "@/components/ReviewArchive";
@@ -458,7 +458,7 @@ export function BetTracker({
                   )}
                 </p>
                 <p className="text-[11px] text-neutral-600 truncate">
-                  {b.book ? `${b.book} · ` : ""}
+                  {b.book ? `${bookLabel(b.book)} · ` : ""}
                   {b.event_context ? `${b.event_context} · ` : ""}
                   {fmtDate(b.event_date ?? b.placed_at)}
                 </p>

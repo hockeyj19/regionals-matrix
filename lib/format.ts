@@ -150,6 +150,10 @@ export const BOOKS = [
   "Bovada",
 ];
 
+export function bookLabel(b: string): string {
+  return b === "BetOnline.ag" ? "BetOnline" : b;
+}
+
 export function bookTier(book: string | null): "sharp" | "soft" | null {
   if (!book) return null;
   if (SHARP_BOOKS.includes(book)) return "sharp";

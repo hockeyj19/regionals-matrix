@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } f
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import type { PublicBet } from "@/lib/types";
-import { betProfit, bookTier, fmtDate, fmtOdds, fmtUnits, sideBtn } from "@/lib/format";
+import { betProfit, bookLabel, bookTier, fmtDate, fmtOdds, fmtUnits, sideBtn } from "@/lib/format";
 
 /**
  * Public tipster profile. Everything here is computed from the same
@@ -286,7 +286,11 @@ export function Profile({
     );
   }
 
-  function breakdown(title: string, rows: Record<string, Split>) {
+  function breakdown(
+    title: string,
+    rows: Record<string, Split>,
+    labelFn?: (k: string) => string
+  ) {
     const keys = Object.keys(rows).sort((a, b) => rows[b].n - rows[a].n);
     if (keys.length === 0)
       return emptyPanel(title, "Populates once you have settled picks.");
@@ -300,7 +304,7 @@ export function Profile({
             const s = rows[k];
             return (
               <div key={k} className="flex items-center justify-between text-xs gap-2">
-                <span className="text-neutral-400 truncate">{k}</span>
+                <span className="text-neutral-400 truncate">{labelFn ? labelFn(k) : k}</span>
                 <span className="text-neutral-600 shrink-0">
                   {s.w}-{s.l}-{s.p}
                 </span>
@@ -473,7 +477,7 @@ export function Profile({
                       </span>
                     </div>
                     <p className="text-[11px] text-neutral-600 truncate">
-                      {b.book ? `${b.book} · ` : ""}
+                      {b.book ? `${bookLabel(b.book)} · ` : ""}
                       {b.event_context ? `${b.event_context} · ` : ""}
                       {b.published_at ? `shared ${fmtDate(b.published_at)}` : "shared early"}
                       {b.price_check === "verified" && (
@@ -618,7 +622,7 @@ export function Profile({
 
               {breakdown("By organization", stats.orgs)}
               {breakdown("By market", stats.types)}
-              {breakdown("By book", stats.books)}
+              {breakdown("By book", stats.books, bookLabel)}
 
               <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
@@ -684,7 +688,7 @@ export function Profile({
                         </span>
                       </div>
                       <p className="text-[11px] text-neutral-600 truncate">
-                        {b.book ? `${b.book} · ` : ""}
+                        {b.book ? `${bookLabel(b.book)} · ` : ""}
                         {b.event_context ? `${b.event_context} · ` : ""}
                         {fmtDate(b.event_date ?? b.placed_at)}
                         {b.price_check === "verified" && (

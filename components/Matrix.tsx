@@ -105,6 +105,7 @@ export function Matrix({ user }: { user: User }) {
   const [matrixData, setMatrixData] = useState<Record<string, MatrixData>>({});
   const [openMatrix, setOpenMatrix] = useState<Record<string, boolean>>({});
   const [openBet, setOpenBet] = useState<Record<string, boolean>>({});
+  const [openNotes, setOpenNotes] = useState<Record<string, boolean>>({});
   // always-current mirror of matrixData + ordered save queue: rapid tabbing
   // between cells must never snapshot stale data or land upserts out of order
   const matrixRef = useRef<Record<string, MatrixData>>({});
@@ -504,7 +505,7 @@ export function Matrix({ user }: { user: User }) {
       </header>
 
       {view === "odds" ? (
-        <OddsBoard />
+        <OddsBoard events={events} fights={fights} />
       ) : view === "profile" ? (
         <Profile
           user={user}
@@ -602,8 +603,41 @@ export function Matrix({ user }: { user: User }) {
                         b.event_source_url === ev.source_url &&
                         (b.fighter_id === f.fighter1_id || b.fighter_id === f.fighter2_id)
                     );
+                    // a fight's workspace (prices, notes, tools) stays folded
+                    // away until it's touched - unless it already holds work
+                    const noteA = f1id
+                      ? noteFor(f1id, ev).trim()
+                      : (d?.notes1 ?? "").trim();
+                    const noteB = f2id
+                      ? noteFor(f2id, ev).trim()
+                      : (d?.notes2 ?? "").trim();
+                    const hasWork = !!(
+                      (d?.price1 ?? "").trim() ||
+                      (d?.price2 ?? "").trim() ||
+                      noteA ||
+                      noteB ||
+                      hasMx ||
+                      hasFightBets
+                    );
+                    const expanded = openNotes[f.id] ?? hasWork;
                     return (
                       <div key={f.id} className="relative p-4 space-y-3">
+                        <button
+                          onClick={() =>
+                            setOpenNotes((prev) => ({ ...prev, [f.id]: !expanded }))
+                          }
+                          title={expanded ? "Collapse" : "Expand notes & tools"}
+                          className="absolute right-2 top-2 rounded-md border border-neutral-800 p-1 text-neutral-600 hover:text-neutral-300 hover:bg-neutral-900"
+                        >
+                          <svg
+                            width="12" height="12" viewBox="0 0 24 24" fill="none"
+                            className={`transition-transform ${expanded ? "rotate-180" : ""}`}
+                          >
+                            <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2"
+                              strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </button>
+                        {expanded && (
                         <div className="absolute left-2 top-2 flex gap-1">
                           <button
                             onClick={() =>
@@ -636,6 +670,7 @@ export function Matrix({ user }: { user: User }) {
                             <DollarIcon />
                           </button>
                         </div>
+                        )}
                         {f.is_main_event && (
                           <div className="text-[10px] font-bold text-amber-400 uppercase tracking-wider text-center">
                             Main Event
@@ -652,19 +687,23 @@ export function Matrix({ user }: { user: User }) {
                             >
                               {f.fighter1_name}
                             </a>
-                            <input
-                              defaultValue={d?.price1 ?? ""}
-                              onBlur={(e) => saveField(f.id, "price1", e.target.value)}
-                              className="w-14 shrink-0 text-center rounded-md bg-neutral-800 border border-neutral-700 px-1 py-1 text-sm focus:border-emerald-500 outline-none"
-                            />
+                            {expanded && (
+                              <input
+                                defaultValue={d?.price1 ?? ""}
+                                onBlur={(e) => saveField(f.id, "price1", e.target.value)}
+                                className="w-14 shrink-0 text-center rounded-md bg-neutral-800 border border-neutral-700 px-1 py-1 text-sm focus:border-emerald-500 outline-none"
+                              />
+                            )}
                           </div>
                           <span className="text-neutral-600 text-xs px-1 pt-2">VS</span>
                           <div className="flex-1 flex items-center justify-start gap-2">
-                            <input
-                              defaultValue={d?.price2 ?? ""}
-                              onBlur={(e) => saveField(f.id, "price2", e.target.value)}
-                              className="w-14 shrink-0 text-center rounded-md bg-neutral-800 border border-neutral-700 px-1 py-1 text-sm focus:border-emerald-500 outline-none"
-                            />
+                            {expanded && (
+                              <input
+                                defaultValue={d?.price2 ?? ""}
+                                onBlur={(e) => saveField(f.id, "price2", e.target.value)}
+                                className="w-14 shrink-0 text-center rounded-md bg-neutral-800 border border-neutral-700 px-1 py-1 text-sm focus:border-emerald-500 outline-none"
+                              />
+                            )}
                             
                               <a href={tapologyUrl(f.fighter2_name)}
                               target="_blank"
@@ -682,6 +721,7 @@ export function Matrix({ user }: { user: User }) {
                         )}
                         {/* per-fighter notes (permanent profile), with a
                             per-fight fallback when a fighter has no stable id */}
+                        {expanded && (
                         <div className="grid grid-cols-2 gap-2">
                           {f1id ? (
                             <div className="space-y-1">
@@ -724,7 +764,8 @@ export function Matrix({ user }: { user: User }) {
                             />
                           )}
                         </div>
-                        {openMatrix[f.id] && (
+                        )}
+                        {expanded && openMatrix[f.id] && (
                           <FightMatrix
                             fight={f}
                             data={matrixData[f.id] ?? {}}
@@ -733,7 +774,7 @@ export function Matrix({ user }: { user: User }) {
                             }
                           />
                         )}
-                        {openBet[f.id] && (
+                        {expanded && openBet[f.id] && (
                           <QuickBet
                             fight={f}
                             eventLabel={`${ev.org} — ${ev.event_name}`}

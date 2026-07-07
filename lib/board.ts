@@ -62,7 +62,7 @@ function surnameEq(a: string, b: string): boolean {
 // tier resolves nickname aliases ("King Green" on BetOnline vs "Bobby Green"
 // on the card): a card never books the same two surnames twice, so a strong
 // match on one side plus a shared surname on the other identifies the bout.
-function boutMatch(rA: string, rB: string, tA: string, tB: string): boolean {
+export function boutMatch(rA: string, rB: string, tA: string, tB: string): boolean {
   if (samePerson(rA, tA) && samePerson(rB, tB)) return true;
   if (samePerson(rA, tA) && surnameEq(rB, tB)) return true;
   if (samePerson(rB, tB) && surnameEq(rA, tA)) return true;
