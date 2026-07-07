@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { boutMatch, sameFighter, fmtAmerican, freshness } from "@/lib/board";
 import { LineHistoryModal } from "@/components/LineHistoryModal";
-import type { EventRow, FightRow } from "@/lib/types";
+import type { EventRow, FightRow, UserData } from "@/lib/types";
 
 /**
  * The Odds board: BetOnline moneylines with movement, laid over the app's own
@@ -93,9 +93,11 @@ function PropCell({ price }: { price: number | null }) {
 export function OddsBoard({
   events,
   fights,
+  userData,
 }: {
   events: EventRow[];
   fights: FightRow[];
+  userData: Record<string, UserData>;
 }) {
   const [board, setBoard] = useState<BoardRow[]>([]);
   const [props, setProps] = useState<PropRow[]>([]);
@@ -278,8 +280,9 @@ export function OddsBoard({
               </span>
             </div>
             {/* column header */}
-            <div className="grid grid-cols-[minmax(0,1fr)_3.4rem_3.2rem_3.2rem_3.2rem] items-center gap-x-1 px-2 sm:px-3 py-1 border-b border-neutral-800 text-[9px] uppercase tracking-wide text-neutral-600">
+            <div className="grid grid-cols-[minmax(0,1fr)_3.2rem_3.4rem_3.2rem_3.2rem_3.2rem] items-center gap-x-1 px-2 sm:px-3 py-1 border-b border-neutral-800 text-[9px] uppercase tracking-wide text-neutral-600">
               <span />
+              <span className="text-right text-emerald-600">Mine</span>
               <span className="text-right">ML</span>
               <span className="text-right">KO</span>
               <span className="text-right">Sub</span>
@@ -293,14 +296,19 @@ export function OddsBoard({
                   f.is_main_event ||
                   (i === 0 && !active.evFights.some((x) => x.is_main_event));
                 const tot = fk ? totalFor(fk) : null;
+                const ud = userData[f.id];
                 const fighterRow = (
                   name: string,
                   sp: SidePrice | undefined,
-                  dim: boolean
+                  dim: boolean,
+                  myPrice: string | null
                 ) => (
-                  <div className="grid grid-cols-[minmax(0,1fr)_3.4rem_3.2rem_3.2rem_3.2rem] items-center gap-x-1 py-0.5">
+                  <div className="grid grid-cols-[minmax(0,1fr)_3.2rem_3.4rem_3.2rem_3.2rem_3.2rem] items-center gap-x-1 py-0.5">
                     <span className={`text-sm truncate ${dim ? "text-neutral-300" : ""}`}>
                       {name}
+                    </span>
+                    <span className="text-[11px] tabular-nums text-right text-emerald-300/90">
+                      {myPrice && myPrice.trim() ? myPrice.trim() : "—"}
                     </span>
                     <div className="flex justify-end">
                       <PriceButton
@@ -337,8 +345,8 @@ export function OddsBoard({
                         {isMain ? "Main Event" : f.weight_class || ""}
                       </span>
                     </div>
-                    {fighterRow(f.fighter1_name, m?.a, false)}
-                    {fighterRow(f.fighter2_name, m?.b, true)}
+                    {fighterRow(f.fighter1_name, m?.a, false, ud?.price1 ?? null)}
+                    {fighterRow(f.fighter2_name, m?.b, true, ud?.price2 ?? null)}
                     {tot && (tot.over !== null || tot.under !== null) && (
                       <div className="text-[10px] text-neutral-500 mt-1">
                         Total {tot.line}: O{" "}

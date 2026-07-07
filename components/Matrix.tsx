@@ -530,7 +530,7 @@ export function Matrix({ user }: { user: User }) {
       </header>
 
       {view === "odds" ? (
-        <OddsBoard events={events} fights={fights} />
+        <OddsBoard events={events} fights={fights} userData={userData} />
       ) : view === "profile" ? (
         <Profile
           user={user}
