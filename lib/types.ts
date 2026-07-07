@@ -101,6 +101,7 @@ export type ReviewRow = {
 export type LeaderboardRow = {
   username: string;
   tier: string;
+  market: string;
   org: string;
   bets: number;
   wins: number;

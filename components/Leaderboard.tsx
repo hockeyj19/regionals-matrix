@@ -34,8 +34,9 @@ export function Leaderboard({
   const [nameInput, setNameInput] = useState("");
   const [msg, setMsg] = useState("");
   const [tier, setTier] = useState<"sharp" | "soft">("sharp");
-  const [ufcOnly, setUfcOnly] = useState(false);
+  const [ufcOnly, setUfcOnly] = useState(true);
   const [sortBy, setSortBy] = useState<"profit" | "roi" | "clv">("profit");
+  const [marketFilter, setMarketFilter] = useState<"all" | "ml" | "prop">("all");
   const [openUser, setOpenUser] = useState<string | null>(null);
   const [userBets, setUserBets] = useState<Record<string, PublicBet[]>>({});
   const [reporting, setReporting] = useState<string | null>(null);
@@ -117,7 +118,12 @@ export function Leaderboard({
   // aggregate the tier/org grouped rows into the selected board
   const byUser: Record<string, Agg> = {};
   raw
-    .filter((r) => r.tier === tier && (!ufcOnly || r.org === "UFC"))
+    .filter(
+      (r) =>
+        r.tier === tier &&
+        (!ufcOnly || r.org === "UFC") &&
+        (marketFilter === "all" || r.market === marketFilter)
+    )
     .forEach((r) => {
       if (!byUser[r.username]) {
         byUser[r.username] = {
@@ -180,6 +186,7 @@ export function Leaderboard({
   for (const b of allPublic) {
     if (bookTier(b.book) !== tier) continue;
     if (ufcOnly && (b.event_context ?? "").split(" — ")[0] !== "UFC") continue;
+    if (marketFilter !== "all" && betMarket(b.bet_type) !== marketFilter) continue;
     (publicByUser[b.username] ??= []).push(b);
   }
   const publicUsers = Object.keys(publicByUser).sort((a, b) => {
@@ -189,11 +196,16 @@ export function Leaderboard({
     return a.localeCompare(b);
   });
 
+  function betMarket(bt: string | null): "ml" | "prop" {
+    return bt === "moneyline" ? "ml" : "prop";
+  }
+
   function visibleBets(u: string): PublicBet[] {
     return (userBets[u] ?? []).filter(
       (b) =>
         bookTier(b.book) === tier &&
-        (!ufcOnly || (b.event_context ?? "").split(" — ")[0] === "UFC")
+        (!ufcOnly || (b.event_context ?? "").split(" — ")[0] === "UFC") &&
+        (marketFilter === "all" || betMarket(b.bet_type) === marketFilter)
     );
   }
 
@@ -382,19 +394,53 @@ export function Leaderboard({
             Soft books
           </button>
         </div>
-        <div className="flex gap-1">
-          <button onClick={() => setUfcOnly((v) => !v)} className={sideBtn(ufcOnly)}>
-            UFC only
-          </button>
-          <button onClick={() => setSortBy("profit")} className={sideBtn(sortBy === "profit")}>
-            Profit
-          </button>
-          <button onClick={() => setSortBy("roi")} className={sideBtn(sortBy === "roi")}>
-            ROI
-          </button>
-          <button onClick={() => setSortBy("clv")} className={sideBtn(sortBy === "clv")}>
-            CLV
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex gap-1">
+            {(
+              [
+                ["all", "All"],
+                ["ml", "MLs"],
+                ["prop", "Props"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setMarketFilter(key)}
+                className={sideBtn(marketFilter === key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-neutral-400">UFC Only</span>
+            <button
+              onClick={() => setUfcOnly((v) => !v)}
+              role="switch"
+              aria-checked={ufcOnly}
+              title="Show UFC cards only"
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                ufcOnly ? "bg-emerald-600" : "bg-neutral-700"
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                  ufcOnly ? "translate-x-5" : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
+          <div className="flex gap-1">
+            <button onClick={() => setSortBy("profit")} className={sideBtn(sortBy === "profit")}>
+              Profit
+            </button>
+            <button onClick={() => setSortBy("roi")} className={sideBtn(sortBy === "roi")}>
+              ROI
+            </button>
+            <button onClick={() => setSortBy("clv")} className={sideBtn(sortBy === "clv")}>
+              CLV
+            </button>
+          </div>
         </div>
       </div>
       {showInfo && <ReadMePanel paragraphs={LEADERBOARD_README} />}
