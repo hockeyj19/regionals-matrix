@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { fmtAmerican, freshness } from "@/lib/board";
+import { LineHistoryModal } from "@/components/LineHistoryModal";
 
 /**
  * The Odds board: BetOnline's moneyline for every fight the monitors see,
@@ -51,10 +52,12 @@ function FighterLine({
   name,
   open,
   cur,
+  onOpen,
 }: {
   name: string;
   open: number | null;
   cur: number | null;
+  onOpen: () => void;
 }) {
   const fav = cur !== null && cur < 0;
   return (
@@ -67,13 +70,20 @@ function FighterLine({
         <span className="text-xs text-neutral-500 w-10 text-right">
           {cur !== null ? pct(impliedProb(cur)) : "—"}
         </span>
-        <span
-          className={`text-sm font-semibold w-16 text-right ${
-            fav ? "text-emerald-300" : "text-neutral-200"
+        <button
+          onClick={onOpen}
+          disabled={cur === null}
+          title="Chart this line's movement"
+          className={`text-sm font-semibold w-16 text-right rounded px-1 -mx-1 ${
+            cur === null
+              ? "text-neutral-600 cursor-default"
+              : fav
+              ? "text-emerald-300 hover:bg-emerald-600/10 hover:underline"
+              : "text-neutral-200 hover:bg-neutral-800 hover:underline"
           }`}
         >
           {cur !== null ? fmtAmerican(cur) : "—"}
-        </span>
+        </button>
       </div>
     </div>
   );
@@ -83,6 +93,9 @@ export function OddsBoard() {
   const [rows, setRows] = useState<BoardRow[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [q, setQ] = useState("");
+  const [selected, setSelected] = useState<
+    { fightKey: string; side: 1 | 2; name: string } | null
+  >(null);
 
   const load = useCallback(async () => {
     const { data } = await supabase.from("bol_board").select("*");
@@ -173,13 +186,36 @@ export function OddsBoard() {
           <div className="divide-y divide-neutral-900">
             {fights.map((f) => (
               <div key={f.fight_key} className="px-3 py-2">
-                <FighterLine name={f.fighter1} open={f.open1} cur={f.cur1} />
-                <FighterLine name={f.fighter2} open={f.open2} cur={f.cur2} />
+                <FighterLine
+                  name={f.fighter1}
+                  open={f.open1}
+                  cur={f.cur1}
+                  onOpen={() =>
+                    setSelected({ fightKey: f.fight_key, side: 1, name: f.fighter1 })
+                  }
+                />
+                <FighterLine
+                  name={f.fighter2}
+                  open={f.open2}
+                  cur={f.cur2}
+                  onOpen={() =>
+                    setSelected({ fightKey: f.fight_key, side: 2, name: f.fighter2 })
+                  }
+                />
               </div>
             ))}
           </div>
         </div>
       ))}
+
+      {selected && (
+        <LineHistoryModal
+          fightKey={selected.fightKey}
+          side={selected.side}
+          fighterName={selected.name}
+          onClose={() => setSelected(null)}
+        />
+      )}
 
       {loaded && rows.length > 0 && (
         <p className="text-[11px] text-neutral-600">
