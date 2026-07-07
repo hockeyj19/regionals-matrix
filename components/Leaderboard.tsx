@@ -42,6 +42,8 @@ export function Leaderboard({
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(true);
   const [showInfo, setShowInfo] = useState(false);
+  const [allPublic, setAllPublic] = useState<PublicBet[]>([]);
+  const [collapsedPublic, setCollapsedPublic] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let alive = true;
@@ -51,9 +53,14 @@ export function Leaderboard({
         .from("profiles")
         .select("username")
         .eq("user_id", user.id);
+      const { data: pubs } = await supabase
+        .from("public_bets")
+        .select("*")
+        .order("placed_at", { ascending: false });
       if (!alive) return;
       setRaw(lb ?? []);
       setUsername(me && me.length > 0 ? me[0].username : null);
+      setAllPublic(pubs ?? []);
       setLoading(false);
     }
     load();
@@ -164,6 +171,24 @@ export function Leaderboard({
       ? "text-orange-400"
       : "text-neutral-600";
 
+  // every public pick, grouped by user, ordered by board rank then name
+  const rankIndex: Record<string, number> = {};
+  sorted.forEach((r, i) => {
+    rankIndex[r.username] = i;
+  });
+  const publicByUser: Record<string, PublicBet[]> = {};
+  for (const b of allPublic) {
+    if (bookTier(b.book) !== tier) continue;
+    if (ufcOnly && (b.event_context ?? "").split(" — ")[0] !== "UFC") continue;
+    (publicByUser[b.username] ??= []).push(b);
+  }
+  const publicUsers = Object.keys(publicByUser).sort((a, b) => {
+    const ra = rankIndex[a] ?? Infinity;
+    const rb = rankIndex[b] ?? Infinity;
+    if (ra !== rb) return ra - rb;
+    return a.localeCompare(b);
+  });
+
   function visibleBets(u: string): PublicBet[] {
     return (userBets[u] ?? []).filter(
       (b) =>
@@ -172,72 +197,8 @@ export function Leaderboard({
     );
   }
 
-  function renderRow(r: Agg, rank: number | null) {
-    const rroi = roi(r);
-    const rclv = r.clv_n > 0 ? r.clv_sum / r.clv_n : null;
-    const isOpen = openUser === r.username;
-    const bets = visibleBets(r.username);
+  function renderPublicBet(b: PublicBet) {
     return (
-      <div key={r.username} className="rounded-xl border border-neutral-800 bg-neutral-900/40">
-        <div
-          onClick={() => toggleUser(r.username)}
-          className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-neutral-900/60 cursor-pointer"
-        >
-          <span
-            className={`w-6 text-sm font-bold ${
-              rank !== null ? rankColor(rank) : "text-neutral-700"
-            }`}
-          >
-            {rank !== null ? rank + 1 : "-"}
-          </span>
-          <span className="flex-1 text-sm font-medium truncate">
-            {r.username}
-            {r.username === username && <span className="text-neutral-600"> (you)</span>}
-          </span>
-          <span className="text-xs text-neutral-500 shrink-0">
-            {r.wins}-{r.losses}-{r.pushes}
-          </span>
-          <span
-            className={`text-xs shrink-0 w-16 text-right ${
-              r.profit >= 0 ? "text-emerald-400" : "text-red-400"
-            }`}
-          >
-            {fmtUnits(r.profit)}
-          </span>
-          <span
-            className={`text-xs shrink-0 w-16 text-right ${
-              rroi >= 0 ? "text-emerald-400" : "text-red-400"
-            }`}
-          >
-            {rroi >= 0 ? "+" : ""}
-            {rroi.toFixed(1)}%
-          </span>
-          <span
-            className={`text-xs shrink-0 w-14 text-right ${
-              rclv === null ? "text-neutral-700" : rclv >= 0 ? "text-emerald-400" : "text-red-400"
-            }`}
-          >
-            {rclv === null ? "—" : `${rclv >= 0 ? "+" : ""}${rclv.toFixed(1)}`}
-          </span>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenProfile(r.username);
-            }}
-            title="Open this user's profile"
-            className="shrink-0 rounded border border-neutral-800 px-1.5 py-0.5 text-[11px] text-neutral-600 hover:text-emerald-400 hover:border-neutral-700"
-          >
-            profile
-          </button>
-        </div>
-        {isOpen && (
-          <div className="border-t border-neutral-800 p-2 space-y-1">
-            {bets.length === 0 && (
-              <p className="text-xs text-neutral-600 px-1">
-                No visible bets on this board yet (picks appear once their event starts).
-              </p>
-            )}
-            {bets.map((b) => (
               <div key={b.id} className="px-1 py-0.5">
                 <div className="flex items-center justify-between gap-2 text-xs">
                   <span className="truncate">
@@ -311,8 +272,75 @@ export function Leaderboard({
                     </button>
                   </div>
                 )}
-              </div>
-            ))}
+              </div>);
+  }
+
+  function renderRow(r: Agg, rank: number | null) {
+    const rroi = roi(r);
+    const rclv = r.clv_n > 0 ? r.clv_sum / r.clv_n : null;
+    const isOpen = openUser === r.username;
+    const bets = visibleBets(r.username);
+    return (
+      <div key={r.username} className="rounded-xl border border-neutral-800 bg-neutral-900/40">
+        <div
+          onClick={() => toggleUser(r.username)}
+          className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-neutral-900/60 cursor-pointer"
+        >
+          <span
+            className={`w-6 text-sm font-bold ${
+              rank !== null ? rankColor(rank) : "text-neutral-700"
+            }`}
+          >
+            {rank !== null ? rank + 1 : "-"}
+          </span>
+          <span className="flex-1 text-sm font-medium truncate">
+            {r.username}
+            {r.username === username && <span className="text-neutral-600"> (you)</span>}
+          </span>
+          <span className="text-xs text-neutral-500 shrink-0">
+            {r.wins}-{r.losses}-{r.pushes}
+          </span>
+          <span
+            className={`text-xs shrink-0 w-16 text-right ${
+              r.profit >= 0 ? "text-emerald-400" : "text-red-400"
+            }`}
+          >
+            {fmtUnits(r.profit)}
+          </span>
+          <span
+            className={`text-xs shrink-0 w-16 text-right ${
+              rroi >= 0 ? "text-emerald-400" : "text-red-400"
+            }`}
+          >
+            {rroi >= 0 ? "+" : ""}
+            {rroi.toFixed(1)}%
+          </span>
+          <span
+            className={`text-xs shrink-0 w-14 text-right ${
+              rclv === null ? "text-neutral-700" : rclv >= 0 ? "text-emerald-400" : "text-red-400"
+            }`}
+          >
+            {rclv === null ? "—" : `${rclv >= 0 ? "+" : ""}${rclv.toFixed(1)}`}
+          </span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenProfile(r.username);
+            }}
+            title="Open this user's profile"
+            className="shrink-0 rounded border border-neutral-800 px-1.5 py-0.5 text-[11px] text-neutral-600 hover:text-emerald-400 hover:border-neutral-700"
+          >
+            profile
+          </button>
+        </div>
+        {isOpen && (
+          <div className="border-t border-neutral-800 p-2 space-y-1">
+            {bets.length === 0 && (
+              <p className="text-xs text-neutral-600 px-1">
+                No visible bets on this board yet (picks appear once their event starts).
+              </p>
+            )}
+            {bets.map((b) => renderPublicBet(b))}
           </div>
         )}
       </div>
@@ -486,6 +514,81 @@ export function Leaderboard({
             Building a record (under {MIN_BETS_TO_RANK} bets)
           </p>
           {building.map((r) => renderRow(r, null))}
+        </div>
+      )}
+
+      {!loading && publicUsers.length > 0 && (
+        <div className="space-y-2 pt-2">
+          <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
+            All public picks
+          </p>
+          {publicUsers.map((u) => {
+            const collapsed = collapsedPublic.has(u);
+            const rk = rankIndex[u];
+            const ubets = publicByUser[u];
+            return (
+              <div key={u} className="rounded-xl border border-neutral-800 bg-neutral-900/40">
+                <div
+                  onClick={() =>
+                    setCollapsedPublic((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(u)) next.delete(u);
+                      else next.add(u);
+                      return next;
+                    })
+                  }
+                  className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-neutral-900/60"
+                >
+                  <span
+                    className={`w-6 text-sm font-bold ${
+                      rk !== undefined ? rankColor(rk) : "text-neutral-700"
+                    }`}
+                  >
+                    {rk !== undefined ? rk + 1 : "-"}
+                  </span>
+                  <span className="flex-1 text-sm font-medium truncate">
+                    {u}
+                    {u === username && <span className="text-neutral-600"> (you)</span>}
+                  </span>
+                  <span className="text-[11px] text-neutral-600 shrink-0">
+                    {ubets.length} pick{ubets.length === 1 ? "" : "s"}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenProfile(u);
+                    }}
+                    title="Open this user's profile"
+                    className="shrink-0 rounded border border-neutral-800 px-1.5 py-0.5 text-[11px] text-neutral-600 hover:text-emerald-400 hover:border-neutral-700"
+                  >
+                    profile
+                  </button>
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    className={`text-neutral-500 transition-transform ${
+                      collapsed ? "" : "rotate-180"
+                    }`}
+                  >
+                    <path
+                      d="M6 9l6 6 6-6"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </div>
+                {!collapsed && (
+                  <div className="border-t border-neutral-800 p-2 space-y-1">
+                    {ubets.map((b) => renderPublicBet(b))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
