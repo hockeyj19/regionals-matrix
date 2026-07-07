@@ -71,6 +71,79 @@ function boutMatch(rA: string, rB: string, tA: string, tB: string): boolean {
   return false;
 }
 
+export function sameFighter(a: string, b: string): boolean {
+  return samePerson(a, b);
+}
+
+export type PropLine = {
+  market: string; // method | round | method_round | total
+  fighter: string | null;
+  method: string | null;
+  round: number | null;
+  ou_side: string | null;
+  ou_line: number | null;
+  odds: number;
+};
+
+// current BetOnline prop prices for a fight, from the bots' prop ledger
+export async function fetchFightProps(f1: string, f2: string): Promise<PropLine[] | null> {
+  const { data, error } = await supabase.from("bol_current_props").select("*");
+  if (error || !data) return null;
+  const out: PropLine[] = [];
+  for (const row of data as (PropLine & { fight_key: string })[]) {
+    const parts = String(row.fight_key).split(" vs ");
+    if (parts.length !== 2) continue;
+    const [ra, rb] = parts;
+    if (boutMatch(ra, rb, f1, f2) || boutMatch(rb, ra, f1, f2)) {
+      out.push({
+        market: row.market, fighter: row.fighter, method: row.method,
+        round: row.round, ou_side: row.ou_side, ou_line: row.ou_line,
+        odds: row.odds,
+      });
+    }
+  }
+  return out;
+}
+
+// the board price for a specific prop selection, or null if the board lacks it
+export function matchPropOdds(
+  props: PropLine[],
+  betType: string,
+  fighterName: string,
+  method: string,
+  round: string,
+  ouSide: string,
+  ouLine: number | null
+): number | null {
+  if (betType === "totals") {
+    const hit = props.find(
+      (p) =>
+        p.market === "total" &&
+        p.ou_side === ouSide &&
+        ouLine !== null &&
+        p.ou_line !== null &&
+        Math.abs(p.ou_line - ouLine) < 1e-6
+    );
+    return hit ? hit.odds : null;
+  }
+  const hit = props.find((p) => {
+    if (p.market !== betType) return false;
+    if (!p.fighter || !sameFighter(p.fighter, fighterName)) return false;
+    if ((betType === "method" || betType === "method_round") && p.method !== method)
+      return false;
+    if ((betType === "round" || betType === "method_round") && String(p.round) !== String(round))
+      return false;
+    return true;
+  });
+  return hit ? hit.odds : null;
+}
+
+// the board's total-rounds line for a fight (usually one, e.g. 2.5)
+export function boardTotalLine(props: PropLine[]): number | null {
+  const t = props.find((p) => p.market === "total" && p.ou_line !== null);
+  return t ? t.ou_line : null;
+}
+
 export async function fetchFightBoard(f1: string, f2: string): Promise<FightBoard> {
   const { data, error } = await supabase.from("bol_current_lines").select("*");
   if (error || !data) return null;

@@ -2,8 +2,17 @@
 
 import { useEffect, useState } from "react";
 import type { FightRow, NewBet } from "@/lib/types";
-import { BOOKS, eventStartISO, parseBetInputs, sideBtn } from "@/lib/format";
-import { fetchFightBoard, fmtAmerican, freshness, type FightBoard } from "@/lib/board";
+import { eventStartISO, parseBetInputs, sideBtn } from "@/lib/format";
+import {
+  fetchFightBoard,
+  fetchFightProps,
+  matchPropOdds,
+  boardTotalLine,
+  fmtAmerican,
+  freshness,
+  type FightBoard,
+  type PropLine,
+} from "@/lib/board";
 
 const BET_TYPE_OPTIONS = [
   { key: "moneyline", label: "ML" },
@@ -36,12 +45,11 @@ export function QuickBet({
   const [ouSide, setOuSide] = useState<"over" | "under">("over");
   const [method, setMethod] = useState("ko_tko");
   const [round, setRound] = useState("");
-  const [line, setLine] = useState("2.5");
   const [odds, setOdds] = useState("");
   const [stake, setStake] = useState("");
-  const [book, setBook] = useState("");
   const [error, setError] = useState("");
   const [board, setBoard] = useState<FightBoard>(null);
+  const [props, setProps] = useState<PropLine[] | null>(null);
   const [boardLoaded, setBoardLoaded] = useState(false);
   const [nowTs] = useState(() => Date.now()); // frozen per open; keeps render pure
 
@@ -53,19 +61,33 @@ export function QuickBet({
   // A verified moneyline is priced off the BetOnline board, not typed:
   // you accept the line the bots see, or - if BetOnline hasn't posted it,
   // or the fight has started - the moneyline path is closed.
+  // Every verified bet - moneyline and every prop - is priced off the
+  // BetOnline board, read-only. The user picks the outcome; its price fills
+  // from the ledger, or (if BetOnline hasn't posted it, or the fight has
+  // started) the path is closed. The book is always BetOnline, the oracle.
   const isML = betType === "moneyline";
   const evStart = eventStartISO(eventDate, eventTime);
   const started = evStart ? new Date(evStart).getTime() <= nowTs : false;
-  const boardPrice = !board ? null : side === 1 ? board.side1 : board.side2;
-  const mlReady = boardLoaded && board !== null && boardPrice !== null && !started;
-  const effectiveBook = isML ? "BetOnline.ag" : book;
+  const sideName = side === 1 ? fight.fighter1_name : fight.fighter2_name;
+  const propList = props ?? [];
+  const mlPrice = !board ? null : side === 1 ? board.side1 : board.side2;
+  const totalLine = betType === "totals" ? boardTotalLine(propList) : null;
+  const boardPrice = isML
+    ? mlPrice
+    : matchPropOdds(propList, betType, sideName, method, round, ouSide, totalLine);
+  const priceReady = boardLoaded && boardPrice !== null && !started;
+  const effectiveBook = "BetOnline.ag";
 
   useEffect(() => {
     if (!open) return;
     let alive = true;
-    fetchFightBoard(fight.fighter1_name, fight.fighter2_name).then((b) => {
+    Promise.all([
+      fetchFightBoard(fight.fighter1_name, fight.fighter2_name),
+      fetchFightProps(fight.fighter1_name, fight.fighter2_name),
+    ]).then(([b, pr]) => {
       if (!alive) return;
       setBoard(b);
+      setProps(pr);
       setBoardLoaded(true);
     });
     return () => {
@@ -80,20 +102,16 @@ export function QuickBet({
   }
 
   async function submit() {
-    if (isML && !mlReady) {
+    if (!priceReady) {
       setError(
         started
           ? "This fight has started - verified logging is closed."
-          : "BetOnline hasn't posted this line yet - check back, or log a different market."
+          : "BetOnline hasn't posted this price yet - check back, or try another market."
       );
       return;
     }
-    if (!isML && !book) {
-      setError("Pick the book you bet at.");
-      return;
-    }
-    // moneyline price is the board's, not the user's
-    const oddsInput = isML && boardPrice !== null ? fmtAmerican(boardPrice) : odds;
+    // every verified price is the board's, not the user's
+    const oddsInput = boardPrice !== null ? fmtAmerican(boardPrice) : odds;
     const parsed = parseBetInputs(oddsInput, stake);
     if (typeof parsed === "string") {
       setError(parsed);
@@ -107,14 +125,7 @@ export function QuickBet({
         return;
       }
     }
-    let ouLine: number | null = null;
-    if (needsLine) {
-      ouLine = parseFloat(line);
-      if (isNaN(ouLine) || ouLine <= 0 || Math.round(ouLine * 2) % 2 !== 1) {
-        setError("Use a half line like 1.5 or 2.5.");
-        return;
-      }
-    }
+    const ouLine = needsLine ? totalLine : null;
     const name = side === 1 ? fight.fighter1_name : fight.fighter2_name;
     const fid = side === 1 ? fight.fighter1_id : fight.fighter2_id;
     const effectiveType = betType === "totals" ? ouSide : betType;
@@ -161,7 +172,6 @@ export function QuickBet({
     setOdds("");
     setStake("");
     setRound("");
-    setLine("2.5");
     setError("");
   }
 
@@ -208,27 +218,12 @@ export function QuickBet({
         </div>
       )}
       <div className="flex flex-wrap gap-2 items-center">
-        {isML ? (
-          <span
-            title="Verified moneylines are priced and graded off the BetOnline board"
-            className="rounded-md border border-emerald-800 bg-emerald-600/10 px-2 py-1 text-xs text-emerald-300"
-          >
-            BetOnline.ag
-          </span>
-        ) : (
-          <select
-            value={book}
-            onChange={(e) => setBook(e.target.value)}
-            className="rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
-          >
-            <option value="">Book</option>
-            {BOOKS.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </select>
-        )}
+        <span
+          title="Verified bets are priced and graded off the BetOnline board"
+          className="rounded-md border border-emerald-800 bg-emerald-600/10 px-2 py-1 text-xs text-emerald-300"
+        >
+          BetOnline.ag
+        </span>
         {needsMethod && (
           <select
             value={method}
@@ -249,36 +244,24 @@ export function QuickBet({
           />
         )}
         {needsLine && (
-          <input
-            value={line}
-            onChange={(e) => setLine(e.target.value)}
-            placeholder="Line (2.5)"
-            className="w-20 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
-          />
+          <span className="rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-200">
+            {totalLine !== null ? `${totalLine} rds` : "no total"}
+          </span>
         )}
-        {isML ? (
-          !boardLoaded ? (
-            <span className="px-2 py-1 text-xs text-neutral-600">reading board…</span>
-          ) : mlReady && boardPrice !== null ? (
-            <span
-              title={`BetOnline board, ${freshness(board!.capturedAt)}`}
-              className="rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-200"
-            >
-              {fmtAmerican(boardPrice)}
-              <span className="text-neutral-500"> · board</span>
-            </span>
-          ) : (
-            <span className="px-2 py-1 text-xs text-amber-400">
-              {started ? "event started" : "not on BetOnline yet"}
-            </span>
-          )
+        {!boardLoaded ? (
+          <span className="px-2 py-1 text-xs text-neutral-600">reading board…</span>
+        ) : priceReady && boardPrice !== null ? (
+          <span
+            title={board ? `BetOnline board, ${freshness(board.capturedAt)}` : "BetOnline board"}
+            className="rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-200"
+          >
+            {fmtAmerican(boardPrice)}
+            <span className="text-neutral-500"> · board</span>
+          </span>
         ) : (
-          <input
-            value={odds}
-            onChange={(e) => setOdds(e.target.value)}
-            placeholder="Odds (-150)"
-            className="w-24 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
-          />
+          <span className="px-2 py-1 text-xs text-amber-400">
+            {started ? "event started" : "not on BetOnline yet"}
+          </span>
         )}
         <input
           value={stake}
@@ -288,7 +271,7 @@ export function QuickBet({
         />
         <button
           onClick={submit}
-          disabled={isML && !mlReady}
+          disabled={!priceReady}
           className="rounded-md bg-emerald-600 hover:bg-emerald-500 px-3 py-1 text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-emerald-600"
         >
           Save
