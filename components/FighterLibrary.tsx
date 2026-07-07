@@ -83,7 +83,7 @@ export function FighterLibrary({
 
       <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-          <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
+          <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wide">
             Pick history
           </p>
           <div className="flex flex-wrap gap-1">
@@ -165,6 +165,9 @@ export function FighterLibrary({
           )}
         </div>
       </div>
+      <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wide">
+        Notes history
+      </p>
       <input
         value={q}
         onChange={(e) => setQ(e.target.value)}

@@ -472,16 +472,6 @@ export function Matrix({ user }: { user: User }) {
                 Notes
               </button>
               <button
-                onClick={() => setView("odds")}
-                className={`rounded-lg border px-3 py-1 text-sm ${
-                  view === "odds"
-                    ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
-                    : "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
-                }`}
-              >
-                Odds
-              </button>
-              <button
                 onClick={() => setView("fighters")}
                 className={`rounded-lg border px-3 py-1 text-sm ${
                   view === "fighters"
@@ -490,6 +480,16 @@ export function Matrix({ user }: { user: User }) {
                 }`}
               >
                 Library
+              </button>
+              <button
+                onClick={() => setView("odds")}
+                className={`rounded-lg border px-3 py-1 text-sm ${
+                  view === "odds"
+                    ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
+                    : "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
+                }`}
+              >
+                Odds
               </button>
               <button
                 onClick={() => setView("bets")}
