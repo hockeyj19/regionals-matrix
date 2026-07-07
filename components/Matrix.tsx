@@ -75,7 +75,7 @@ function PastNotes({
         </p>
       ))}
       {past.length > 3 && (
-        <p className="text-[11px] text-neutral-600">+{past.length - 3} more in the Fighters tab</p>
+        <p className="text-[11px] text-neutral-600">+{past.length - 3} more in the Notes tab</p>
       )}
     </div>
   );
@@ -456,7 +456,7 @@ export function Matrix({ user }: { user: User }) {
                     : "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
                 }`}
               >
-                Fighters
+                Notes
               </button>
               <button
                 onClick={() => setView("bets")}
@@ -621,28 +621,41 @@ export function Matrix({ user }: { user: User }) {
                     );
                     const expanded = openNotes[f.id] ?? hasWork;
                     return (
-                      <div key={f.id} className="relative p-4 space-y-3">
+                      <div
+                        key={f.id}
+                        onClick={() =>
+                          setOpenNotes((prev) => ({ ...prev, [f.id]: !expanded }))
+                        }
+                        className="relative p-4 space-y-3 cursor-pointer hover:bg-neutral-900/30"
+                      >
                         <button
-                          onClick={() =>
-                            setOpenNotes((prev) => ({ ...prev, [f.id]: !expanded }))
-                          }
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenNotes((prev) => ({ ...prev, [f.id]: !expanded }));
+                          }}
                           title={expanded ? "Collapse" : "Expand notes & tools"}
-                          className="absolute right-2 top-2 rounded-md border border-neutral-800 p-1 text-neutral-600 hover:text-neutral-300 hover:bg-neutral-900"
+                          className={`absolute right-2 top-2 z-10 flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${
+                            expanded
+                              ? "border-emerald-700 bg-emerald-600/15 text-emerald-300"
+                              : "border-neutral-600 bg-neutral-800 text-neutral-300 hover:border-emerald-700 hover:text-emerald-300"
+                          }`}
                         >
+                          {expanded ? "Close" : "Expand"}
                           <svg
-                            width="12" height="12" viewBox="0 0 24 24" fill="none"
+                            width="14" height="14" viewBox="0 0 24 24" fill="none"
                             className={`transition-transform ${expanded ? "rotate-180" : ""}`}
                           >
-                            <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2"
+                            <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2.5"
                               strokeLinecap="round" strokeLinejoin="round" />
                           </svg>
                         </button>
                         {expanded && (
                         <div className="absolute left-2 top-2 flex gap-1">
                           <button
-                            onClick={() =>
-                              setOpenMatrix((prev) => ({ ...prev, [f.id]: !prev[f.id] }))
-                            }
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenMatrix((prev) => ({ ...prev, [f.id]: !prev[f.id] }));
+                            }}
                             title="Handicapping matrix"
                             className={`rounded-md border p-1.5 ${
                               openMatrix[f.id]
@@ -655,9 +668,10 @@ export function Matrix({ user }: { user: User }) {
                             <GridIcon />
                           </button>
                           <button
-                            onClick={() =>
-                              setOpenBet((prev) => ({ ...prev, [f.id]: !prev[f.id] }))
-                            }
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenBet((prev) => ({ ...prev, [f.id]: !prev[f.id] }));
+                            }}
                             title="Log a bet"
                             className={`rounded-md border p-1.5 ${
                               openBet[f.id]
@@ -683,6 +697,7 @@ export function Matrix({ user }: { user: User }) {
                               <a href={tapologyUrl(f.fighter1_name)}
                               target="_blank"
                               rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
                               className="text-sm font-medium text-right truncate hover:text-emerald-400 hover:underline"
                             >
                               {f.fighter1_name}
@@ -690,6 +705,7 @@ export function Matrix({ user }: { user: User }) {
                             {expanded && (
                               <input
                                 defaultValue={d?.price1 ?? ""}
+                                onClick={(e) => e.stopPropagation()}
                                 onBlur={(e) => saveField(f.id, "price1", e.target.value)}
                                 className="w-14 shrink-0 text-center rounded-md bg-neutral-800 border border-neutral-700 px-1 py-1 text-sm focus:border-emerald-500 outline-none"
                               />
@@ -700,6 +716,7 @@ export function Matrix({ user }: { user: User }) {
                             {expanded && (
                               <input
                                 defaultValue={d?.price2 ?? ""}
+                                onClick={(e) => e.stopPropagation()}
                                 onBlur={(e) => saveField(f.id, "price2", e.target.value)}
                                 className="w-14 shrink-0 text-center rounded-md bg-neutral-800 border border-neutral-700 px-1 py-1 text-sm focus:border-emerald-500 outline-none"
                               />
@@ -708,6 +725,7 @@ export function Matrix({ user }: { user: User }) {
                               <a href={tapologyUrl(f.fighter2_name)}
                               target="_blank"
                               rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
                               className="text-sm font-medium text-left truncate hover:text-emerald-400 hover:underline"
                             >
                               {f.fighter2_name}
@@ -722,7 +740,10 @@ export function Matrix({ user }: { user: User }) {
                         {/* per-fighter notes (permanent profile), with a
                             per-fight fallback when a fighter has no stable id */}
                         {expanded && (
-                        <div className="grid grid-cols-2 gap-2">
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          className="grid grid-cols-2 gap-2"
+                        >
                           {f1id ? (
                             <div className="space-y-1">
                               <GrowingTextarea
@@ -766,24 +787,28 @@ export function Matrix({ user }: { user: User }) {
                         </div>
                         )}
                         {expanded && openMatrix[f.id] && (
-                          <FightMatrix
-                            fight={f}
-                            data={matrixData[f.id] ?? {}}
-                            onSave={(market, cell, value) =>
-                              saveMatrixCell(f.id, market, cell, value)
-                            }
-                          />
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <FightMatrix
+                              fight={f}
+                              data={matrixData[f.id] ?? {}}
+                              onSave={(market, cell, value) =>
+                                saveMatrixCell(f.id, market, cell, value)
+                              }
+                            />
+                          </div>
                         )}
                         {expanded && openBet[f.id] && (
-                          <QuickBet
-                            fight={f}
-                            eventLabel={`${ev.org} — ${ev.event_name}`}
-                            eventDate={ev.event_date}
-                            eventTime={ev.event_time}
-                            eventSourceUrl={ev.source_url}
-                            onAdd={addBet}
-                            embedded
-                          />
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <QuickBet
+                              fight={f}
+                              eventLabel={`${ev.org} — ${ev.event_name}`}
+                              eventDate={ev.event_date}
+                              eventTime={ev.event_time}
+                              eventSourceUrl={ev.source_url}
+                              onAdd={addBet}
+                              embedded
+                            />
+                          </div>
                         )}
                       </div>
                     );
