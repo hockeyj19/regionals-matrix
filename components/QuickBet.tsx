@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FightRow, NewBet } from "@/lib/types";
 import { BOOKS, eventStartISO, parseBetInputs, sideBtn } from "@/lib/format";
-import { checkPrice } from "@/lib/odds";
+import { fetchFightBoard, fmtAmerican, freshness, type FightBoard } from "@/lib/board";
 
 const BET_TYPE_OPTIONS = [
   { key: "moneyline", label: "ML" },
@@ -41,11 +41,37 @@ export function QuickBet({
   const [stake, setStake] = useState("");
   const [book, setBook] = useState("");
   const [error, setError] = useState("");
+  const [board, setBoard] = useState<FightBoard>(null);
+  const [boardLoaded, setBoardLoaded] = useState(false);
+  const [nowTs] = useState(() => Date.now()); // frozen per open; keeps render pure
 
   const needsSide = betType !== "totals";
   const needsMethod = betType === "method" || betType === "method_round";
   const needsRound = betType === "round" || betType === "method_round";
   const needsLine = betType === "totals";
+
+  // A verified moneyline is priced off the BetOnline board, not typed:
+  // you accept the line the bots see, or - if BetOnline hasn't posted it,
+  // or the fight has started - the moneyline path is closed.
+  const isML = betType === "moneyline";
+  const evStart = eventStartISO(eventDate, eventTime);
+  const started = evStart ? new Date(evStart).getTime() <= nowTs : false;
+  const boardPrice = !board ? null : side === 1 ? board.side1 : board.side2;
+  const mlReady = boardLoaded && board !== null && boardPrice !== null && !started;
+  const effectiveBook = isML ? "BetOnline.ag" : book;
+
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    fetchFightBoard(fight.fighter1_name, fight.fighter2_name).then((b) => {
+      if (!alive) return;
+      setBoard(b);
+      setBoardLoaded(true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [open, fight.fighter1_name, fight.fighter2_name]);
 
   function pickType(t: string) {
     setBetType(t);
@@ -54,11 +80,21 @@ export function QuickBet({
   }
 
   async function submit() {
-    if (!book) {
+    if (isML && !mlReady) {
+      setError(
+        started
+          ? "This fight has started - verified logging is closed."
+          : "BetOnline hasn't posted this line yet - check back, or log a different market."
+      );
+      return;
+    }
+    if (!isML && !book) {
       setError("Pick the book you bet at.");
       return;
     }
-    const parsed = parseBetInputs(odds, stake);
+    // moneyline price is the board's, not the user's
+    const oddsInput = isML && boardPrice !== null ? fmtAmerican(boardPrice) : odds;
+    const parsed = parseBetInputs(oddsInput, stake);
     if (typeof parsed === "string") {
       setError(parsed);
       return;
@@ -83,32 +119,9 @@ export function QuickBet({
     const fid = side === 1 ? fight.fighter1_id : fight.fighter2_id;
     const effectiveType = betType === "totals" ? ouSide : betType;
 
-    // market check: pin the live board against the claimed moneyline price.
-    let priceCheck: string | null = null;
-    let marketBest: number | null = null;
-    let marketBook: string | null = null;
-    let checkedAt: string | null = null;
-    if (effectiveType === "moneyline") {
-      checkedAt = new Date().toISOString();
-      try {
-        const res = await fetch("/api/odds");
-        const data = await res.json();
-        const sideName = side === 1 ? fight.fighter1_name : fight.fighter2_name;
-        const c = checkPrice(
-          data.events ?? [],
-          fight.fighter1_name,
-          fight.fighter2_name,
-          sideName,
-          parsed.odds
-        );
-        priceCheck = c.price_check;
-        marketBest = c.market_best;
-        marketBook = c.market_book;
-      } catch {
-        priceCheck = "no_data";
-      }
-    }
-
+    // Trust marks are the server's to write: the insert trigger nulls any
+    // price_check/market_* sent from here, and the morning scrape stamps the
+    // verdict from the bot ledger at the server-stamped log time.
     const methodLabel =
       method === "ko_tko" ? "KO/TKO" : method === "submission" ? "Submission" : "Decision";
     let selection = name;
@@ -122,11 +135,11 @@ export function QuickBet({
       event_context: eventLabel,
       event_date: eventDate,
       event_start: eventStartISO(eventDate, eventTime),
-      book,
-      price_check: priceCheck,
-      market_best: marketBest,
-      market_book: marketBook,
-      market_checked_at: checkedAt,
+      book: effectiveBook,
+      price_check: null,
+      market_best: null,
+      market_book: null,
+      market_checked_at: null,
       close_odds: null,
       clv: null,
       // for over/under bets the fighter id is just a bout locator for the grader
@@ -139,6 +152,8 @@ export function QuickBet({
       odds: parsed.odds,
       stake: parsed.stake,
     });
+    setBoardLoaded(false);
+    setBoard(null);
     setOpen(embedded);
     setSide(1);
     setBetType("moneyline");
@@ -192,19 +207,28 @@ export function QuickBet({
           </button>
         </div>
       )}
-      <div className="flex flex-wrap gap-2">
-        <select
-          value={book}
-          onChange={(e) => setBook(e.target.value)}
-          className="rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
-        >
-          <option value="">Book</option>
-          {BOOKS.map((b) => (
-            <option key={b} value={b}>
-              {b}
-            </option>
-          ))}
-        </select>
+      <div className="flex flex-wrap gap-2 items-center">
+        {isML ? (
+          <span
+            title="Verified moneylines are priced and graded off the BetOnline board"
+            className="rounded-md border border-emerald-800 bg-emerald-600/10 px-2 py-1 text-xs text-emerald-300"
+          >
+            BetOnline.ag
+          </span>
+        ) : (
+          <select
+            value={book}
+            onChange={(e) => setBook(e.target.value)}
+            className="rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
+          >
+            <option value="">Book</option>
+            {BOOKS.map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
+          </select>
+        )}
         {needsMethod && (
           <select
             value={method}
@@ -232,12 +256,30 @@ export function QuickBet({
             className="w-20 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
           />
         )}
-        <input
-          value={odds}
-          onChange={(e) => setOdds(e.target.value)}
-          placeholder="Odds (-150)"
-          className="w-24 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
-        />
+        {isML ? (
+          !boardLoaded ? (
+            <span className="px-2 py-1 text-xs text-neutral-600">reading board…</span>
+          ) : mlReady && boardPrice !== null ? (
+            <span
+              title={`BetOnline board, ${freshness(board!.capturedAt)}`}
+              className="rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-200"
+            >
+              {fmtAmerican(boardPrice)}
+              <span className="text-neutral-500"> · board</span>
+            </span>
+          ) : (
+            <span className="px-2 py-1 text-xs text-amber-400">
+              {started ? "event started" : "not on BetOnline yet"}
+            </span>
+          )
+        ) : (
+          <input
+            value={odds}
+            onChange={(e) => setOdds(e.target.value)}
+            placeholder="Odds (-150)"
+            className="w-24 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
+          />
+        )}
         <input
           value={stake}
           onChange={(e) => setStake(e.target.value)}
@@ -246,7 +288,8 @@ export function QuickBet({
         />
         <button
           onClick={submit}
-          className="rounded-md bg-emerald-600 hover:bg-emerald-500 px-3 py-1 text-xs font-medium"
+          disabled={isML && !mlReady}
+          className="rounded-md bg-emerald-600 hover:bg-emerald-500 px-3 py-1 text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-emerald-600"
         >
           Save
         </button>

@@ -87,7 +87,7 @@ def upsert_event(org, event_name, event_date, location=None,
     all fights/notes/prices under it) while source_url, name, and time are
     refreshed to the new page."""
     q = (supabase.table("events")
-         .select("id, event_time, location, event_name, source_url")
+         .select("id, event_time, location, event_name, source_url, event_date")
          .eq("org", org)
          .eq("event_date", event_date)
          .execute())
@@ -111,9 +111,40 @@ def upsert_event(org, event_name, event_date, location=None,
             if best_score >= 3:
                 row = best
 
+    if row is None:
+        # Cross-source date drift: the same event can be stored a day off
+        # (Sherdog's date vs the gidstats header, local vs ET - the same
+        # +/-1 quirk gidstats' own URL slugs show). Adopt a +/-1 day row
+        # ONLY when the names clearly agree (a shared number or 3+ tokens),
+        # so an org's back-to-back cards can never merge by accident.
+        from datetime import date as _date, timedelta as _td
+        try:
+            d = _date.fromisoformat(event_date)
+        except (TypeError, ValueError):
+            d = None
+        if d is not None:
+            near = [(d - _td(days=1)).isoformat(), (d + _td(days=1)).isoformat()]
+            q2 = (supabase.table("events")
+                  .select("id, event_time, location, event_name, source_url, "
+                          "event_date")
+                  .eq("org", org)
+                  .in_("event_date", near)
+                  .execute())
+            new_t = _tokens(event_name)
+            best, best_score = None, 0
+            for r in (q2.data or []):
+                ov = _tokens(r.get("event_name")) & new_t
+                score = len(ov) + (2 if any(t.isdigit() for t in ov) else 0)
+                if score > best_score:
+                    best, best_score = r, score
+            if best_score >= 3:
+                row = best
+
     if row:
         event_id = row["id"]
         updates = {}
+        if event_date and event_date != row.get("event_date"):
+            updates["event_date"] = event_date   # correct cross-source drift
         if event_name and event_name != row.get("event_name"):
             updates["event_name"] = event_name
         if source_url and source_url != row.get("source_url"):

@@ -137,11 +137,10 @@ export function eventStartISO(eventDate: string | null, eventTime: string | null
   return isNaN(d.getTime()) ? null : d.toISOString();
 }
 
-export const SHARP_BOOKS = ["BetOnline.ag", "Pinnacle"];
+export const SHARP_BOOKS = ["BetOnline.ag"];
 export const SOFT_BOOKS = ["Bet365", "DraftKings", "FanDuel", "BetMGM", "Caesars", "BetRivers", "Bovada"];
 export const BOOKS = [
   "BetOnline.ag",
-  "Pinnacle",
   "Bet365",
   "DraftKings",
   "FanDuel",
