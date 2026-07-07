@@ -50,6 +50,23 @@ function toAmerican(decimal: number): number {
   return decimal >= 2 ? Math.round((decimal - 1) * 100) : -Math.round(100 / (decimal - 1));
 }
 
+type DirRow = {
+  user_id: string;
+  username: string;
+  avatar_url: string | null;
+  followers: number;
+  following: number;
+  bets: number;
+  wins: number;
+  losses: number;
+  pushes: number;
+  staked: number;
+  profit: number;
+  ml_bets: number;
+  prop_bets: number;
+  last_bet_at: string | null;
+};
+
 function typeMatch(b: { bet_type: string | null }, f: string): boolean {
   if (f === "all") return true;
   if (f === "ml") return b.bet_type === "moneyline";
@@ -103,6 +120,32 @@ export function Profile({
     };
   }, [user.id]);
 
+  // directory + my follow set, fetched once
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const [d, f] = await Promise.all([
+        supabase.from("profile_directory").select("*"),
+        supabase.from("follows").select("following_id").eq("follower_id", user.id),
+      ]);
+      if (!alive) return;
+      setDir((d.data as DirRow[]) ?? []);
+      setMyFollowing(
+        new Set(((f.data as { following_id: string }[]) ?? []).map((r) => r.following_id))
+      );
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [user.id]);
+
+  const [dir, setDir] = useState<DirRow[]>([]);
+  const [myFollowing, setMyFollowing] = useState<Set<string>>(new Set());
+  const [feed, setFeed] = useState<PublicBet[]>([]);
+  const [dirSort, setDirSort] = useState<"followers" | "profit" | "roi" | "recent">(
+    "followers"
+  );
+
   const shown = target ?? selfName;
 
   // loading is derived, not stored: the effect below never calls setState
@@ -128,6 +171,58 @@ export function Profile({
 
   const loading = !!shown && loadedFor !== shown;
   const isSelf = !!shown && shown === selfName;
+
+  const shownRow = dir.find((d) => d.username === shown) ?? null;
+  const iFollowShown = !!shownRow && myFollowing.has(shownRow.user_id);
+
+  async function toggleFollow(targetId: string) {
+    const has = myFollowing.has(targetId);
+    setMyFollowing((prev) => {
+      const n = new Set(prev);
+      if (has) n.delete(targetId);
+      else n.add(targetId);
+      return n;
+    });
+    if (has) {
+      await supabase
+        .from("follows")
+        .delete()
+        .eq("follower_id", user.id)
+        .eq("following_id", targetId);
+    } else {
+      await supabase
+        .from("follows")
+        .insert({ follower_id: user.id, following_id: targetId });
+    }
+  }
+
+  // the Following feed: recent public picks from everyone you follow
+  useEffect(() => {
+    if (!isSelf) {
+      setFeed([]);
+      return;
+    }
+    const names = dir
+      .filter((d) => myFollowing.has(d.user_id))
+      .map((d) => d.username);
+    if (names.length === 0) {
+      setFeed([]);
+      return;
+    }
+    let alive = true;
+    (async () => {
+      const { data } = await supabase
+        .from("public_bets")
+        .select("*")
+        .in("username", names)
+        .order("event_start", { ascending: false })
+        .limit(60);
+      if (alive) setFeed((data as PublicBet[]) ?? []);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [isSelf, dir, myFollowing]);
 
   async function onAvatarFile(e: ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -358,6 +453,22 @@ export function Profile({
     </div>
   );
 
+  const dirRoi = (d: DirRow) => (d.staked > 0 ? (d.profit / d.staked) * 100 : 0);
+  const dq = search.trim().toLowerCase();
+  const discover = dir
+    .filter((d) => d.username !== selfName)
+    .filter((d) => (dq ? d.username.toLowerCase().includes(dq) : d.bets > 0 || d.followers > 0))
+    .sort((a, b) =>
+      dirSort === "followers"
+        ? b.followers - a.followers
+        : dirSort === "profit"
+        ? b.profit - a.profit
+        : dirSort === "roi"
+        ? dirRoi(b) - dirRoi(a)
+        : (b.last_bet_at ?? "").localeCompare(a.last_bet_at ?? "")
+    )
+    .slice(0, 25);
+
   return (
     <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -388,6 +499,141 @@ export function Profile({
         </div>
       </div>
       {searchMsg && <p className="text-xs text-amber-400">{searchMsg}</p>}
+
+      {isSelf && (
+        <div className="rounded-xl border border-emerald-900/60 bg-neutral-900/40 p-3">
+          <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wide mb-2">
+            Following feed
+          </p>
+          {feed.length === 0 ? (
+            <p className="text-xs text-neutral-600">
+              {myFollowing.size === 0
+                ? "Follow some bettors below and their public picks land here, newest first."
+                : "No public picks from the people you follow yet — they appear as their events start."}
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {feed.map((b) => (
+                <div key={b.id} className="border-b border-neutral-900 pb-1.5 last:border-0">
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="truncate">
+                      <button
+                        onClick={() => onViewUser(b.username)}
+                        className="font-semibold text-emerald-300 hover:underline"
+                      >
+                        {b.username}
+                      </button>{" "}
+                      {b.selection}{" "}
+                      <span className="text-neutral-500">
+                        {fmtOdds(b.odds)} · {Number(b.stake)}u
+                      </span>
+                    </span>
+                    <span
+                      className={`shrink-0 ${
+                        b.result === "win"
+                          ? "text-emerald-400"
+                          : b.result === "loss"
+                          ? "text-red-400"
+                          : b.result === "push"
+                          ? "text-amber-400"
+                          : "text-neutral-500"
+                      }`}
+                    >
+                      {b.result}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-600 truncate">
+                    {b.book ? `${bookLabel(b.book)} · ` : ""}
+                    {b.event_context ? `${b.event_context} · ` : ""}
+                    {fmtDate(b.event_date ?? b.placed_at)}
+                    {b.price_check === "verified" && (
+                      <span className="ml-1 uppercase tracking-wide text-amber-300"> market ✓</span>
+                    )}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {isSelf && !target && (
+        <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
+              Discover bettors{dq ? ` · "${search.trim()}"` : ""}
+            </p>
+            <div className="flex gap-1">
+              {(
+                [
+                  ["followers", "Most followed"],
+                  ["profit", "Top profit"],
+                  ["roi", "Top ROI"],
+                  ["recent", "Recent"],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setDirSort(key)}
+                  className={sideBtn(dirSort === key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {discover.length === 0 ? (
+            <p className="text-xs text-neutral-600">
+              {dq ? "No bettors match that name." : "No bettors with a public record yet."}
+            </p>
+          ) : (
+            <div className="space-y-1">
+              {discover.map((d) => (
+                <div
+                  key={d.user_id}
+                  className="flex items-center gap-2 py-1 border-b border-neutral-900 last:border-0"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={
+                      d.avatar_url ??
+                      `https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(
+                        d.username
+                      )}`
+                    }
+                    alt={d.username}
+                    className="w-7 h-7 rounded-full border border-neutral-800 bg-neutral-900 object-cover shrink-0"
+                  />
+                  <button
+                    onClick={() => onViewUser(d.username)}
+                    className="flex-1 min-w-0 text-left"
+                  >
+                    <span className="block text-sm font-medium truncate hover:text-emerald-400">
+                      {d.username}
+                    </span>
+                    <span className="block text-[10px] text-neutral-600">
+                      {d.wins}-{d.losses}-{d.pushes} · {dirRoi(d) >= 0 ? "+" : ""}
+                      {dirRoi(d).toFixed(0)}% ROI · {d.followers} follower
+                      {d.followers === 1 ? "" : "s"}
+                      {d.prop_bets > 0 && d.ml_bets === 0 ? " · props" : ""}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => toggleFollow(d.user_id)}
+                    className={`shrink-0 rounded-md border px-2 py-0.5 text-[11px] font-medium ${
+                      myFollowing.has(d.user_id)
+                        ? "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
+                        : "border-emerald-700 bg-emerald-600/10 text-emerald-300 hover:bg-emerald-600/20"
+                    }`}
+                  >
+                    {myFollowing.has(d.user_id) ? "Following" : "Follow"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {!shown && selfLoaded && (
         <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4">
@@ -438,11 +684,30 @@ export function Profile({
                     {shown}
                     {isSelf && <span className="text-neutral-600 text-sm"> (you)</span>}
                   </h2>
-                  <span className="text-[11px] uppercase tracking-wide text-emerald-500 border border-emerald-900 rounded px-1.5 py-0.5">
-                    verified record
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {!isSelf && shownRow && (
+                      <button
+                        onClick={() => toggleFollow(shownRow.user_id)}
+                        className={`rounded-md border px-2.5 py-0.5 text-xs font-medium ${
+                          iFollowShown
+                            ? "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
+                            : "border-emerald-700 bg-emerald-600/15 text-emerald-300 hover:bg-emerald-600/25"
+                        }`}
+                      >
+                        {iFollowShown ? "Following" : "Follow"}
+                      </button>
+                    )}
+                    <span className="text-[11px] uppercase tracking-wide text-emerald-500 border border-emerald-900 rounded px-1.5 py-0.5">
+                      verified record
+                    </span>
+                  </div>
                 </div>
                 <p className="text-xs text-neutral-500 mt-1">
+                  {shownRow
+                    ? `${shownRow.followers} follower${
+                        shownRow.followers === 1 ? "" : "s"
+                      } · ${shownRow.following} following · `
+                    : ""}
                   {picks.length} public pick{picks.length === 1 ? "" : "s"}
                   {stats.upcoming.length > 0 ? ` · ${stats.upcoming.length} upcoming` : ""}
                   {stats.live.length > 0 ? ` · ${stats.live.length} live` : ""}
