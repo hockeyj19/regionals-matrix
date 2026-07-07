@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
-import type { PublicBet, BetRow } from "@/lib/types";
-import { betProfit, bookLabel, bookTier, eventStarted, fmtDate, fmtOdds, fmtUnits, sideBtn } from "@/lib/format";
+import type { PublicBet } from "@/lib/types";
+import { betProfit, bookLabel, bookTier, fmtDate, fmtOdds, fmtUnits, sideBtn } from "@/lib/format";
 
 /**
  * Public tipster profile. Everything here is computed from the same
@@ -78,16 +78,10 @@ export function Profile({
   user,
   target,
   onViewUser,
-  bets,
-  onPublish,
-  onRequestDelete,
 }: {
   user: User;
   target: string | null; // username to show; null = own profile
   onViewUser: (username: string | null) => void;
-  bets: BetRow[];
-  onPublish: (id: string) => void;
-  onRequestDelete: (id: string, requested: boolean) => void;
 }) {
   const [selfName, setSelfName] = useState<string | null>(null);
   const [picks, setPicks] = useState<PublicBet[]>([]);
@@ -500,150 +494,6 @@ export function Profile({
       </div>
       {searchMsg && <p className="text-xs text-amber-400">{searchMsg}</p>}
 
-      {isSelf && (
-        <div className="rounded-xl border border-emerald-900/60 bg-neutral-900/40 p-3">
-          <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wide mb-2">
-            Following feed
-          </p>
-          {feed.length === 0 ? (
-            <p className="text-xs text-neutral-600">
-              {myFollowing.size === 0
-                ? "Follow some bettors below and their public picks land here, newest first."
-                : "No public picks from the people you follow yet — they appear as their events start."}
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {feed.map((b) => (
-                <div key={b.id} className="border-b border-neutral-900 pb-1.5 last:border-0">
-                  <div className="flex items-center justify-between gap-2 text-xs">
-                    <span className="truncate">
-                      <button
-                        onClick={() => onViewUser(b.username)}
-                        className="font-semibold text-emerald-300 hover:underline"
-                      >
-                        {b.username}
-                      </button>{" "}
-                      {b.selection}{" "}
-                      <span className="text-neutral-500">
-                        {fmtOdds(b.odds)} · {Number(b.stake)}u
-                      </span>
-                    </span>
-                    <span
-                      className={`shrink-0 ${
-                        b.result === "win"
-                          ? "text-emerald-400"
-                          : b.result === "loss"
-                          ? "text-red-400"
-                          : b.result === "push"
-                          ? "text-amber-400"
-                          : "text-neutral-500"
-                      }`}
-                    >
-                      {b.result}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-neutral-600 truncate">
-                    {b.book ? `${bookLabel(b.book)} · ` : ""}
-                    {b.event_context ? `${b.event_context} · ` : ""}
-                    {fmtDate(b.event_date ?? b.placed_at)}
-                    {b.price_check === "verified" && (
-                      <span className="ml-1 uppercase tracking-wide text-amber-300"> market ✓</span>
-                    )}
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {isSelf && !target && (
-        <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-            <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
-              Discover bettors{dq ? ` · "${search.trim()}"` : ""}
-            </p>
-            <div className="flex gap-1">
-              {(
-                [
-                  ["followers", "Most followed"],
-                  ["profit", "Top profit"],
-                  ["roi", "Top ROI"],
-                  ["recent", "Recent"],
-                ] as const
-              ).map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => setDirSort(key)}
-                  className={sideBtn(dirSort === key)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-          {discover.length === 0 ? (
-            <p className="text-xs text-neutral-600">
-              {dq ? "No bettors match that name." : "No bettors with a public record yet."}
-            </p>
-          ) : (
-            <div className="space-y-1">
-              {discover.map((d) => (
-                <div
-                  key={d.user_id}
-                  className="flex items-center gap-2 py-1 border-b border-neutral-900 last:border-0"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={
-                      d.avatar_url ??
-                      `https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(
-                        d.username
-                      )}`
-                    }
-                    alt={d.username}
-                    className="w-7 h-7 rounded-full border border-neutral-800 bg-neutral-900 object-cover shrink-0"
-                  />
-                  <button
-                    onClick={() => onViewUser(d.username)}
-                    className="flex-1 min-w-0 text-left"
-                  >
-                    <span className="block text-sm font-medium truncate hover:text-emerald-400">
-                      {d.username}
-                    </span>
-                    <span className="block text-[10px] text-neutral-600">
-                      {d.wins}-{d.losses}-{d.pushes} · {dirRoi(d) >= 0 ? "+" : ""}
-                      {dirRoi(d).toFixed(0)}% ROI · {d.followers} follower
-                      {d.followers === 1 ? "" : "s"}
-                      {d.prop_bets > 0 && d.ml_bets === 0 ? " · props" : ""}
-                    </span>
-                  </button>
-                  <button
-                    onClick={() => toggleFollow(d.user_id)}
-                    className={`shrink-0 rounded-md border px-2 py-0.5 text-[11px] font-medium ${
-                      myFollowing.has(d.user_id)
-                        ? "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
-                        : "border-emerald-700 bg-emerald-600/10 text-emerald-300 hover:bg-emerald-600/20"
-                    }`}
-                  >
-                    {myFollowing.has(d.user_id) ? "Following" : "Follow"}
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {!shown && selfLoaded && (
-        <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4">
-          <p className="text-sm text-neutral-400">
-            Claim a username on the Verified Leaderboard tab to open your profile. Your page
-            fills itself from verified picks - no setup, no self-reported numbers.
-          </p>
-        </div>
-      )}
-
       {shown && (
         <>
           <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4">
@@ -863,6 +713,150 @@ export function Profile({
                 )}
               </div>
 
+              {isSelf && !target && (
+                <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
+                      Discover bettors{dq ? ` · "${search.trim()}"` : ""}
+                    </p>
+                    <div className="flex gap-1">
+                      {(
+                        [
+                          ["followers", "Most followed"],
+                          ["profit", "Top profit"],
+                          ["roi", "Top ROI"],
+                          ["recent", "Recent"],
+                        ] as const
+                      ).map(([key, label]) => (
+                        <button
+                          key={key}
+                          onClick={() => setDirSort(key)}
+                          className={sideBtn(dirSort === key)}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {discover.length === 0 ? (
+                    <p className="text-xs text-neutral-600">
+                      {dq ? "No bettors match that name." : "No bettors with a public record yet."}
+                    </p>
+                  ) : (
+                    <div className="space-y-1">
+                      {discover.map((d) => (
+                        <div
+                          key={d.user_id}
+                          className="flex items-center gap-2 py-1 border-b border-neutral-900 last:border-0"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={
+                              d.avatar_url ??
+                              `https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(
+                                d.username
+                              )}`
+                            }
+                            alt={d.username}
+                            className="w-7 h-7 rounded-full border border-neutral-800 bg-neutral-900 object-cover shrink-0"
+                          />
+                          <button
+                            onClick={() => onViewUser(d.username)}
+                            className="flex-1 min-w-0 text-left"
+                          >
+                            <span className="block text-sm font-medium truncate hover:text-emerald-400">
+                              {d.username}
+                            </span>
+                            <span className="block text-[10px] text-neutral-600">
+                              {d.wins}-{d.losses}-{d.pushes} · {dirRoi(d) >= 0 ? "+" : ""}
+                              {dirRoi(d).toFixed(0)}% ROI · {d.followers} follower
+                              {d.followers === 1 ? "" : "s"}
+                              {d.prop_bets > 0 && d.ml_bets === 0 ? " · props" : ""}
+                            </span>
+                          </button>
+                          <button
+                            onClick={() => toggleFollow(d.user_id)}
+                            className={`shrink-0 rounded-md border px-2 py-0.5 text-[11px] font-medium ${
+                              myFollowing.has(d.user_id)
+                                ? "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
+                                : "border-emerald-700 bg-emerald-600/10 text-emerald-300 hover:bg-emerald-600/20"
+                            }`}
+                          >
+                            {myFollowing.has(d.user_id) ? "Following" : "Follow"}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!shown && selfLoaded && (
+                <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4">
+                  <p className="text-sm text-neutral-400">
+                    Claim a username on the Verified Leaderboard tab to open your profile. Your page
+                    fills itself from verified picks - no setup, no self-reported numbers.
+                  </p>
+                </div>
+              )}
+
+              {isSelf && (
+                <div className="rounded-xl border border-emerald-900/60 bg-neutral-900/40 p-3">
+                  <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wide mb-2">
+                    Following feed
+                  </p>
+                  {feed.length === 0 ? (
+                    <p className="text-xs text-neutral-600">
+                      {myFollowing.size === 0
+                        ? "Follow some bettors below and their public picks land here, newest first."
+                        : "No public picks from the people you follow yet — they appear as their events start."}
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {feed.map((b) => (
+                        <div key={b.id} className="border-b border-neutral-900 pb-1.5 last:border-0">
+                          <div className="flex items-center justify-between gap-2 text-xs">
+                            <span className="truncate">
+                              <button
+                                onClick={() => onViewUser(b.username)}
+                                className="font-semibold text-emerald-300 hover:underline"
+                              >
+                                {b.username}
+                              </button>{" "}
+                              {b.selection}{" "}
+                              <span className="text-neutral-500">
+                                {fmtOdds(b.odds)} · {Number(b.stake)}u
+                              </span>
+                            </span>
+                            <span
+                              className={`shrink-0 ${
+                                b.result === "win"
+                                  ? "text-emerald-400"
+                                  : b.result === "loss"
+                                  ? "text-red-400"
+                                  : b.result === "push"
+                                  ? "text-amber-400"
+                                  : "text-neutral-500"
+                              }`}
+                            >
+                              {b.result}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-neutral-600 truncate">
+                            {b.book ? `${bookLabel(b.book)} · ` : ""}
+                            {b.event_context ? `${b.event_context} · ` : ""}
+                            {fmtDate(b.event_date ?? b.placed_at)}
+                            {b.price_check === "verified" && (
+                              <span className="ml-1 uppercase tracking-wide text-amber-300"> market ✓</span>
+                            )}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {stats.last30.n > 0 && (
                 <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
                   <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide mb-1">
@@ -903,101 +897,6 @@ export function Profile({
               {breakdown("By organization", stats.orgs)}
               {breakdown("By market", stats.types)}
               {breakdown("By book", stats.books, bookLabel)}
-
-              {isSelf &&
-                (() => {
-                  const current = bets
-                    .filter((b) => b.result === "pending" && b.bet_type !== "other")
-                    .sort((a, b2) =>
-                      (a.event_date ?? "").localeCompare(b2.event_date ?? "")
-                    );
-                  if (current.length === 0) return null;
-                  return (
-                    <div className="rounded-xl border border-emerald-900/60 bg-neutral-900/40 p-3">
-                      <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wide mb-2">
-                        Current bets
-                      </p>
-                      <div className="space-y-2">
-                        {current.map((b) => {
-                          const started = eventStarted(b.event_start);
-                          const canPublish =
-                            !started &&
-                            !b.published_at &&
-                            !!b.event_start &&
-                            b.placed_at < b.event_start;
-                          return (
-                            <div
-                              key={b.id}
-                              className="border-b border-neutral-900 pb-2 last:border-0"
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="min-w-0">
-                                  <p className="text-sm font-medium truncate">
-                                    {b.selection}{" "}
-                                    <span className="text-neutral-500">
-                                      {fmtOdds(b.odds)} · {Number(b.stake)}u
-                                    </span>
-                                    <span className="ml-2 text-[10px] uppercase tracking-wide text-emerald-500">
-                                      verified
-                                    </span>
-                                    {b.price_check === "verified" && (
-                                      <span className="ml-1 text-[10px] uppercase tracking-wide text-amber-300">
-                                        market ✓
-                                      </span>
-                                    )}
-                                  </p>
-                                  <p className="text-[11px] text-neutral-600 truncate">
-                                    {b.book ? `${bookLabel(b.book)} · ` : ""}
-                                    {b.event_context ? `${b.event_context} · ` : ""}
-                                    {fmtDate(b.event_date ?? b.placed_at)}
-                                  </p>
-                                </div>
-                                <div className="flex items-center gap-1 shrink-0">
-                                  {started && !b.published_at && (
-                                    <span className="text-[10px] uppercase tracking-wide text-neutral-500 border border-neutral-800 rounded px-1.5 py-0.5">
-                                      locks at start
-                                    </span>
-                                  )}
-                                  {canPublish && (
-                                    <button
-                                      onClick={() => onPublish(b.id)}
-                                      title="Show this pick on your public profile now instead of at event start. This can't be undone."
-                                      className="rounded border border-emerald-800 px-1.5 py-0.5 text-[11px] text-emerald-500 hover:bg-neutral-900"
-                                    >
-                                      make public
-                                    </button>
-                                  )}
-                                  {!started && b.published_at && (
-                                    <span className="text-[10px] uppercase tracking-wide text-emerald-400 border border-emerald-900 rounded px-1.5 py-0.5">
-                                      public
-                                    </span>
-                                  )}
-                                  {!b.delete_requested_at ? (
-                                    <button
-                                      onClick={() => onRequestDelete(b.id, true)}
-                                      title="Ask for this bet's removal. Before the event starts it clears on the next scrape; after start an admin reviews it."
-                                      className="rounded border border-neutral-700 px-1.5 py-0.5 text-[11px] text-neutral-500 hover:text-red-400 hover:bg-neutral-900"
-                                    >
-                                      request removal
-                                    </button>
-                                  ) : (
-                                    <button
-                                      onClick={() => onRequestDelete(b.id, false)}
-                                      title="Removal requested - click to cancel"
-                                      className="rounded border border-amber-700 px-1.5 py-0.5 text-[11px] text-amber-400 hover:bg-neutral-900"
-                                    >
-                                      requested · cancel
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })()}
 
               <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
