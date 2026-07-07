@@ -67,13 +67,6 @@ type DirRow = {
   last_bet_at: string | null;
 };
 
-function typeMatch(b: { bet_type: string | null }, f: string): boolean {
-  if (f === "all") return true;
-  if (f === "ml") return b.bet_type === "moneyline";
-  if (f === "totals") return b.bet_type === "over" || b.bet_type === "under";
-  return b.bet_type === f;
-}
-
 export function Profile({
   user,
   target,
@@ -93,9 +86,6 @@ export function Profile({
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarMsg, setAvatarMsg] = useState("");
-  const [histFilter, setHistFilter] = useState<
-    "all" | "ml" | "totals" | "method" | "round" | "method_round"
-  >("all");
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -897,98 +887,6 @@ export function Profile({
               {breakdown("By organization", stats.orgs)}
               {breakdown("By market", stats.types)}
               {breakdown("By book", stats.books, bookLabel)}
-
-              <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                  <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
-                    Pick history
-                  </p>
-                  <div className="flex flex-wrap gap-1">
-                    {(
-                      [
-                        ["all", "All"],
-                        ["ml", "ML"],
-                        ["totals", "Totals"],
-                        ["method", "Methods"],
-                        ["round", "Rounds"],
-                        ["method_round", "Methods/Rounds"],
-                      ] as const
-                    ).map(([key, label]) => (
-                      <button
-                        key={key}
-                        onClick={() => setHistFilter(key)}
-                        className={sideBtn(histFilter === key)}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  {stats.history.filter((b) => typeMatch(b, histFilter)).length === 0 && (
-                    <p className="text-xs text-neutral-600">
-                      {stats.history.length === 0
-                        ? "No settled picks yet - they land here after each event."
-                        : "No picks in this market."}
-                    </p>
-                  )}
-                  {stats.history
-                    .filter((b) => typeMatch(b, histFilter))
-                    .slice(0, 100)
-                    .map((b) => (
-                    <div key={b.id} className="border-b border-neutral-900 pb-1 last:border-0">
-                      <div className="flex items-center justify-between gap-2 text-xs">
-                        <span className="truncate">
-                          {b.selection}{" "}
-                          <span className="text-neutral-500">
-                            {fmtOdds(b.odds)} · {Number(b.stake)}u
-                          </span>
-                        </span>
-                        <span
-                          className={`shrink-0 ${
-                            b.result === "win"
-                              ? "text-emerald-400"
-                              : b.result === "loss"
-                              ? "text-red-400"
-                              : b.result === "push"
-                              ? "text-amber-400"
-                              : "text-neutral-500"
-                          }`}
-                        >
-                          {b.result === "pending" ? "live" : b.result}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-neutral-600 truncate">
-                        {b.book ? `${bookLabel(b.book)} · ` : ""}
-                        {b.event_context ? `${b.event_context} · ` : ""}
-                        {fmtDate(b.event_date ?? b.placed_at)}
-                        {b.price_check === "verified" && (
-                          <span className="ml-1 uppercase tracking-wide text-amber-300">
-                            {" "}
-                            market ✓
-                          </span>
-                        )}
-                        {b.clv !== null && (
-                          <span className="ml-1">
-                            · CLV{" "}
-                            <span
-                              className={
-                                Number(b.clv) >= 0 ? "text-emerald-400" : "text-red-400"
-                              }
-                            >
-                              {Number(b.clv) >= 0 ? "+" : ""}
-                              {Number(b.clv).toFixed(2)}
-                            </span>
-                          </span>
-                        )}
-                      </p>
-                    </div>
-                  ))}
-                  {stats.history.length > 100 && (
-                    <p className="text-[11px] text-neutral-600">Showing the latest 100.</p>
-                  )}
-                </div>
-              </div>
             </>
           )}
         </>

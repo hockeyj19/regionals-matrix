@@ -469,7 +469,7 @@ export function Matrix({ user }: { user: User }) {
                     : "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
                 }`}
               >
-                Events
+                Notes
               </button>
               <button
                 onClick={() => setView("odds")}
@@ -489,7 +489,7 @@ export function Matrix({ user }: { user: User }) {
                     : "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
                 }`}
               >
-                Notes
+                Library
               </button>
               <button
                 onClick={() => setView("bets")}
@@ -541,6 +541,7 @@ export function Matrix({ user }: { user: User }) {
         <FighterLibrary
           notes={fighterNotes}
           history={noteHistory}
+          bets={bets}
           onSaveNote={saveFighterNote}
           onSaveTags={saveFighterTags}
           onDeleteHistory={deleteHistoryEntry}
