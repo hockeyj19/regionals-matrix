@@ -15,7 +15,7 @@ import type {
   ReviewRow,
 } from "@/lib/types";
 import { eventStarted, sortEvents, formatEventMeta, tapologyUrl } from "@/lib/format";
-import { GridIcon, DollarIcon } from "@/components/icons";
+import { GridIcon, DollarIcon, UserIcon } from "@/components/icons";
 import { GrowingTextarea } from "@/components/GrowingTextarea";
 import { QuickBet } from "@/components/QuickBet";
 import { FightMatrix } from "@/components/FightMatrix";
@@ -85,6 +85,39 @@ function fightHasMatrix(d?: MatrixData): boolean {
   if (!d) return false;
   return Object.values(d).some((m) =>
     Object.values(m).some((v) => (v ?? "").trim() !== "")
+  );
+}
+
+function AccountMenu({ email }: { email: string | undefined }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title="Account"
+        className="rounded-full border border-neutral-700 p-1.5 text-neutral-300 hover:bg-neutral-900 hover:text-emerald-300"
+      >
+        <UserIcon />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-lg border border-neutral-800 bg-neutral-950 p-2 shadow-xl">
+            {email && (
+              <p className="px-2 py-1 text-[11px] text-neutral-500 truncate border-b border-neutral-800 mb-1">
+                {email}
+              </p>
+            )}
+            <button
+              onClick={() => supabase.auth.signOut()}
+              className="w-full text-left rounded-md px-2 py-1.5 text-sm text-neutral-300 hover:bg-neutral-900"
+            >
+              Sign out
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -492,15 +525,7 @@ export function Matrix({ user }: { user: User }) {
               )}
             </nav>
           </div>
-          <div className="flex items-center gap-3 text-sm">
-            <span className="text-neutral-400 hidden sm:inline">{user.email}</span>
-            <button
-              onClick={() => supabase.auth.signOut()}
-              className="rounded-lg border border-neutral-700 px-3 py-1 hover:bg-neutral-900"
-            >
-              Sign out
-            </button>
-          </div>
+          <AccountMenu email={user.email} />
         </div>
       </header>
 

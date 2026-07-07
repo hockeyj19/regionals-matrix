@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { boutMatch, fmtAmerican, freshness } from "@/lib/board";
+import { boutMatch, sameFighter, fmtAmerican, freshness } from "@/lib/board";
 import { LineHistoryModal } from "@/components/LineHistoryModal";
 import type { EventRow, FightRow } from "@/lib/types";
 
@@ -26,29 +26,23 @@ type BoardRow = {
   updated_at: string;
 };
 
-type SidePrice = { open: number | null; cur: number | null; side: 1 | 2 };
+type PropRow = {
+  fight_key: string;
+  market: string;
+  fighter: string | null;
+  method: string | null;
+  ou_side: string | null;
+  ou_line: number | null;
+  odds: number;
+};
+
+type SidePrice = { open: number | null; cur: number | null; side: 1 | 2; name: string };
 type Matched = { fightKey: string; a: SidePrice; b: SidePrice };
 
-function impliedProb(o: number): number {
-  return o < 0 ? -o / (-o + 100) : 100 / (o + 100);
-}
-function pct(o: number | null): string {
-  return o === null ? "—" : `${Math.round(impliedProb(o) * 100)}%`;
-}
 function isUFC(e: EventRow): boolean {
   return (e.org || "").toUpperCase().includes("UFC");
 }
 
-function Move({ open, cur }: { open: number | null; cur: number | null }) {
-  if (open === null || cur === null || open === cur)
-    return <span className="text-[10px] text-neutral-600">—</span>;
-  const firmed = impliedProb(cur) > impliedProb(open);
-  return (
-    <span className={`text-[10px] ${firmed ? "text-emerald-400" : "text-red-400"}`}>
-      {firmed ? "▲" : "▼"} {fmtAmerican(open)}
-    </span>
-  );
-}
 
 function PriceButton({
   price,
@@ -80,6 +74,22 @@ function PriceButton({
   );
 }
 
+function PropCell({ price }: { price: number | null }) {
+  return (
+    <span
+      className={`text-[11px] tabular-nums text-right ${
+        price === null
+          ? "text-neutral-700"
+          : price < 0
+          ? "text-emerald-400/90"
+          : "text-neutral-300"
+      }`}
+    >
+      {price === null ? "—" : fmtAmerican(price)}
+    </span>
+  );
+}
+
 export function OddsBoard({
   events,
   fights,
@@ -88,6 +98,7 @@ export function OddsBoard({
   fights: FightRow[];
 }) {
   const [board, setBoard] = useState<BoardRow[]>([]);
+  const [props, setProps] = useState<PropRow[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [chart, setChart] = useState<
@@ -95,8 +106,12 @@ export function OddsBoard({
   >(null);
 
   const load = useCallback(async () => {
-    const { data } = await supabase.from("bol_board").select("*");
-    setBoard((data as BoardRow[]) ?? []);
+    const [b, pr] = await Promise.all([
+      supabase.from("bol_board").select("*"),
+      supabase.from("bol_current_props").select("*"),
+    ]);
+    setBoard((b.data as BoardRow[]) ?? []);
+    setProps((pr.data as PropRow[]) ?? []);
     setLoaded(true);
   }, []);
   useEffect(() => {
@@ -114,21 +129,53 @@ export function OddsBoard({
         if (boutMatch(ra, rb, f.fighter1_name, f.fighter2_name)) {
           return {
             fightKey: row.fight_key,
-            a: { open: row.open1, cur: row.cur1, side: 1 },
-            b: { open: row.open2, cur: row.cur2, side: 2 },
+            a: { open: row.open1, cur: row.cur1, side: 1, name: row.fighter1 },
+            b: { open: row.open2, cur: row.cur2, side: 2, name: row.fighter2 },
           };
         }
         if (boutMatch(rb, ra, f.fighter1_name, f.fighter2_name)) {
           return {
             fightKey: row.fight_key,
-            a: { open: row.open2, cur: row.cur2, side: 2 },
-            b: { open: row.open1, cur: row.cur1, side: 1 },
+            a: { open: row.open2, cur: row.cur2, side: 2, name: row.fighter2 },
+            b: { open: row.open1, cur: row.cur1, side: 1, name: row.fighter1 },
           };
         }
       }
       return null;
     },
     [board]
+  );
+
+  const methodPrice = useCallback(
+    (fightKey: string, name: string, method: string): number | null => {
+      const r = props.find(
+        (pp) =>
+          pp.fight_key === fightKey &&
+          pp.market === "method" &&
+          !!pp.fighter &&
+          sameFighter(pp.fighter, name) &&
+          pp.method === method
+      );
+      return r ? r.odds : null;
+    },
+    [props]
+  );
+
+  const totalFor = useCallback(
+    (fightKey: string) => {
+      const over = props.find(
+        (pp) => pp.fight_key === fightKey && pp.market === "total" && pp.ou_side === "over"
+      );
+      const under = props.find(
+        (pp) => pp.fight_key === fightKey && pp.market === "total" && pp.ou_side === "under"
+      );
+      return {
+        line: over?.ou_line ?? under?.ou_line ?? null,
+        over: over?.odds ?? null,
+        under: under?.odds ?? null,
+      };
+    },
+    [props]
   );
 
   // events that actually carry BetOnline lines, UFC first then the rest,
@@ -230,51 +277,80 @@ export function OddsBoard({
                 {active.ev.event_name}
               </span>
             </div>
+            {/* column header */}
+            <div className="grid grid-cols-[minmax(0,1fr)_3.4rem_3.2rem_3.2rem_3.2rem] items-center gap-x-1 px-2 sm:px-3 py-1 border-b border-neutral-800 text-[9px] uppercase tracking-wide text-neutral-600">
+              <span />
+              <span className="text-right">ML</span>
+              <span className="text-right">KO</span>
+              <span className="text-right">Sub</span>
+              <span className="text-right">Dec</span>
+            </div>
             <div className="divide-y divide-neutral-900">
               {active.evFights.map((f, i) => {
                 const m = matchFight(f);
-                const isMain = f.is_main_event || (i === 0 && !active.evFights.some((x) => x.is_main_event));
+                const fk = m?.fightKey ?? null;
+                const isMain =
+                  f.is_main_event ||
+                  (i === 0 && !active.evFights.some((x) => x.is_main_event));
+                const tot = fk ? totalFor(fk) : null;
+                const fighterRow = (
+                  name: string,
+                  sp: SidePrice | undefined,
+                  dim: boolean
+                ) => (
+                  <div className="grid grid-cols-[minmax(0,1fr)_3.4rem_3.2rem_3.2rem_3.2rem] items-center gap-x-1 py-0.5">
+                    <span className={`text-sm truncate ${dim ? "text-neutral-300" : ""}`}>
+                      {name}
+                    </span>
+                    <div className="flex justify-end">
+                      <PriceButton
+                        price={sp ? sp.cur : null}
+                        align="right"
+                        onOpen={() =>
+                          m &&
+                          sp &&
+                          setChart({ fightKey: m.fightKey, side: sp.side, name })
+                        }
+                      />
+                    </div>
+                    <PropCell
+                      price={fk && sp ? methodPrice(fk, sp.name, "ko_tko") : null}
+                    />
+                    <PropCell
+                      price={fk && sp ? methodPrice(fk, sp.name, "submission") : null}
+                    />
+                    <PropCell
+                      price={fk && sp ? methodPrice(fk, sp.name, "decision") : null}
+                    />
+                  </div>
+                );
                 return (
                   <div key={f.id} className="px-2 sm:px-3 py-2">
-                    <div className="flex items-center justify-between text-[10px] text-neutral-600 mb-0.5">
-                      <span className={isMain ? "text-amber-400 font-semibold uppercase tracking-wide" : ""}>
+                    <div className="text-[10px] mb-0.5">
+                      <span
+                        className={
+                          isMain
+                            ? "text-amber-400 font-semibold uppercase tracking-wide"
+                            : "text-neutral-600"
+                        }
+                      >
                         {isMain ? "Main Event" : f.weight_class || ""}
                       </span>
                     </div>
-                    <div className="grid grid-cols-[1fr_auto_auto] items-center gap-x-2">
-                      {/* fighter 1 */}
-                      <span className="text-sm truncate">{f.fighter1_name}</span>
-                      <span className="text-[10px] text-neutral-500 w-9 text-right">
-                        {pct(m ? m.a.cur : null)}
-                      </span>
-                      <div className="flex items-center gap-1 justify-end">
-                        <Move open={m ? m.a.open : null} cur={m ? m.a.cur : null} />
-                        <PriceButton
-                          price={m ? m.a.cur : null}
-                          align="right"
-                          onOpen={() =>
-                            m &&
-                            setChart({ fightKey: m.fightKey, side: m.a.side, name: f.fighter1_name })
-                          }
-                        />
+                    {fighterRow(f.fighter1_name, m?.a, false)}
+                    {fighterRow(f.fighter2_name, m?.b, true)}
+                    {tot && (tot.over !== null || tot.under !== null) && (
+                      <div className="text-[10px] text-neutral-500 mt-1">
+                        Total {tot.line}: O{" "}
+                        <span className="text-neutral-300">
+                          {tot.over === null ? "—" : fmtAmerican(tot.over)}
+                        </span>{" "}
+                        · U{" "}
+                        <span className="text-neutral-300">
+                          {tot.under === null ? "—" : fmtAmerican(tot.under)}
+                        </span>
                       </div>
-                      {/* fighter 2 */}
-                      <span className="text-sm truncate text-neutral-300">{f.fighter2_name}</span>
-                      <span className="text-[10px] text-neutral-500 w-9 text-right">
-                        {pct(m ? m.b.cur : null)}
-                      </span>
-                      <div className="flex items-center gap-1 justify-end">
-                        <Move open={m ? m.b.open : null} cur={m ? m.b.cur : null} />
-                        <PriceButton
-                          price={m ? m.b.cur : null}
-                          align="right"
-                          onOpen={() =>
-                            m &&
-                            setChart({ fightKey: m.fightKey, side: m.b.side, name: f.fighter2_name })
-                          }
-                        />
-                      </div>
-                    </div>
+                    )}
                   </div>
                 );
               })}
