@@ -634,13 +634,12 @@ export function Matrix({ user }: { user: User }) {
                             setOpenNotes((prev) => ({ ...prev, [f.id]: !expanded }));
                           }}
                           title={expanded ? "Collapse" : "Expand notes & tools"}
-                          className={`absolute right-2 top-2 z-10 flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${
+                          className={`absolute right-2 top-2 z-10 flex items-center rounded-md border p-1.5 ${
                             expanded
                               ? "border-emerald-700 bg-emerald-600/15 text-emerald-300"
                               : "border-neutral-600 bg-neutral-800 text-neutral-300 hover:border-emerald-700 hover:text-emerald-300"
                           }`}
                         >
-                          {expanded ? "Close" : "Expand"}
                           <svg
                             width="14" height="14" viewBox="0 0 24 24" fill="none"
                             className={`transition-transform ${expanded ? "rotate-180" : ""}`}
