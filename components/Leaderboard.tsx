@@ -387,6 +387,9 @@ export function Leaderboard({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1">
           <InfoButton open={showInfo} onClick={() => setShowInfo((v) => !v)} />
+          <button onClick={() => setUfcOnly((v) => !v)} className={sideBtn(ufcOnly)}>
+            UFC Only
+          </button>
           <button onClick={() => setTier("sharp")} className={sideBtn(tier === "sharp")}>
             Sharp books
           </button>
@@ -413,24 +416,6 @@ export function Leaderboard({
             ))}
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="text-xs text-neutral-400">UFC Only</span>
-            <button
-              onClick={() => setUfcOnly((v) => !v)}
-              role="switch"
-              aria-checked={ufcOnly}
-              title="Show UFC cards only"
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                ufcOnly ? "bg-emerald-600" : "bg-neutral-700"
-              }`}
-            >
-              <span
-                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                  ufcOnly ? "translate-x-5" : "translate-x-1"
-                }`}
-              />
-            </button>
-          </div>
-          <div className="flex gap-1">
             <button onClick={() => setSortBy("profit")} className={sideBtn(sortBy === "profit")}>
               Profit
             </button>
