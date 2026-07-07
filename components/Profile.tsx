@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
-import type { PublicBet } from "@/lib/types";
-import { betProfit, bookLabel, bookTier, fmtDate, fmtOdds, fmtUnits, sideBtn } from "@/lib/format";
+import type { PublicBet, BetRow } from "@/lib/types";
+import { betProfit, bookLabel, bookTier, eventStarted, fmtDate, fmtOdds, fmtUnits, sideBtn } from "@/lib/format";
 
 /**
  * Public tipster profile. Everything here is computed from the same
@@ -50,14 +50,27 @@ function toAmerican(decimal: number): number {
   return decimal >= 2 ? Math.round((decimal - 1) * 100) : -Math.round(100 / (decimal - 1));
 }
 
+function typeMatch(b: { bet_type: string | null }, f: string): boolean {
+  if (f === "all") return true;
+  if (f === "ml") return b.bet_type === "moneyline";
+  if (f === "totals") return b.bet_type === "over" || b.bet_type === "under";
+  return b.bet_type === f;
+}
+
 export function Profile({
   user,
   target,
   onViewUser,
+  bets,
+  onPublish,
+  onRequestDelete,
 }: {
   user: User;
   target: string | null; // username to show; null = own profile
   onViewUser: (username: string | null) => void;
+  bets: BetRow[];
+  onPublish: (id: string) => void;
+  onRequestDelete: (id: string, requested: boolean) => void;
 }) {
   const [selfName, setSelfName] = useState<string | null>(null);
   const [picks, setPicks] = useState<PublicBet[]>([]);
@@ -69,7 +82,9 @@ export function Profile({
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarMsg, setAvatarMsg] = useState("");
-  const [histFilter, setHistFilter] = useState<"all" | "win" | "loss" | "push" | "live">("all");
+  const [histFilter, setHistFilter] = useState<
+    "all" | "ml" | "totals" | "method" | "round" | "method_round"
+  >("all");
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -624,45 +639,137 @@ export function Profile({
               {breakdown("By market", stats.types)}
               {breakdown("By book", stats.books, bookLabel)}
 
+              {isSelf &&
+                (() => {
+                  const current = bets
+                    .filter((b) => b.result === "pending" && b.bet_type !== "other")
+                    .sort((a, b2) =>
+                      (a.event_date ?? "").localeCompare(b2.event_date ?? "")
+                    );
+                  if (current.length === 0) return null;
+                  return (
+                    <div className="rounded-xl border border-emerald-900/60 bg-neutral-900/40 p-3">
+                      <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wide mb-2">
+                        Current bets
+                      </p>
+                      <div className="space-y-2">
+                        {current.map((b) => {
+                          const started = eventStarted(b.event_start);
+                          const canPublish =
+                            !started &&
+                            !b.published_at &&
+                            !!b.event_start &&
+                            b.placed_at < b.event_start;
+                          return (
+                            <div
+                              key={b.id}
+                              className="border-b border-neutral-900 pb-2 last:border-0"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium truncate">
+                                    {b.selection}{" "}
+                                    <span className="text-neutral-500">
+                                      {fmtOdds(b.odds)} · {Number(b.stake)}u
+                                    </span>
+                                    <span className="ml-2 text-[10px] uppercase tracking-wide text-emerald-500">
+                                      verified
+                                    </span>
+                                    {b.price_check === "verified" && (
+                                      <span className="ml-1 text-[10px] uppercase tracking-wide text-amber-300">
+                                        market ✓
+                                      </span>
+                                    )}
+                                  </p>
+                                  <p className="text-[11px] text-neutral-600 truncate">
+                                    {b.book ? `${bookLabel(b.book)} · ` : ""}
+                                    {b.event_context ? `${b.event_context} · ` : ""}
+                                    {fmtDate(b.event_date ?? b.placed_at)}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {started && !b.published_at && (
+                                    <span className="text-[10px] uppercase tracking-wide text-neutral-500 border border-neutral-800 rounded px-1.5 py-0.5">
+                                      locks at start
+                                    </span>
+                                  )}
+                                  {canPublish && (
+                                    <button
+                                      onClick={() => onPublish(b.id)}
+                                      title="Show this pick on your public profile now instead of at event start. This can't be undone."
+                                      className="rounded border border-emerald-800 px-1.5 py-0.5 text-[11px] text-emerald-500 hover:bg-neutral-900"
+                                    >
+                                      make public
+                                    </button>
+                                  )}
+                                  {!started && b.published_at && (
+                                    <span className="text-[10px] uppercase tracking-wide text-emerald-400 border border-emerald-900 rounded px-1.5 py-0.5">
+                                      public
+                                    </span>
+                                  )}
+                                  {!b.delete_requested_at ? (
+                                    <button
+                                      onClick={() => onRequestDelete(b.id, true)}
+                                      title="Ask for this bet's removal. Before the event starts it clears on the next scrape; after start an admin reviews it."
+                                      className="rounded border border-neutral-700 px-1.5 py-0.5 text-[11px] text-neutral-500 hover:text-red-400 hover:bg-neutral-900"
+                                    >
+                                      request removal
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => onRequestDelete(b.id, false)}
+                                      title="Removal requested - click to cancel"
+                                      className="rounded border border-amber-700 px-1.5 py-0.5 text-[11px] text-amber-400 hover:bg-neutral-900"
+                                    >
+                                      requested · cancel
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+
               <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                   <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
                     Pick history
                   </p>
-                  <div className="flex gap-1">
-                    {(["all", "win", "loss", "push", "live"] as const).map((f) => (
+                  <div className="flex flex-wrap gap-1">
+                    {(
+                      [
+                        ["all", "All"],
+                        ["ml", "ML"],
+                        ["totals", "Totals"],
+                        ["method", "Methods"],
+                        ["round", "Rounds"],
+                        ["method_round", "Methods/Rounds"],
+                      ] as const
+                    ).map(([key, label]) => (
                       <button
-                        key={f}
-                        onClick={() => setHistFilter(f)}
-                        className={sideBtn(histFilter === f)}
+                        key={key}
+                        onClick={() => setHistFilter(key)}
+                        className={sideBtn(histFilter === key)}
                       >
-                        {f}
+                        {label}
                       </button>
                     ))}
                   </div>
                 </div>
                 <div className="space-y-2">
-                  {stats.history.filter((b) =>
-                    histFilter === "all"
-                      ? true
-                      : histFilter === "live"
-                      ? b.result === "pending"
-                      : b.result === histFilter
-                  ).length === 0 && (
+                  {stats.history.filter((b) => typeMatch(b, histFilter)).length === 0 && (
                     <p className="text-xs text-neutral-600">
                       {stats.history.length === 0
                         ? "No settled picks yet - they land here after each event."
-                        : `No ${histFilter} picks.`}
+                        : "No picks in this market."}
                     </p>
                   )}
                   {stats.history
-                    .filter((b) =>
-                      histFilter === "all"
-                        ? true
-                        : histFilter === "live"
-                        ? b.result === "pending"
-                        : b.result === histFilter
-                    )
+                    .filter((b) => typeMatch(b, histFilter))
                     .slice(0, 100)
                     .map((b) => (
                     <div key={b.id} className="border-b border-neutral-900 pb-1 last:border-0">

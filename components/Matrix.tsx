@@ -536,6 +536,9 @@ export function Matrix({ user }: { user: User }) {
           user={user}
           target={profileUser}
           onViewUser={(u) => setProfileUser(u)}
+          bets={bets}
+          onPublish={publishBet}
+          onRequestDelete={requestBetDelete}
         />
       ) : view === "fighters" ? (
         <FighterLibrary

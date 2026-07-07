@@ -144,6 +144,25 @@ export function boardTotalLine(props: PropLine[]): number | null {
   return t ? t.ou_line : null;
 }
 
+// every total-rounds line BetOnline offers for a fight, the most pick'em
+// (over closest to even money) first - for the log-bet line picker
+export function boardTotalLines(props: PropLine[]): number[] {
+  const overByLine = new Map<number, number | null>();
+  for (const p of props) {
+    if (p.market !== "total" || p.ou_line === null) continue;
+    if (p.ou_side === "over") overByLine.set(p.ou_line, p.odds);
+    else if (!overByLine.has(p.ou_line)) overByLine.set(p.ou_line, null);
+  }
+  const prob = (o: number) => (o < 0 ? -o / (-o + 100) : 100 / (o + 100));
+  return [...overByLine.entries()]
+    .sort((a, b) => {
+      const da = a[1] === null ? 1 : Math.abs(prob(a[1]) - 0.5);
+      const db = b[1] === null ? 1 : Math.abs(prob(b[1]) - 0.5);
+      return da - db;
+    })
+    .map((e) => e[0]);
+}
+
 export async function fetchFightBoard(f1: string, f2: string): Promise<FightBoard> {
   const { data, error } = await supabase.from("bol_current_lines").select("*");
   if (error || !data) return null;

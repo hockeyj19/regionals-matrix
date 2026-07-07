@@ -44,30 +44,48 @@ function isUFC(e: EventRow): boolean {
 }
 
 
+function impliedProb(o: number): number {
+  return o < 0 ? -o / (-o + 100) : 100 / (o + 100);
+}
+
+// parse a user's typed price ("-150", "+200", "150") to American odds
+function parseNote(s: string | null): number | null {
+  if (!s) return null;
+  const n = parseInt(s.trim(), 10);
+  return Number.isNaN(n) || n === 0 ? null : n;
+}
+
+// green when the board pays BETTER than the user's own line (positive value),
+// red when it pays worse; null when they agree or the user has no note
+function valueTone(note: string | null, board: number | null): "pos" | "neg" | null {
+  const mo = parseNote(note);
+  if (mo === null || board === null || mo === board) return null;
+  return impliedProb(board) < impliedProb(mo) ? "pos" : "neg";
+}
+
 function PriceButton({
   price,
   onOpen,
-  align,
+  tone,
 }: {
   price: number | null;
   onOpen: () => void;
-  align: "left" | "right";
+  tone: "pos" | "neg" | null;
 }) {
-  const fav = price !== null && price < 0;
+  const color =
+    price === null
+      ? "text-neutral-600 cursor-default"
+      : tone === "pos"
+      ? "text-emerald-400 hover:underline"
+      : tone === "neg"
+      ? "text-red-400 hover:underline"
+      : "text-neutral-200 hover:bg-neutral-800 hover:underline";
   return (
     <button
       onClick={onOpen}
       disabled={price === null}
       title={price === null ? "No BetOnline line" : "Chart this line's movement"}
-      className={`rounded px-1.5 py-0.5 text-sm font-semibold tabular-nums ${
-        align === "right" ? "text-right" : "text-left"
-      } ${
-        price === null
-          ? "text-neutral-600 cursor-default"
-          : fav
-          ? "text-emerald-300 hover:bg-emerald-600/10 hover:underline"
-          : "text-neutral-200 hover:bg-neutral-800 hover:underline"
-      }`}
+      className={`rounded px-1.5 py-0.5 text-sm font-semibold tabular-nums text-right ${color}`}
     >
       {price === null ? "—" : fmtAmerican(price)}
     </button>
@@ -78,11 +96,7 @@ function PropCell({ price }: { price: number | null }) {
   return (
     <span
       className={`text-[11px] tabular-nums text-right ${
-        price === null
-          ? "text-neutral-700"
-          : price < 0
-          ? "text-emerald-400/90"
-          : "text-neutral-300"
+        price === null ? "text-neutral-700" : "text-neutral-300"
       }`}
     >
       {price === null ? "—" : fmtAmerican(price)}
@@ -163,19 +177,25 @@ export function OddsBoard({
     [props]
   );
 
-  const totalFor = useCallback(
+  const totalsFor = useCallback(
     (fightKey: string) => {
-      const over = props.find(
-        (pp) => pp.fight_key === fightKey && pp.market === "total" && pp.ou_side === "over"
-      );
-      const under = props.find(
-        (pp) => pp.fight_key === fightKey && pp.market === "total" && pp.ou_side === "under"
-      );
-      return {
-        line: over?.ou_line ?? under?.ou_line ?? null,
-        over: over?.odds ?? null,
-        under: under?.odds ?? null,
-      };
+      const lines = new Map<number, { over: number | null; under: number | null }>();
+      for (const pp of props) {
+        if (pp.fight_key !== fightKey || pp.market !== "total" || pp.ou_line === null)
+          continue;
+        const e = lines.get(pp.ou_line) ?? { over: null, under: null };
+        if (pp.ou_side === "over") e.over = pp.odds;
+        else if (pp.ou_side === "under") e.under = pp.odds;
+        lines.set(pp.ou_line, e);
+      }
+      // pick'em first: the line whose over sits closest to an even-money 50%
+      return [...lines.entries()]
+        .map(([line, v]) => ({ line, ...v }))
+        .sort((a, b) => {
+          const da = a.over === null ? 1 : Math.abs(impliedProb(a.over) - 0.5);
+          const db = b.over === null ? 1 : Math.abs(impliedProb(b.over) - 0.5);
+          return da - db;
+        });
     },
     [props]
   );
@@ -280,10 +300,11 @@ export function OddsBoard({
               </span>
             </div>
             {/* column header */}
-            <div className="grid grid-cols-[minmax(0,1fr)_3.2rem_3.4rem_3.2rem_3.2rem_3.2rem] items-center gap-x-1 px-2 sm:px-3 py-1 border-b border-neutral-800 text-[9px] uppercase tracking-wide text-neutral-600">
+            <div className="grid grid-cols-[minmax(0,1fr)_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem] items-center gap-x-1 px-2 sm:px-3 py-1 border-b border-neutral-800 text-[9px] uppercase tracking-wide text-neutral-600">
               <span />
               <span className="text-right text-emerald-600">Mine</span>
               <span className="text-right">ML</span>
+              <span className="text-right">Total</span>
               <span className="text-right">KO</span>
               <span className="text-right">Sub</span>
               <span className="text-right">Dec</span>
@@ -295,31 +316,50 @@ export function OddsBoard({
                 const isMain =
                   f.is_main_event ||
                   (i === 0 && !active.evFights.some((x) => x.is_main_event));
-                const tot = fk ? totalFor(fk) : null;
+                const totals = fk ? totalsFor(fk) : [];
                 const ud = userData[f.id];
                 const fighterRow = (
                   name: string,
                   sp: SidePrice | undefined,
                   dim: boolean,
-                  myPrice: string | null
+                  myPrice: string | null,
+                  totalSide: "over" | "under"
                 ) => (
-                  <div className="grid grid-cols-[minmax(0,1fr)_3.2rem_3.4rem_3.2rem_3.2rem_3.2rem] items-center gap-x-1 py-0.5">
+                  <div className="grid grid-cols-[minmax(0,1fr)_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem] items-center gap-x-1 py-0.5">
                     <span className={`text-sm truncate ${dim ? "text-neutral-300" : ""}`}>
                       {name}
                     </span>
-                    <span className="text-[11px] tabular-nums text-right text-emerald-300/90">
+                    <span className="text-[11px] tabular-nums text-right text-neutral-400">
                       {myPrice && myPrice.trim() ? myPrice.trim() : "—"}
                     </span>
                     <div className="flex justify-end">
                       <PriceButton
                         price={sp ? sp.cur : null}
-                        align="right"
+                        tone={valueTone(myPrice, sp ? sp.cur : null)}
                         onOpen={() =>
                           m &&
                           sp &&
                           setChart({ fightKey: m.fightKey, side: sp.side, name })
                         }
                       />
+                    </div>
+                    <div className="text-[10px] tabular-nums text-right leading-tight text-neutral-400">
+                      {totals.length === 0 ? (
+                        <span className="text-neutral-700">—</span>
+                      ) : (
+                        totals.map((t) => {
+                          const o = totalSide === "over" ? t.over : t.under;
+                          return (
+                            <div key={t.line}>
+                              {totalSide === "over" ? "O" : "U"}
+                              {t.line}{" "}
+                              <span className="text-neutral-300">
+                                {o === null ? "—" : fmtAmerican(o)}
+                              </span>
+                            </div>
+                          );
+                        })
+                      )}
                     </div>
                     <PropCell
                       price={fk && sp ? methodPrice(fk, sp.name, "ko_tko") : null}
@@ -345,20 +385,8 @@ export function OddsBoard({
                         {isMain ? "Main Event" : f.weight_class || ""}
                       </span>
                     </div>
-                    {fighterRow(f.fighter1_name, m?.a, false, ud?.price1 ?? null)}
-                    {fighterRow(f.fighter2_name, m?.b, true, ud?.price2 ?? null)}
-                    {tot && (tot.over !== null || tot.under !== null) && (
-                      <div className="text-[10px] text-neutral-500 mt-1">
-                        Total {tot.line}: O{" "}
-                        <span className="text-neutral-300">
-                          {tot.over === null ? "—" : fmtAmerican(tot.over)}
-                        </span>{" "}
-                        · U{" "}
-                        <span className="text-neutral-300">
-                          {tot.under === null ? "—" : fmtAmerican(tot.under)}
-                        </span>
-                      </div>
-                    )}
+                    {fighterRow(f.fighter1_name, m?.a, false, ud?.price1 ?? null, "over")}
+                    {fighterRow(f.fighter2_name, m?.b, true, ud?.price2 ?? null, "under")}
                   </div>
                 );
               })}

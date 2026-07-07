@@ -7,7 +7,7 @@ import {
   fetchFightBoard,
   fetchFightProps,
   matchPropOdds,
-  boardTotalLine,
+  boardTotalLines,
   fmtAmerican,
   freshness,
   type FightBoard,
@@ -51,6 +51,7 @@ export function QuickBet({
   const [board, setBoard] = useState<FightBoard>(null);
   const [props, setProps] = useState<PropLine[] | null>(null);
   const [boardLoaded, setBoardLoaded] = useState(false);
+  const [totalLineSel, setTotalLineSel] = useState<number | null>(null);
   const [nowTs] = useState(() => Date.now()); // frozen per open; keeps render pure
 
   const needsSide = betType !== "totals";
@@ -71,7 +72,9 @@ export function QuickBet({
   const sideName = side === 1 ? fight.fighter1_name : fight.fighter2_name;
   const propList = props ?? [];
   const mlPrice = !board ? null : side === 1 ? board.side1 : board.side2;
-  const totalLine = betType === "totals" ? boardTotalLine(propList) : null;
+  const totalLineOpts = betType === "totals" ? boardTotalLines(propList) : [];
+  const totalLine =
+    betType === "totals" ? totalLineSel ?? totalLineOpts[0] ?? null : null;
   const boardPrice = isML
     ? mlPrice
     : matchPropOdds(propList, betType, sideName, method, round, ouSide, totalLine);
@@ -88,6 +91,7 @@ export function QuickBet({
       if (!alive) return;
       setBoard(b);
       setProps(pr);
+      setTotalLineSel(null);
       setBoardLoaded(true);
     });
     return () => {
@@ -243,11 +247,24 @@ export function QuickBet({
             className="w-20 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
           />
         )}
-        {needsLine && (
-          <span className="rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-200">
-            {totalLine !== null ? `${totalLine} rds` : "no total"}
-          </span>
-        )}
+        {needsLine &&
+          (totalLineOpts.length > 1 ? (
+            <select
+              value={totalLine ?? ""}
+              onChange={(e) => setTotalLineSel(parseFloat(e.target.value))}
+              className="rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
+            >
+              {totalLineOpts.map((ln) => (
+                <option key={ln} value={ln}>
+                  {ln} rds
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-200">
+              {totalLine !== null ? `${totalLine} rds` : "no total"}
+            </span>
+          ))}
         {!boardLoaded ? (
           <span className="px-2 py-1 text-xs text-neutral-600">reading board…</span>
         ) : priceReady && boardPrice !== null ? (
