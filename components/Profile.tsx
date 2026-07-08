@@ -410,18 +410,22 @@ export function Profile({
                   <div className="flex items-center gap-1 text-sm">
                     <button
                       onClick={() => openFollowList("followers")}
-                      className="rounded px-1 hover:bg-neutral-900"
+                      className="group cursor-pointer rounded px-1"
                     >
-                      <span className="font-semibold text-white">{shownRow?.followers ?? 0}</span>{" "}
-                      <span className="text-neutral-400">Followers</span>
+                      <span className="font-semibold text-white group-hover:text-emerald-400">
+                        {shownRow?.followers ?? 0}
+                      </span>{" "}
+                      <span className="text-neutral-400 group-hover:text-emerald-400">Followers</span>
                     </button>
                     <span className="text-neutral-700">·</span>
                     <button
                       onClick={() => openFollowList("following")}
-                      className="rounded px-1 hover:bg-neutral-900"
+                      className="group cursor-pointer rounded px-1"
                     >
-                      <span className="font-semibold text-white">{shownRow?.following ?? 0}</span>{" "}
-                      <span className="text-neutral-400">Following</span>
+                      <span className="font-semibold text-white group-hover:text-emerald-400">
+                        {shownRow?.following ?? 0}
+                      </span>{" "}
+                      <span className="text-neutral-400 group-hover:text-emerald-400">Following</span>
                     </button>
                   </div>
                   <div className="flex items-center gap-2">
@@ -448,7 +452,7 @@ export function Profile({
                     </span>
                   )}
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-gradient-to-b from-emerald-500/15 to-neutral-950 px-3 py-1 text-xs font-semibold text-emerald-300 shadow">
-                    {isSelf ? notesCount : "—"} note{isSelf && notesCount === 1 ? "" : "s"}
+                    {isSelf ? notesCount : 0} note{isSelf && notesCount === 1 ? "" : "s"}
                   </span>
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-500/40 bg-gradient-to-b from-sky-500/15 to-neutral-950 px-3 py-1 text-xs font-semibold text-sky-300 shadow">
                     {picks.length} pick{picks.length === 1 ? "" : "s"}
