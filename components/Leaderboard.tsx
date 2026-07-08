@@ -393,9 +393,6 @@ export function Leaderboard({
           <button onClick={() => setTier("sharp")} className={sideBtn(tier === "sharp")}>
             Sharp books
           </button>
-          <button onClick={() => setTier("soft")} className={sideBtn(tier === "soft")}>
-            Soft books
-          </button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex gap-1">
@@ -442,10 +439,6 @@ export function Leaderboard({
           </span>
         ))}
       </div>
-      <p className="text-xs text-neutral-500">
-        Verified bets only - logged at a listed book before the event started. Picks go
-        public at start time. Tap a row to see picks, or open the full profile.
-      </p>
 
       {loading && <p className="text-neutral-500">Loading leaderboard...</p>}
       {!loading && sorted.length === 0 && (

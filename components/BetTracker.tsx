@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import type { BetRow, EventRow, FightRow, NewBet } from "@/lib/types";
-import { betProfit, bookLabel, eventStarted, fmtDate, fmtOdds, fmtUnits, parseBetInputs, sideBtn } from "@/lib/format";
+import { betProfit, bookLabel, eventStarted, fmtDate, fmtOdds, fmtUnits, sideBtn } from "@/lib/format";
 import { TrashIcon } from "@/components/icons";
 import { QuickBet } from "@/components/QuickBet";
+import { ManualBet } from "@/components/ManualBet";
 import { BETS_README, InfoButton, ReadMePanel } from "@/components/ReadMe";
 
 export function BetTracker({
@@ -26,18 +27,17 @@ export function BetTracker({
   onRequestDelete: (id: string, requested: boolean) => void;
   onPublish: (id: string) => void;
 }) {
-  const [selection, setSelection] = useState("");
-  const [context, setContext] = useState("");
-  const [odds, setOdds] = useState("");
-  const [stake, setStake] = useState("");
-  const [error, setError] = useState("");
   const [scope, setScope] = useState<"verified" | "all">("verified");
   const [selEventId, setSelEventId] = useState("");
   const [selFightId, setSelFightId] = useState("");
+  const [selEventId2, setSelEventId2] = useState("");
+  const [selFightId2, setSelFightId2] = useState("");
   const [showInfo, setShowInfo] = useState(false);
 
-    const selEvent = events.find((ev) => ev.id === selEventId) ?? null;
+  const selEvent = events.find((ev) => ev.id === selEventId) ?? null;
   const selFight = fights.find((f) => f.id === selFightId) ?? null;
+  const selEvent2 = events.find((ev) => ev.id === selEventId2) ?? null;
+  const selFight2 = fights.find((f) => f.id === selFightId2) ?? null;
 
   // "verified" = structured bets tied to a fight (auto-graded); "all" adds manual ones
   const scoped = scope === "verified" ? bets.filter((b) => b.bet_type !== "other") : bets;
@@ -62,44 +62,6 @@ export function BetTracker({
   const beatRate = clvBets.length
     ? (clvBets.filter((b) => Number(b.clv) > 0).length / clvBets.length) * 100
     : null;
-
-  function submit() {
-    if (!selection.trim()) {
-      setError("Enter what the bet is on.");
-      return;
-    }
-    const parsed = parseBetInputs(odds, stake);
-    if (typeof parsed === "string") {
-      setError(parsed);
-      return;
-    }
-    onAdd({
-      selection: selection.trim(),
-      event_context: context.trim() || null,
-      event_date: null,
-      event_start: null,
-      fighter_id: null,
-      book: null,
-      price_check: null,
-      market_best: null,
-      market_book: null,
-      market_checked_at: null,
-      close_odds: null,
-      clv: null,
-      bet_type: "other",
-      prop_method: null,
-      prop_round: null,
-      ou_line: null,
-      event_source_url: null,
-      odds: parsed.odds,
-      stake: parsed.stake,
-    });
-    setSelection("");
-    setContext("");
-    setOdds("");
-    setStake("");
-    setError("");
-  }
 
   const profitTone = profit >= 0 ? "text-emerald-400" : "text-red-400";
 
@@ -221,39 +183,52 @@ export function BetTracker({
         <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
           Unverified bet (you grade it)
         </p>
-        <input
-          value={selection}
-          onChange={(e) => setSelection(e.target.value)}
-          placeholder="Selection (e.g. McGregor ML, over 2.5 rounds)"
-          className="w-full rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm outline-none focus:border-emerald-500"
-        />
-        <div className="flex gap-2">
-          <input
-            value={context}
-            onChange={(e) => setContext(e.target.value)}
-            placeholder="Event (optional)"
+        <p className="text-[11px] text-neutral-600">
+          Pick the fight, then log it at your own book and number - you grade this one.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <select
+            value={selEventId2}
+            onChange={(e) => {
+              setSelEventId2(e.target.value);
+              setSelFightId2("");
+            }}
             className="flex-1 min-w-0 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm outline-none focus:border-emerald-500"
-          />
-          <input
-            value={odds}
-            onChange={(e) => setOdds(e.target.value)}
-            placeholder="Odds (-150)"
-            className="w-24 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm outline-none focus:border-emerald-500"
-          />
-          <input
-            value={stake}
-            onChange={(e) => setStake(e.target.value)}
-            placeholder="Units"
-            className="w-20 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm outline-none focus:border-emerald-500"
-          />
-          <button
-            onClick={submit}
-            className="rounded-md bg-emerald-600 hover:bg-emerald-500 px-3 py-1 text-sm font-medium"
           >
-            Add
-          </button>
+            <option value="">Pick an event</option>
+            {events.map((ev) => (
+              <option key={ev.id} value={ev.id}>
+                {ev.org} — {ev.event_name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={selFightId2}
+            onChange={(e) => setSelFightId2(e.target.value)}
+            disabled={!selEventId2}
+            className="flex-1 min-w-0 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm outline-none focus:border-emerald-500 disabled:opacity-50"
+          >
+            <option value="">Pick a fight</option>
+            {fights
+              .filter((f) => f.event_id === selEventId2)
+              .map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.fighter1_name} vs {f.fighter2_name}
+                </option>
+              ))}
+          </select>
         </div>
-        {error && <p className="text-xs text-amber-400">{error}</p>}
+        {selEvent2 && selFight2 && (
+          <ManualBet
+            key={selFight2.id}
+            fight={selFight2}
+            eventLabel={`${selEvent2.org} — ${selEvent2.event_name}`}
+            eventDate={selEvent2.event_date}
+            eventTime={selEvent2.event_time}
+            eventSourceUrl={selEvent2.source_url}
+            onAdd={onAdd}
+          />
+        )}
       </div>
 
       {bets.length === 0 && (

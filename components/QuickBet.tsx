@@ -16,10 +16,10 @@ import {
 
 const BET_TYPE_OPTIONS = [
   { key: "moneyline", label: "ML" },
+  { key: "totals", label: "Totals" },
   { key: "method", label: "Methods" },
   { key: "round", label: "Rounds" },
   { key: "method_round", label: "Methods+Rounds" },
-  { key: "totals", label: "Totals" },
 ];
 
 export function QuickBet({
