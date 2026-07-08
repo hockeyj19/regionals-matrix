@@ -474,26 +474,6 @@ export function Matrix({ user }: { user: User }) {
                 Profile
               </button>
               <button
-                onClick={() => setView("events")}
-                className={`rounded-lg border px-3 py-1 text-sm ${
-                  view === "events"
-                    ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
-                    : "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
-                }`}
-              >
-                Notes
-              </button>
-              <button
-                onClick={() => setView("fighters")}
-                className={`rounded-lg border px-3 py-1 text-sm ${
-                  view === "fighters"
-                    ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
-                    : "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
-                }`}
-              >
-                Library
-              </button>
-              <button
                 onClick={() => setView("odds")}
                 className={`rounded-lg border px-3 py-1 text-sm ${
                   view === "odds"
@@ -512,6 +492,26 @@ export function Matrix({ user }: { user: User }) {
                 }`}
               >
                 Bets
+              </button>
+              <button
+                onClick={() => setView("events")}
+                className={`rounded-lg border px-3 py-1 text-sm ${
+                  view === "events"
+                    ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
+                    : "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
+                }`}
+              >
+                Notes
+              </button>
+              <button
+                onClick={() => setView("fighters")}
+                className={`rounded-lg border px-3 py-1 text-sm ${
+                  view === "fighters"
+                    ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
+                    : "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
+                }`}
+              >
+                Library
               </button>
               <button
                 onClick={() => setView("leaderboard")}

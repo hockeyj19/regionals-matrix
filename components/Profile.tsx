@@ -56,6 +56,7 @@ export function Profile({
   const [dir, setDir] = useState<DirRow[]>([]);
   const [myFollowing, setMyFollowing] = useState<Set<string>>(new Set());
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [shownJoin, setShownJoin] = useState<string | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarMsg, setAvatarMsg] = useState("");
   const [bio, setBio] = useState("");
@@ -132,9 +133,13 @@ export function Profile({
       .order("placed_at", { ascending: false });
     const { data: prof } = await supabase
       .from("public_profiles")
-      .select("avatar_url")
+      .select("*")
       .eq("username", username);
-    setAvatarUrl(prof && prof.length > 0 ? prof[0].avatar_url : null);
+    const p = prof && prof.length > 0 ? prof[0] : null;
+    setAvatarUrl(p?.avatar_url ?? null);
+    // created_at is only here once the public_profiles view exposes it; falls
+    // back to null (own profile still uses the account's own timestamp)
+    setShownJoin(typeof p?.created_at === "string" ? p.created_at : null);
     setPicks(data ?? []);
     setLoadedFor(username);
   }, []);
@@ -288,7 +293,7 @@ export function Profile({
     ];
   }, [picks, nowTs]);
 
-  const joinDate = isSelf ? user.created_at ?? null : null;
+  const joinDate = shownJoin ?? (isSelf ? user.created_at ?? null : null);
 
   function resultTag(b: PublicBet) {
     const cls =
