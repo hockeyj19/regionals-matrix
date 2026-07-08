@@ -128,7 +128,7 @@ export function Matrix({ user }: { user: User }) {
   const [noteHistory, setNoteHistory] = useState<NoteHistoryRow[]>([]);
   const [view, setView] = useState<
     "profile" | "events" | "odds" | "fighters" | "bets" | "leaderboard" | "admin"
-  >("events");
+  >("profile");
   const [profileUser, setProfileUser] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [showEventsInfo, setShowEventsInfo] = useState(false);
