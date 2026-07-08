@@ -69,15 +69,26 @@ export function Profile({
     let alive = true;
     (async () => {
       const { data } = await supabase.from("profiles").select("*").eq("user_id", user.id);
-      const { count } = await supabase
-        .from("user_fighter_notes")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", user.id);
+      const [notesRes, histRes] = await Promise.all([
+        supabase.from("user_fighter_notes").select("fighter_id, notes, tags").eq("user_id", user.id),
+        supabase.from("user_fighter_note_history").select("fighter_id").eq("user_id", user.id),
+      ]);
       if (!alive) return;
       const row = data && data.length > 0 ? data[0] : null;
       setSelfName(row ? row.username : null);
       setBio(row && typeof row.bio === "string" ? row.bio : "");
-      setNotesCount(count ?? 0);
+      // count fighters with a real note, tags, or history - the same rule the
+      // Library uses, so an emptied row can't inflate this the way a raw count did
+      const histSet = new Set(
+        ((histRes.data as { fighter_id: string }[]) ?? []).map((h) => h.fighter_id)
+      );
+      const kept = (
+        (notesRes.data as { fighter_id: string; notes: string | null; tags: string[] | null }[]) ??
+        []
+      ).filter(
+        (r) => (r.notes ?? "").trim() !== "" || (r.tags ?? []).length > 0 || histSet.has(r.fighter_id)
+      ).length;
+      setNotesCount(kept);
       setSelfLoaded(true);
     })();
     return () => {
@@ -298,38 +309,32 @@ export function Profile({
                   </>
                 )}
               </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => setNotifOn((v) => !v)}
-                  className={`rounded-md border px-3 py-1.5 text-xs font-medium ${
-                    notifOn
-                      ? "border-emerald-700 bg-emerald-600/15 text-emerald-300"
-                      : "border-neutral-700 text-neutral-300 hover:bg-neutral-900"
-                  }`}
-                >
-                  {notifOn ? "Notifications On" : "Turn on Notifications"}
-                </button>
-                {!isSelf && shownRow ? (
+              {!isSelf && (
+                <div className="flex flex-wrap gap-2">
                   <button
-                    onClick={() => toggleFollow(shownRow.user_id)}
+                    onClick={() => setNotifOn((v) => !v)}
                     className={`rounded-md border px-3 py-1.5 text-xs font-medium ${
-                      iFollowShown
-                        ? "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
-                        : "border-emerald-700 bg-emerald-600/15 text-emerald-300 hover:bg-emerald-600/25"
+                      notifOn
+                        ? "border-emerald-700 bg-emerald-600/15 text-emerald-300"
+                        : "border-neutral-700 text-neutral-300 hover:bg-neutral-900"
                     }`}
                   >
-                    {iFollowShown ? "Following" : "Follow"}
+                    {notifOn ? "Notifications On" : "Turn on Notifications"}
                   </button>
-                ) : (
-                  <button
-                    disabled
-                    title="This is you"
-                    className="rounded-md border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-600"
-                  >
-                    Following
-                  </button>
-                )}
-              </div>
+                  {shownRow && (
+                    <button
+                      onClick={() => toggleFollow(shownRow.user_id)}
+                      className={`rounded-md border px-3 py-1.5 text-xs font-medium ${
+                        iFollowShown
+                          ? "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
+                          : "border-emerald-700 bg-emerald-600/15 text-emerald-300 hover:bg-emerald-600/25"
+                      }`}
+                    >
+                      {iFollowShown ? "Following" : "Follow"}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
             <h2 className="mt-3 text-2xl font-bold text-white truncate">
               {shown}
@@ -354,19 +359,6 @@ export function Profile({
             <>
               {/* Block 2 — badges + counts + join date */}
               <div className="rounded-xl border border-neutral-800 bg-black p-4 space-y-3">
-                <div className="flex flex-wrap gap-2">
-                  {rank !== null && (
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-gradient-to-b from-amber-500/20 to-neutral-950 px-3 py-1 text-xs font-semibold text-amber-300 shadow">
-                      ★ #{rank} on the Leaderboard
-                    </span>
-                  )}
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-gradient-to-b from-emerald-500/15 to-neutral-950 px-3 py-1 text-xs font-semibold text-emerald-300 shadow">
-                    {isSelf ? notesCount : "—"} fighter note{isSelf && notesCount === 1 ? "" : "s"}
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-500/40 bg-gradient-to-b from-sky-500/15 to-neutral-950 px-3 py-1 text-xs font-semibold text-sky-300 shadow">
-                    {picks.length} pick{picks.length === 1 ? "" : "s"}
-                  </span>
-                </div>
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm text-white">
                     <span className="font-semibold">{shownRow?.followers ?? 0}</span>{" "}
@@ -378,6 +370,19 @@ export function Profile({
                   <p className="text-xs text-neutral-500 shrink-0">
                     Join Date: {joinDate ? fmtDate(joinDate) : "—"}
                   </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {rank !== null && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-gradient-to-b from-amber-500/20 to-neutral-950 px-3 py-1 text-xs font-semibold text-amber-300 shadow">
+                      ★ #{rank} on the Leaderboard
+                    </span>
+                  )}
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-gradient-to-b from-emerald-500/15 to-neutral-950 px-3 py-1 text-xs font-semibold text-emerald-300 shadow">
+                    {isSelf ? notesCount : "—"} note{isSelf && notesCount === 1 ? "" : "s"}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-500/40 bg-gradient-to-b from-sky-500/15 to-neutral-950 px-3 py-1 text-xs font-semibold text-sky-300 shadow">
+                    {picks.length} pick{picks.length === 1 ? "" : "s"}
+                  </span>
                 </div>
               </div>
 
