@@ -7,6 +7,18 @@ import { TrashIcon } from "@/components/icons";
 import { GrowingTextarea } from "@/components/GrowingTextarea";
 import { FIGHTERS_README, InfoButton, ReadMePanel } from "@/components/ReadMe";
 
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="12" height="12" viewBox="0 0 24 24" fill="none"
+      className={`text-neutral-500 transition-transform ${open ? "rotate-180" : ""}`}
+    >
+      <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2"
+        strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function typeMatch(b: { bet_type: string | null }, f: string): boolean {
   if (f === "all") return true;
   if (f === "ml") return b.bet_type === "moneyline";
@@ -37,6 +49,8 @@ export function FighterLibrary({
     "all" | "ml" | "totals" | "method" | "round" | "method_round"
   >("all");
   const [nowTs] = useState(() => Date.now());
+  const [pickOpen, setPickOpen] = useState(true);
+  const [notesOpen, setNotesOpen] = useState(true);
 
   // your settled/in-progress verified picks, newest first (upcoming excluded)
   const pickHistory = bets
@@ -83,30 +97,39 @@ export function FighterLibrary({
 
       <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-          <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wide">
-            Pick history
-          </p>
-          <div className="flex flex-wrap gap-1">
-            {(
-              [
-                ["all", "All"],
-                ["ml", "ML"],
-                ["totals", "Totals"],
-                ["method", "Methods"],
-                ["round", "Rounds"],
-                ["method_round", "Methods/Rounds"],
-              ] as const
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                onClick={() => setHistFilter(key)}
-                className={sideBtn(histFilter === key)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          <button
+            onClick={() => setPickOpen((v) => !v)}
+            className="flex items-center gap-1.5"
+          >
+            <span className="text-xs font-semibold text-emerald-500 uppercase tracking-wide">
+              Pick history
+            </span>
+            <Chevron open={pickOpen} />
+          </button>
+          {pickOpen && (
+            <div className="flex flex-wrap gap-1">
+              {(
+                [
+                  ["all", "All"],
+                  ["ml", "ML"],
+                  ["totals", "Totals"],
+                  ["method", "Methods"],
+                  ["round", "Rounds"],
+                  ["method_round", "Methods/Rounds"],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setHistFilter(key)}
+                  className={sideBtn(histFilter === key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
+        {pickOpen && (
         <div className="space-y-2">
           {pickHistory.filter((b) => typeMatch(b, histFilter)).length === 0 && (
             <p className="text-xs text-neutral-600">
@@ -164,10 +187,19 @@ export function FighterLibrary({
             <p className="text-[11px] text-neutral-600">Showing the latest 100.</p>
           )}
         </div>
+        )}
       </div>
-      <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wide">
-        Notes history
-      </p>
+      <button
+        onClick={() => setNotesOpen((v) => !v)}
+        className="flex items-center gap-1.5"
+      >
+        <span className="text-xs font-semibold text-emerald-500 uppercase tracking-wide">
+          Notes history
+        </span>
+        <Chevron open={notesOpen} />
+      </button>
+      {notesOpen && (
+      <>
       <input
         value={q}
         onChange={(e) => setQ(e.target.value)}
@@ -313,6 +345,8 @@ export function FighterLibrary({
           </div>
         );
       })}
+      </>
+      )}
     </div>
   );
 }
