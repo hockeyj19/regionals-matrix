@@ -455,9 +455,6 @@ export function Matrix({ user }: { user: User }) {
     <main className="min-h-screen bg-neutral-950 text-neutral-100">
       <header className="sticky top-0 z-10 bg-neutral-950/90 backdrop-blur border-b border-neutral-800 px-4 sm:px-6 py-3">
         <div className="max-w-4xl mx-auto flex items-center gap-2 sm:gap-3">
-          <h1 className="shrink-0 whitespace-nowrap text-base sm:text-lg font-bold">
-            MMA Matrix
-          </h1>
           <nav className="flex-1 min-w-0 overflow-x-auto flex gap-1 [&>button]:shrink-0">
               <button
                 onClick={() => setView("profile")}

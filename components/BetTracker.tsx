@@ -269,9 +269,6 @@ export function BetTracker({
                 </p>
               </div>
               <div className="flex items-center gap-1 shrink-0">
-                <span className="text-[10px] uppercase tracking-wide text-neutral-600 border border-neutral-800 rounded px-1.5 py-0.5">
-                  locks at start
-                </span>
                 <span className="rounded border border-neutral-800 px-1.5 py-0.5 text-[11px] text-neutral-700">
                   make public
                 </span>
@@ -364,14 +361,6 @@ export function BetTracker({
                 {b.result !== "pending" && (
                   <span className={`text-xs mr-1 ${p >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                     {fmtUnits(p)}
-                  </span>
-                )}
-                {verified && !started && (
-                  <span
-                    title="Grading opens at event start; results auto-grade from the scrape"
-                    className="text-[10px] uppercase tracking-wide text-neutral-500 border border-neutral-800 rounded px-1.5 py-0.5"
-                  >
-                    locks at start
                   </span>
                 )}
                 {autoFinal && (
