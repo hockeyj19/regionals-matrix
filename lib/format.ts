@@ -100,21 +100,42 @@ export function sideBtn(active: boolean): string {
 export const matrixCell =
   "w-full rounded bg-neutral-800 border border-neutral-700 px-1 py-0.5 text-xs text-center outline-none focus:border-emerald-500";
 
-export const MATRIX_MARKETS: [string, string][] = [
-  ["win_tko", "Win by TKO"],
-  ["win_sub", "Win by Sub"],
-  ["win_dec", "Win by Dec"],
-  ["ml", "ML"],
-  ["wins_itd", "Wins ITD"],
-  ["no_dec", "No Dec / Goes Dec"],
-  ["itd_only", "ITD Only"],
-  ["dec_only", "Dec Only"],
-  ["sub_only", "Sub Only"],
-  ["most_sig_strikes", "Most Significant Strikes"],
-  ["most_takedowns", "Most Takedowns"],
-  ["over_05_td", "Over 0.5 Takedowns"],
-  ["over_15_td", "Over 1.5 Takedowns"],
+export type MatrixMarket = { key: string; label: string; fiveRoundOnly?: boolean };
+
+// The Notes matrix, grouped for spacing between sections. The deeper round
+// over/unders (3.5, 4.5) only apply to 5-round fights. Keys are kept stable so
+// existing cell data survives the relabel; "wins_itd" and "no_dec" were dropped
+// and simply stop rendering (their rows aren't lost, just no longer shown).
+export const MATRIX_GROUPS: MatrixMarket[][] = [
+  [{ key: "ml", label: "ML" }],
+  [
+    { key: "win_tko", label: "TKO" },
+    { key: "win_sub", label: "Sub" },
+    { key: "win_dec", label: "Dec" },
+  ],
+  [
+    { key: "ou_rds_15", label: "o/u 1.5" },
+    { key: "ou_rds_25", label: "o/u 2.5" },
+    { key: "ou_rds_35", label: "o/u 3.5", fiveRoundOnly: true },
+    { key: "ou_rds_45", label: "o/u 4.5", fiveRoundOnly: true },
+  ],
+  [
+    { key: "most_sig_strikes", label: "Most SS" },
+    { key: "most_takedowns", label: "Most TDs" },
+    { key: "over_05_td", label: "o/u 0.5 TDs" },
+    { key: "over_15_td", label: "o/u 1.5 TDs" },
+  ],
+  [
+    { key: "itd_only", label: "Finish Only" },
+    { key: "dec_only", label: "Dec Only" },
+    { key: "sub_only", label: "Sub Only" },
+  ],
 ];
+
+// flat [key, label] list, kept for anything that still reads the old shape
+export const MATRIX_MARKETS: [string, string][] = MATRIX_GROUPS.flat().map(
+  (m) => [m.key, m.label] as [string, string]
+);
 
 // Event start as an ISO timestamp from the scraped date + "H:MM AM/PM ET" time.
 // ET offset is approximated by month (Apr-Oct daylight time); no listed time

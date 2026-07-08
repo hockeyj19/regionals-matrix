@@ -1,7 +1,7 @@
 "use client";
 
 import type { FightRow, MatrixData } from "@/lib/types";
-import { matrixCell, MATRIX_MARKETS } from "@/lib/format";
+import { matrixCell, MATRIX_GROUPS } from "@/lib/format";
 
 export function FightMatrix({
   fight,
@@ -12,6 +12,9 @@ export function FightMatrix({
   data: MatrixData;
   onSave: (market: string, cell: string, value: string) => void;
 }) {
+  // 5-round fights (main events / title bouts) unlock the deeper round over/unders
+  const fiveRound =
+    fight.is_main_event || /champ|title/i.test(fight.weight_class ?? "");
   return (
     <div className="rounded-md border border-neutral-800 bg-neutral-900/60 overflow-x-auto">
       <div className="min-w-[560px]">
@@ -30,37 +33,48 @@ export function FightMatrix({
             Odds+
           </span>
         </div>
-        <div className="divide-y divide-neutral-800/70">
-          {MATRIX_MARKETS.map(([key, label]) => {
-            const row = data[key] ?? {};
+        <div>
+          {MATRIX_GROUPS.map((group, gi) => {
+            const rows = group.filter((m) => !m.fiveRoundOnly || fiveRound);
+            if (rows.length === 0) return null;
             return (
               <div
-                key={key}
-                className="grid grid-cols-[4rem_1fr_11rem_1fr_4rem] gap-1 items-center px-2 py-1"
+                key={gi}
+                className={`divide-y divide-neutral-800/70 ${gi > 0 ? "mt-2" : ""}`}
               >
-                <input
-                  defaultValue={row.f1o ?? ""}
-                  onBlur={(e) => onSave(key, "f1o", e.target.value)}
-                  className={matrixCell}
-                />
-                <input
-                  defaultValue={row.f1v ?? ""}
-                  onBlur={(e) => onSave(key, "f1v", e.target.value)}
-                  className={matrixCell}
-                />
-                <span className="text-[11px] font-semibold text-amber-400/90 text-center px-1">
-                  {label}
-                </span>
-                <input
-                  defaultValue={row.f2v ?? ""}
-                  onBlur={(e) => onSave(key, "f2v", e.target.value)}
-                  className={matrixCell}
-                />
-                <input
-                  defaultValue={row.f2o ?? ""}
-                  onBlur={(e) => onSave(key, "f2o", e.target.value)}
-                  className={matrixCell}
-                />
+                {rows.map((m) => {
+                  const row = data[m.key] ?? {};
+                  return (
+                    <div
+                      key={m.key}
+                      className="grid grid-cols-[4rem_1fr_11rem_1fr_4rem] gap-1 items-center px-2 py-1"
+                    >
+                      <input
+                        defaultValue={row.f1o ?? ""}
+                        onBlur={(e) => onSave(m.key, "f1o", e.target.value)}
+                        className={matrixCell}
+                      />
+                      <input
+                        defaultValue={row.f1v ?? ""}
+                        onBlur={(e) => onSave(m.key, "f1v", e.target.value)}
+                        className={matrixCell}
+                      />
+                      <span className="text-[11px] font-semibold text-amber-400/90 text-center px-1">
+                        {m.label}
+                      </span>
+                      <input
+                        defaultValue={row.f2v ?? ""}
+                        onBlur={(e) => onSave(m.key, "f2v", e.target.value)}
+                        className={matrixCell}
+                      />
+                      <input
+                        defaultValue={row.f2o ?? ""}
+                        onBlur={(e) => onSave(m.key, "f2o", e.target.value)}
+                        className={matrixCell}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             );
           })}
