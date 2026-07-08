@@ -35,6 +35,7 @@ export function BetTracker({
   const [selEventId, setSelEventId] = useState("");
   const [selFightId, setSelFightId] = useState("");
   const [showInfo, setShowInfo] = useState(false);
+  const [nowTs] = useState(() => Date.now());
 
   const selEvent = events.find((ev) => ev.id === selEventId) ?? null;
   const selFight = fights.find((f) => f.id === selFightId) ?? null;
@@ -49,6 +50,11 @@ export function BetTracker({
   const profit = settled.reduce((s, b) => s + betProfit(b), 0);
   const roi = staked > 0 ? (profit / staked) * 100 : 0;
   const pendingCount = scoped.length - settled.length;
+
+  // your not-yet-started picks, soonest first (moved here from the Profile tab)
+  const upcoming = scoped
+    .filter((b) => b.event_start && new Date(b.event_start).getTime() > nowTs)
+    .sort((a, b) => (a.event_date ?? "").localeCompare(b.event_date ?? ""));
 
   // ROI over time: month buckets by event date (falls back to when placed)
   const months: Record<string, { staked: number; profit: number; n: number }> = {};
@@ -188,6 +194,39 @@ export function BetTracker({
         <p className="text-xs text-neutral-500">
           {pendingCount} pending bet{pendingCount === 1 ? "" : "s"} not counted above.
         </p>
+      )}
+
+      {upcoming.length > 0 && (
+        <div className="rounded-xl border border-emerald-900/60 bg-neutral-900/40 p-3">
+          <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wide mb-2">
+            Upcoming picks · before the event
+          </p>
+          <div className="space-y-2">
+            {upcoming.map((b) => (
+              <div key={b.id} className="border-b border-neutral-900 pb-1 last:border-0">
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <span className="truncate">
+                    {b.selection}{" "}
+                    <span className="text-neutral-500">
+                      {fmtOdds(b.odds)} · {Number(b.stake)}u
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-neutral-400">
+                    {fmtDate(b.event_date ?? b.placed_at)}
+                  </span>
+                </div>
+                <p className="text-[11px] text-neutral-600 truncate">
+                  {b.book ? `${bookLabel(b.book)} · ` : ""}
+                  {b.event_context ? `${b.event_context} · ` : ""}
+                  {b.published_at ? "public" : "not public yet"}
+                  {b.price_check === "verified" && (
+                    <span className="ml-1 uppercase tracking-wide text-amber-300"> market ✓</span>
+                  )}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {settled.length >= 2 && (
