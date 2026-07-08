@@ -35,9 +35,8 @@ export function BetTracker({
   const [selEventId, setSelEventId] = useState("");
   const [selFightId, setSelFightId] = useState("");
   const [showInfo, setShowInfo] = useState(false);
-  const [nowTs] = useState(() => Date.now());
 
-  const selEvent = events.find((ev) => ev.id === selEventId) ?? null;
+    const selEvent = events.find((ev) => ev.id === selEventId) ?? null;
   const selFight = fights.find((f) => f.id === selFightId) ?? null;
 
   // "verified" = structured bets tied to a fight (auto-graded); "all" adds manual ones
@@ -49,48 +48,12 @@ export function BetTracker({
   const staked = settled.reduce((s, b) => s + Number(b.stake), 0);
   const profit = settled.reduce((s, b) => s + betProfit(b), 0);
   const roi = staked > 0 ? (profit / staked) * 100 : 0;
-  const pendingCount = scoped.length - settled.length;
-
-  // your not-yet-started picks, soonest first (moved here from the Profile tab)
-  const upcoming = scoped
-    .filter((b) => b.event_start && new Date(b.event_start).getTime() > nowTs)
-    .sort((a, b) => (a.event_date ?? "").localeCompare(b.event_date ?? ""));
-
-  // ROI over time: month buckets by event date (falls back to when placed)
-  const months: Record<string, { staked: number; profit: number; n: number }> = {};
-  settled.forEach((b) => {
-    const key = (b.event_date ?? b.placed_at).slice(0, 7);
-    if (!months[key]) months[key] = { staked: 0, profit: 0, n: 0 };
-    months[key].staked += Number(b.stake);
-    months[key].profit += betProfit(b);
-    months[key].n += 1;
-  });
-  const monthKeys = Object.keys(months).sort();
-
   // bankroll curve: cumulative units across settled bets in fight order
   const chron = [...settled].sort((a, b) =>
     (a.event_date ?? a.placed_at).localeCompare(b.event_date ?? b.placed_at)
   );
   let running = 0;
   const cumulative = chron.map((b) => (running += betProfit(b)));
-
-  // results by organization (from the event context on each bet)
-  const orgs: Record<
-    string,
-    { n: number; w: number; l: number; p: number; staked: number; profit: number }
-  > = {};
-  settled.forEach((b) => {
-    const key = (b.event_context ?? "").split(" — ")[0].trim() || "Other";
-    if (!orgs[key]) orgs[key] = { n: 0, w: 0, l: 0, p: 0, staked: 0, profit: 0 };
-    const o = orgs[key];
-    o.n += 1;
-    if (b.result === "win") o.w += 1;
-    else if (b.result === "loss") o.l += 1;
-    else o.p += 1;
-    o.staked += Number(b.stake);
-    o.profit += betProfit(b);
-  });
-  const orgKeys = Object.keys(orgs).sort((a, b) => orgs[b].n - orgs[a].n);
 
   const clvBets = scoped.filter((b) => b.clv !== null);
   const avgClv = clvBets.length
@@ -190,56 +153,16 @@ export function BetTracker({
           </div>
         )}
       </div>
-      {pendingCount > 0 && (
-        <p className="text-xs text-neutral-500">
-          {pendingCount} pending bet{pendingCount === 1 ? "" : "s"} not counted above.
-        </p>
-      )}
 
-      {upcoming.length > 0 && (
-        <div className="rounded-xl border border-emerald-900/60 bg-neutral-900/40 p-3">
-          <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wide mb-2">
-            Upcoming picks · before the event
+      <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
+            Bankroll
           </p>
-          <div className="space-y-2">
-            {upcoming.map((b) => (
-              <div key={b.id} className="border-b border-neutral-900 pb-1 last:border-0">
-                <div className="flex items-center justify-between gap-2 text-xs">
-                  <span className="truncate">
-                    {b.selection}{" "}
-                    <span className="text-neutral-500">
-                      {fmtOdds(b.odds)} · {Number(b.stake)}u
-                    </span>
-                  </span>
-                  <span className="shrink-0 text-neutral-400">
-                    {fmtDate(b.event_date ?? b.placed_at)}
-                  </span>
-                </div>
-                <p className="text-[11px] text-neutral-600 truncate">
-                  {b.book ? `${bookLabel(b.book)} · ` : ""}
-                  {b.event_context ? `${b.event_context} · ` : ""}
-                  {b.published_at ? "public" : "not public yet"}
-                  {b.price_check === "verified" && (
-                    <span className="ml-1 uppercase tracking-wide text-amber-300"> market ✓</span>
-                  )}
-                </p>
-              </div>
-            ))}
-          </div>
+          <span className={`text-xs ${profitTone}`}>{fmtUnits(profit)}</span>
         </div>
-      )}
-
-      {settled.length >= 2 && (
-        <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
-          <div className="flex items-center justify-between mb-1">
-            <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
-              Bankroll
-            </p>
-            <span className={`text-xs ${profitTone}`}>{fmtUnits(profit)}</span>
-          </div>
-          <BankrollCurve values={cumulative} />
-        </div>
-      )}
+        <BankrollCurve values={cumulative} />
+      </div>
 
       <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3 space-y-2">
         <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
@@ -332,68 +255,6 @@ export function BetTracker({
         </div>
         {error && <p className="text-xs text-amber-400">{error}</p>}
       </div>
-
-      {monthKeys.length === 0 && (
-        <GhostPanel
-          title="ROI by month"
-          hint="Builds itself as bets settle - one line per month with volume, profit, and ROI."
-        />
-      )}
-      {monthKeys.length > 0 && (
-        <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
-          <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide mb-2">
-            ROI by month
-          </p>
-          <div className="space-y-1">
-            {monthKeys.map((m) => {
-              const v = months[m];
-              const mroi = v.staked > 0 ? (v.profit / v.staked) * 100 : 0;
-              return (
-                <div key={m} className="flex items-center justify-between text-xs gap-2">
-                  <span className="text-neutral-400 w-16 shrink-0">{m}</span>
-                  <span className="text-neutral-600 flex-1 text-center">
-                    {v.n} bet{v.n === 1 ? "" : "s"} · {Math.round(v.staked * 100) / 100}u
-                  </span>
-                  <span className={v.profit >= 0 ? "text-emerald-400" : "text-red-400"}>
-                    {fmtUnits(v.profit)} ({mroi >= 0 ? "+" : ""}{mroi.toFixed(1)}%)
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {orgKeys.length === 0 && (
-        <GhostPanel
-          title="Results by org"
-          hint="Your record split by promotion - UFC vs the regionals - once bets settle."
-        />
-      )}
-      {orgKeys.length > 0 && (
-        <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
-          <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide mb-2">
-            Results by org
-          </p>
-          <div className="space-y-1">
-            {orgKeys.map((k) => {
-              const o = orgs[k];
-              const oroi = o.staked > 0 ? (o.profit / o.staked) * 100 : 0;
-              return (
-                <div key={k} className="flex items-center justify-between text-xs gap-2">
-                  <span className="text-neutral-400 truncate">{k}</span>
-                  <span className="text-neutral-600 shrink-0">
-                    {o.w}-{o.l}-{o.p}
-                  </span>
-                  <span className={`shrink-0 ${o.profit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                    {fmtUnits(o.profit)} ({oroi >= 0 ? "+" : ""}{oroi.toFixed(1)}%)
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {bets.length === 0 && (
         <div className="space-y-3">
@@ -662,16 +523,5 @@ function BankrollCurve({ values }: { values: number[] }) {
       />
       <path d={d} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
     </svg>
-  );
-}
-
-function GhostPanel({ title, hint }: { title: string; hint: string }) {
-  return (
-    <div className="rounded-xl border border-dashed border-neutral-800 bg-neutral-900/20 p-3">
-      <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-1">
-        {title}
-      </p>
-      <p className="text-xs text-neutral-600">{hint}</p>
-    </div>
   );
 }

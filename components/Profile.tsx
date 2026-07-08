@@ -254,12 +254,11 @@ export function Profile({
         .filter((b) => b.event_start && new Date(b.event_start).getTime() > nowTs)
         .map((b) => b.id)
     );
-    const upcoming = picks.filter((b) => upcomingIds.has(b.id));
     const history = picks.filter((b) => !upcomingIds.has(b.id));
     const live = history.filter((b) => b.result === "pending");
     const topOrg =
       Object.entries(orgs).sort((a, b2) => b2[1].n - a[1].n)[0]?.[0] ?? null;
-    return { upcoming, live, first, topOrg };
+    return { live, first, topOrg };
   }, [picks, nowTs]);
 
   const dirRoi = (d: DirRow) => (d.staked > 0 ? (d.profit / d.staked) * 100 : 0);
@@ -374,15 +373,9 @@ export function Profile({
                       } · ${shownRow.following} following · `
                     : ""}
                   {picks.length} public pick{picks.length === 1 ? "" : "s"}
-                  {stats.upcoming.length > 0 ? ` · ${stats.upcoming.length} upcoming` : ""}
                   {stats.live.length > 0 ? ` · ${stats.live.length} live` : ""}
                   {stats.first ? ` · tracking since ${fmtDate(stats.first)}` : ""}
                   {stats.topOrg ? ` · most active: ${stats.topOrg}` : ""}
-                </p>
-                <p className="text-[11px] text-neutral-600 mt-1">
-                  Every number below comes from verified bets logged before their event
-                  started - the same window the leaderboard scores. Nothing here is
-                  self-reported.
                 </p>
                 {avatarMsg && <p className="text-xs text-amber-400 mt-1">{avatarMsg}</p>}
               </div>
