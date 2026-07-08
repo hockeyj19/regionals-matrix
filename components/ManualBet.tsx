@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { FightRow, NewBet } from "@/lib/types";
-import { SOFT_BOOKS, eventStartISO, parseBetInputs, sideBtn } from "@/lib/format";
+import { SHARP_BOOKS, SOFT_BOOKS, bookLabel, eventStartISO, parseBetInputs, sideBtn } from "@/lib/format";
 
 // Same market set and order as the verified form (QuickBet), but self-priced:
 // the bettor picks their own book and types their own number. These log as
@@ -15,6 +15,9 @@ const BET_TYPE_OPTIONS = [
   { key: "round", label: "Rounds" },
   { key: "method_round", label: "Methods+Rounds" },
 ];
+
+// unverified bets can be logged at any book — the soft books plus BetOnline
+const BOOK_OPTIONS = [...SOFT_BOOKS, ...SHARP_BOOKS];
 
 export function ManualBet({
   fight,
@@ -156,9 +159,9 @@ export function ManualBet({
           title="Your book"
           className="rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
         >
-          {SOFT_BOOKS.map((bk) => (
+          {BOOK_OPTIONS.map((bk) => (
             <option key={bk} value={bk}>
-              {bk}
+              {bookLabel(bk)}
             </option>
           ))}
         </select>

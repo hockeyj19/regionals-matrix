@@ -33,6 +33,7 @@ export function FighterLibrary({
   onSaveNote,
   onSaveTags,
   onDeleteHistory,
+  onDeleteFighter,
 }: {
   notes: Record<string, FighterNote>;
   history: NoteHistoryRow[];
@@ -40,6 +41,7 @@ export function FighterLibrary({
   onSaveNote: (fighterId: string, fighterName: string, value: string, context: string) => void;
   onSaveTags: (fighterId: string, fighterName: string, raw: string) => void;
   onDeleteHistory: (id: string) => void;
+  onDeleteFighter: (fighterId: string) => void;
 }) {
   const [q, setQ] = useState("");
   const [showInfo, setShowInfo] = useState(false);
@@ -289,11 +291,20 @@ export function FighterLibrary({
               >
                 {n.fighter_name}
               </a>
-              {n.updated_at && (
-                <span className="text-[11px] text-neutral-600">
-                  updated {formatWhen(n.updated_at)}
-                </span>
-              )}
+              <div className="flex items-center gap-2 shrink-0">
+                {n.updated_at && (
+                  <span className="text-[11px] text-neutral-600">
+                    updated {formatWhen(n.updated_at)}
+                  </span>
+                )}
+                <button
+                  onClick={() => onDeleteFighter(n.fighter_id)}
+                  title="Remove this fighter from your notes"
+                  className="rounded-md p-1.5 text-neutral-500 hover:text-red-400 hover:bg-neutral-800"
+                >
+                  <TrashIcon />
+                </button>
+              </div>
             </div>
 
             <GrowingTextarea

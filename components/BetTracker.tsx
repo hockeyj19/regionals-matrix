@@ -117,17 +117,14 @@ export function BetTracker({
       </div>
 
       <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
-        <div className="flex items-center justify-between mb-1">
-          <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
-            Bankroll
-          </p>
-          <span className={`text-xs ${profitTone}`}>{fmtUnits(profit)}</span>
-        </div>
+        <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide mb-1">
+          Bankroll
+        </p>
         <BankrollCurve values={cumulative} />
       </div>
 
       <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3 space-y-2">
-        <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
+        <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wide">
           Verified bet
         </p>
         <p className="text-[11px] text-neutral-600">
@@ -180,7 +177,7 @@ export function BetTracker({
       </div>
 
       <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3 space-y-2">
-        <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
+        <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wide">
           Unverified bet (you grade it)
         </p>
         <p className="text-[11px] text-neutral-600">

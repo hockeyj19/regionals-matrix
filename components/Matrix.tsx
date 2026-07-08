@@ -344,6 +344,28 @@ export function Matrix({ user }: { user: User }) {
     await supabase.from("user_fighter_note_history").delete().eq("id", id);
   }
 
+  // remove a fighter from the notes library entirely: the note/tags record and
+  // every history entry. Clearing the note text alone leaves the fighter here if
+  // it still has history, so this is the way to make it disappear.
+  async function deleteFighter(fighterId: string) {
+    setFighterNotes((prev) => {
+      const next = { ...prev };
+      delete next[fighterId];
+      return next;
+    });
+    setNoteHistory((prev) => prev.filter((h) => h.fighter_id !== fighterId));
+    await supabase
+      .from("user_fighter_notes")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("fighter_id", fighterId);
+    await supabase
+      .from("user_fighter_note_history")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("fighter_id", fighterId);
+  }
+
   // log a bet (from a fight card or the Bets tab)
   async function addBet(bet: NewBet) {
     const { data: b } = await supabase
@@ -535,6 +557,7 @@ export function Matrix({ user }: { user: User }) {
           onSaveNote={saveFighterNote}
           onSaveTags={saveFighterTags}
           onDeleteHistory={deleteHistoryEntry}
+          onDeleteFighter={deleteFighter}
         />
       ) : view === "admin" && isAdmin ? (
         <AdminPanel />
