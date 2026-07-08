@@ -168,22 +168,20 @@ export function Profile({
     }
   }
 
-  async function findUser() {
-    const q = search.trim();
+  function findUser() {
+    const q = search.trim().toLowerCase();
     if (!q) return;
-    const { data } = await supabase
-      .from("public_bets")
-      .select("username")
-      .ilike("username", `%${q}%`)
-      .limit(50);
-    const names = Array.from(new Set((data ?? []).map((r) => r.username)));
-    const exact = names.find((n) => n.toLowerCase() === q.toLowerCase());
-    if (exact ?? names[0]) {
+    // search the directory (every user with a profile), not just bettors with
+    // public picks - otherwise a user who hasn't shared a pick can't be found
+    const match =
+      dir.find((d) => d.username.toLowerCase() === q) ??
+      dir.find((d) => d.username.toLowerCase().includes(q));
+    if (match) {
       setSearchMsg("");
       setSearch("");
-      onViewUser(exact ?? names[0]);
+      onViewUser(match.username);
     } else {
-      setSearchMsg("No user with public picks matches that name.");
+      setSearchMsg("No user by that name.");
     }
   }
 
