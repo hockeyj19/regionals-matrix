@@ -17,20 +17,16 @@ export function FightMatrix({
     fight.is_main_event || /champ|title/i.test(fight.weight_class ?? "");
   return (
     <div className="rounded-md border border-neutral-800 bg-neutral-900/60 overflow-x-auto">
-      <div className="min-w-[560px]">
-        <div className="grid grid-cols-[4rem_1fr_11rem_1fr_4rem] gap-1 items-center px-2 py-1.5 border-b border-neutral-800">
-          <span className="text-[10px] text-neutral-500 uppercase tracking-wide text-center">
-            Odds+
-          </span>
-          <span className="text-[11px] font-semibold text-neutral-300 text-center truncate">
+      <div className="min-w-[380px]">
+        <div className="grid grid-cols-[1fr_11rem_1fr] gap-1 items-center px-2 py-1.5 border-b border-neutral-800">
+          <span className="text-[11px] font-semibold text-neutral-300 text-right truncate pr-1">
             {fight.fighter1_name}
           </span>
-          <span />
-          <span className="text-[11px] font-semibold text-neutral-300 text-center truncate">
-            {fight.fighter2_name}
-          </span>
           <span className="text-[10px] text-neutral-500 uppercase tracking-wide text-center">
-            Odds+
+            %
+          </span>
+          <span className="text-[11px] font-semibold text-neutral-300 text-left truncate pl-1">
+            {fight.fighter2_name}
           </span>
         </div>
         <div>
@@ -47,31 +43,29 @@ export function FightMatrix({
                   return (
                     <div
                       key={m.key}
-                      className="grid grid-cols-[4rem_1fr_11rem_1fr_4rem] gap-1 items-center px-2 py-1"
+                      className="grid grid-cols-[1fr_11rem_1fr] gap-1 items-center px-2 py-1"
                     >
-                      <input
-                        defaultValue={row.f1o ?? ""}
-                        onBlur={(e) => onSave(m.key, "f1o", e.target.value)}
-                        className={matrixCell}
-                      />
-                      <input
-                        defaultValue={row.f1v ?? ""}
-                        onBlur={(e) => onSave(m.key, "f1v", e.target.value)}
-                        className={matrixCell}
-                      />
+                      <div className="flex justify-end">
+                        <div className="w-16">
+                          <input
+                            defaultValue={row.f1o ?? ""}
+                            onBlur={(e) => onSave(m.key, "f1o", e.target.value)}
+                            className={matrixCell}
+                          />
+                        </div>
+                      </div>
                       <span className="text-[11px] font-semibold text-amber-400/90 text-center px-1">
                         {m.label}
                       </span>
-                      <input
-                        defaultValue={row.f2v ?? ""}
-                        onBlur={(e) => onSave(m.key, "f2v", e.target.value)}
-                        className={matrixCell}
-                      />
-                      <input
-                        defaultValue={row.f2o ?? ""}
-                        onBlur={(e) => onSave(m.key, "f2o", e.target.value)}
-                        className={matrixCell}
-                      />
+                      <div className="flex justify-start">
+                        <div className="w-16">
+                          <input
+                            defaultValue={row.f2o ?? ""}
+                            onBlur={(e) => onSave(m.key, "f2o", e.target.value)}
+                            className={matrixCell}
+                          />
+                        </div>
+                      </div>
                     </div>
                   );
                 })}

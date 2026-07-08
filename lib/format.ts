@@ -109,7 +109,7 @@ export type MatrixMarket = { key: string; label: string; fiveRoundOnly?: boolean
 export const MATRIX_GROUPS: MatrixMarket[][] = [
   [{ key: "ml", label: "ML" }],
   [
-    { key: "win_tko", label: "TKO" },
+    { key: "win_tko", label: "Tko" },
     { key: "win_sub", label: "Sub" },
     { key: "win_dec", label: "Dec" },
   ],
@@ -122,8 +122,8 @@ export const MATRIX_GROUPS: MatrixMarket[][] = [
   [
     { key: "most_sig_strikes", label: "Most SS" },
     { key: "most_takedowns", label: "Most TDs" },
-    { key: "over_05_td", label: "o/u 0.5 TDs" },
-    { key: "over_15_td", label: "o/u 1.5 TDs" },
+    { key: "over_05_td", label: "0.5 TDs" },
+    { key: "over_15_td", label: "1.5 TDs" },
   ],
   [
     { key: "itd_only", label: "Finish Only" },
