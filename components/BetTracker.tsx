@@ -1,16 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import type { BetRow, EventRow, FightRow, NewBet, ReviewRow } from "@/lib/types";
+import type { BetRow, EventRow, FightRow, NewBet } from "@/lib/types";
 import { betProfit, bookLabel, eventStarted, fmtDate, fmtOdds, fmtUnits, parseBetInputs, sideBtn } from "@/lib/format";
 import { TrashIcon } from "@/components/icons";
 import { QuickBet } from "@/components/QuickBet";
-import { ReviewArchive } from "@/components/ReviewArchive";
 import { BETS_README, InfoButton, ReadMePanel } from "@/components/ReadMe";
 
 export function BetTracker({
   bets,
-  reviews,
   events,
   fights,
   onAdd,
@@ -20,7 +18,6 @@ export function BetTracker({
   onPublish,
 }: {
   bets: BetRow[];
-  reviews: ReviewRow[];
   events: EventRow[];
   fights: FightRow[];
   onAdd: (bet: NewBet) => void;
@@ -296,8 +293,6 @@ export function BetTracker({
         </div>
         {error && <p className="text-xs text-amber-400">{error}</p>}
       </div>
-
-      <ReviewArchive rows={reviews} />
 
       {monthKeys.length === 0 && (
         <GhostPanel

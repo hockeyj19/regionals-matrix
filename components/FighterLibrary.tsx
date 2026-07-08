@@ -95,19 +95,20 @@ export function FighterLibrary({
       </div>
       {showInfo && <ReadMePanel paragraphs={FIGHTERS_README} />}
 
-      <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-          <button
-            onClick={() => setPickOpen((v) => !v)}
-            className="flex items-center gap-1.5"
-          >
+      {/* Pick history */}
+      <div
+        onClick={() => setPickOpen((v) => !v)}
+        className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3 cursor-pointer"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
             <span className="text-xs font-semibold text-emerald-500 uppercase tracking-wide">
               Pick history
             </span>
             <Chevron open={pickOpen} />
-          </button>
+          </div>
           {pickOpen && (
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1" onClick={(e) => e.stopPropagation()}>
               {(
                 [
                   ["all", "All"],
@@ -130,7 +131,7 @@ export function FighterLibrary({
           )}
         </div>
         {pickOpen && (
-        <div className="space-y-2">
+        <div className="space-y-2 mt-3 cursor-auto" onClick={(e) => e.stopPropagation()}>
           {pickHistory.filter((b) => typeMatch(b, histFilter)).length === 0 && (
             <p className="text-xs text-neutral-600">
               {pickHistory.length === 0
@@ -189,17 +190,19 @@ export function FighterLibrary({
         </div>
         )}
       </div>
-      <button
+      {/* Notes history */}
+      <div
         onClick={() => setNotesOpen((v) => !v)}
-        className="flex items-center gap-1.5"
+        className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3 cursor-pointer"
       >
-        <span className="text-xs font-semibold text-emerald-500 uppercase tracking-wide">
-          Notes history
-        </span>
-        <Chevron open={notesOpen} />
-      </button>
-      {notesOpen && (
-      <>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-semibold text-emerald-500 uppercase tracking-wide">
+            Notes history
+          </span>
+          <Chevron open={notesOpen} />
+        </div>
+        {notesOpen && (
+        <div className="mt-3 space-y-4 cursor-auto" onClick={(e) => e.stopPropagation()}>
       <input
         value={q}
         onChange={(e) => setQ(e.target.value)}
@@ -345,8 +348,9 @@ export function FighterLibrary({
           </div>
         );
       })}
-      </>
-      )}
+        </div>
+        )}
+      </div>
     </div>
   );
 }

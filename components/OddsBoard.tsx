@@ -353,7 +353,7 @@ export function OddsBoard({
                             <div key={t.line}>
                               {totalSide === "over" ? "O" : "U"}
                               {t.line}{" "}
-                              <span className="text-neutral-300">
+                              <span className="text-[11px] text-neutral-300">
                                 {o === null ? "—" : fmtAmerican(o)}
                               </span>
                             </div>
