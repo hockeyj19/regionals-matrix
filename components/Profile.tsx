@@ -57,6 +57,7 @@ export function Profile({
   const [myFollowing, setMyFollowing] = useState<Set<string>>(new Set());
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [shownJoin, setShownJoin] = useState<string | null>(null);
+  const [shownBio, setShownBio] = useState("");
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarMsg, setAvatarMsg] = useState("");
   const [bio, setBio] = useState("");
@@ -148,6 +149,8 @@ export function Profile({
     // created_at is only here once the public_profiles view exposes it; falls
     // back to null (own profile still uses the account's own timestamp)
     setShownJoin(typeof p?.created_at === "string" ? p.created_at : null);
+    // another user's bio, once the view exposes it (empty until then)
+    setShownBio(typeof p?.bio === "string" ? p.bio : "");
     setPicks(data ?? []);
     setLoadedFor(username);
   }, []);
@@ -404,7 +407,7 @@ export function Profile({
               {shown}
               {isSelf && <span className="text-neutral-600 text-base font-normal"> (you)</span>}
             </h2>
-            {isSelf && (
+            {isSelf ? (
               <textarea
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
@@ -413,6 +416,10 @@ export function Profile({
                 rows={2}
                 className="mt-2 w-full resize-none rounded-md bg-neutral-800/60 border border-neutral-800 px-3 py-2 text-sm text-neutral-200 outline-none focus:border-emerald-500 placeholder:text-neutral-600"
               />
+            ) : (
+              shownBio && (
+                <p className="mt-2 text-sm text-neutral-300 whitespace-pre-wrap">{shownBio}</p>
+              )
             )}
             {avatarMsg && <p className="text-xs text-amber-400 mt-1">{avatarMsg}</p>}
           </div>

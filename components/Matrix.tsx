@@ -658,7 +658,9 @@ export function Matrix({ user }: { user: User }) {
                         onClick={() =>
                           setOpenNotes((prev) => ({ ...prev, [f.id]: !expanded }))
                         }
-                        className="relative p-4 space-y-3 cursor-pointer hover:bg-neutral-900/30"
+                        className={`relative px-4 pb-4 space-y-3 cursor-pointer hover:bg-neutral-900/30 ${
+                          expanded ? "pt-12" : "pt-4"
+                        }`}
                       >
                         <button
                           onClick={(e) => {
@@ -721,15 +723,15 @@ export function Matrix({ user }: { user: User }) {
                             Main Event
                           </div>
                         )}
-                        {/* names with price beside each */}
+                        {/* names, price stacked underneath each */}
                         <div className="flex items-start justify-center gap-2 sm:gap-3">
-                          <div className="flex-1 flex items-center justify-end gap-2">
-                            
-                              <a href={tapologyUrl(f.fighter1_name)}
+                          <div className="flex-1 min-w-0 flex flex-col items-center gap-1">
+                            <a
+                              href={tapologyUrl(f.fighter1_name)}
                               target="_blank"
                               rel="noopener noreferrer"
                               onClick={(e) => e.stopPropagation()}
-                              className="text-sm font-medium text-right truncate hover:text-emerald-400 hover:underline"
+                              className="w-full text-sm font-medium text-center truncate hover:text-emerald-400 hover:underline"
                             >
                               {f.fighter1_name}
                             </a>
@@ -738,29 +740,29 @@ export function Matrix({ user }: { user: User }) {
                                 defaultValue={d?.price1 ?? ""}
                                 onClick={(e) => e.stopPropagation()}
                                 onBlur={(e) => saveField(f.id, "price1", e.target.value)}
-                                className="w-14 shrink-0 text-center rounded-md bg-neutral-800 border border-neutral-700 px-1 py-1 text-sm focus:border-emerald-500 outline-none"
+                                className="w-16 text-center rounded-md bg-neutral-800 border border-neutral-700 px-1 py-1 text-sm focus:border-emerald-500 outline-none"
                               />
                             )}
                           </div>
-                          <span className="text-neutral-600 text-xs px-1 pt-2">VS</span>
-                          <div className="flex-1 flex items-center justify-start gap-2">
+                          <span className="text-neutral-600 text-xs px-1 pt-0.5">VS</span>
+                          <div className="flex-1 min-w-0 flex flex-col items-center gap-1">
+                            <a
+                              href={tapologyUrl(f.fighter2_name)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-full text-sm font-medium text-center truncate hover:text-emerald-400 hover:underline"
+                            >
+                              {f.fighter2_name}
+                            </a>
                             {expanded && (
                               <input
                                 defaultValue={d?.price2 ?? ""}
                                 onClick={(e) => e.stopPropagation()}
                                 onBlur={(e) => saveField(f.id, "price2", e.target.value)}
-                                className="w-14 shrink-0 text-center rounded-md bg-neutral-800 border border-neutral-700 px-1 py-1 text-sm focus:border-emerald-500 outline-none"
+                                className="w-16 text-center rounded-md bg-neutral-800 border border-neutral-700 px-1 py-1 text-sm focus:border-emerald-500 outline-none"
                               />
                             )}
-                            
-                              <a href={tapologyUrl(f.fighter2_name)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="text-sm font-medium text-left truncate hover:text-emerald-400 hover:underline"
-                            >
-                              {f.fighter2_name}
-                            </a>
                           </div>
                         </div>
                         {f.weight_class && (
