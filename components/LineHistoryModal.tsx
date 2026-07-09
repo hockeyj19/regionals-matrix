@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { fmtAmerican } from "@/lib/board";
+import { fmtOdds, parseOddsInput } from "@/lib/format";
 
 /**
  * Line-movement chart for one fighter's BetOnline moneyline, drawn from the
@@ -15,13 +15,6 @@ type Pt = { t: number; v: number };
 
 function impliedProb(o: number): number {
   return o < 0 ? -o / (-o + 100) : 100 / (o + 100);
-}
-
-// parse a user's typed tape-note price ("-150", "+200", "150") to American odds
-function parseNote(s: string | null): number | null {
-  if (!s) return null;
-  const n = parseInt(s.trim(), 10);
-  return Number.isNaN(n) || n === 0 ? null : n;
 }
 
 function fmtTime(ms: number): string {
@@ -128,7 +121,7 @@ function Chart({ pts, notePrice }: { pts: Pt[]; notePrice: string | null }) {
   // "Notes": how the current price compares to the user's own tape-note price,
   // in implied-probability points. Positive = the current price is better value
   // than what they noted (pays more); negative = worse. Blank without a note.
-  const noteOdds = parseNote(notePrice);
+  const noteOdds = parseOddsInput(notePrice);
   const noteDiff = noteOdds === null ? null : (impliedProb(noteOdds) - impliedCur) * 100;
 
   // layout
@@ -182,8 +175,8 @@ function Chart({ pts, notePrice }: { pts: Pt[]; notePrice: string | null }) {
   return (
     <div className="space-y-2">
       <div className="grid grid-cols-4 gap-2 text-center">
-        <Stat label="Open" value={fmtAmerican(open)} />
-        <Stat label="Current" value={fmtAmerican(cur)} tone="text-emerald-400" />
+        <Stat label="Open" value={fmtOdds(open)} />
+        <Stat label="Current" value={fmtOdds(cur)} tone="text-emerald-400" />
         <Stat label="Implied" value={`${(impliedCur * 100).toFixed(1)}%`} small />
         <Stat
           label="Notes"
@@ -221,7 +214,7 @@ function Chart({ pts, notePrice }: { pts: Pt[]; notePrice: string | null }) {
                 vectorEffect="non-scaling-stroke"
               />
               <text x={4} y={y(gv) + 3} fill="#737373" fontSize="9">
-                {fmtAmerican(Math.round(gv / 5) * 5)}
+                {fmtOdds(Math.round(gv / 5) * 5)}
               </text>
             </g>
           ))}
@@ -259,7 +252,7 @@ function Chart({ pts, notePrice }: { pts: Pt[]; notePrice: string | null }) {
             style={{ left: `${(hover.x / W) * 100}%` }}
           >
             <div className="rounded border border-neutral-700 bg-neutral-800 px-2 py-1 text-[11px] whitespace-nowrap shadow">
-              <span className="font-semibold text-emerald-300">{fmtAmerican(hover.v)}</span>
+              <span className="font-semibold text-emerald-300">{fmtOdds(hover.v)}</span>
               <span className="text-neutral-400"> · {fmtDateTime(hover.t)}</span>
             </div>
           </div>

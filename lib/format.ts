@@ -66,7 +66,87 @@ export function betProfit(b: { result: string; stake: number; odds: number }): n
   return 0;
 }
 
+// ---------------------------------------------------------------------------
+// Odds format: the app stores AMERICAN odds everywhere (ints in bets, canonical
+// "+150"/"-230" strings in tape notes). Users may TYPE either American or
+// decimal, and may choose which format the app DISPLAYS. Detection rule:
+//   explicit +/- sign            -> American (whole number, |odds| >= 100)
+//   unsigned and >= 100          -> American ("150" means +150)
+//   unsigned and 1 < value < 100 -> decimal  ("2.50" -> +150, "1.91" -> -110)
+// Anything else (0, 1, "-50", "+2.5") is not a valid price -> null.
+// ---------------------------------------------------------------------------
+
+export type OddsMode = "american" | "decimal";
+const ODDS_MODE_KEY = "odds_mode";
+let oddsMode: OddsMode | null = null; // lazy: resolved on first client read
+
+export function getOddsMode(): OddsMode {
+  if (oddsMode === null) {
+    oddsMode = "american";
+    if (typeof window !== "undefined") {
+      try {
+        const v = window.localStorage.getItem(ODDS_MODE_KEY);
+        if (v === "decimal" || v === "american") oddsMode = v;
+      } catch {
+        /* storage unavailable: stay american */
+      }
+    }
+  }
+  return oddsMode;
+}
+
+export function setOddsMode(m: OddsMode): void {
+  oddsMode = m;
+  try {
+    window.localStorage.setItem(ODDS_MODE_KEY, m);
+  } catch {
+    /* per-tab only if storage unavailable */
+  }
+}
+
+export function americanToDecimal(a: number): number {
+  return a > 0 ? 1 + a / 100 : 1 + 100 / -a;
+}
+
+export function decimalToAmerican(d: number): number {
+  return d >= 2 ? Math.round((d - 1) * 100) : -Math.round(100 / (d - 1));
+}
+
+// Universal input parser: American or decimal in, American int out (null if invalid).
+export function parseOddsInput(s: string | null | undefined): number | null {
+  if (!s) return null;
+  const t = s.trim().replace(/\s+/g, "");
+  if (!t) return null;
+  const n = Number(t);
+  if (!Number.isFinite(n) || n === 0) return null;
+  if (/^[+-]/.test(t)) {
+    // explicit sign = American; must be whole and at least +/-100
+    if (!Number.isInteger(n) || Math.abs(n) < 100) return null;
+    return n;
+  }
+  if (n >= 100) return Math.round(n); // "150" = +150
+  if (n <= 1) return null; // decimal odds must pay something
+  return decimalToAmerican(n);
+}
+
+// Display a stored/typed price string in the user's chosen format.
+// Unparseable text falls back to what they wrote.
+export function displayTypedOdds(s: string | null | undefined): string {
+  const a = parseOddsInput(s);
+  return a === null ? (s ?? "").trim() : fmtOdds(a);
+}
+
+// Canonicalize a typed price to an American string ("+150"/"-230") for storage,
+// so decimal entries in tape notes are stored in the same language as the rest
+// of the app. Unparseable text is stored as typed.
+export function normalizeTypedOdds(s: string): string {
+  const a = parseOddsInput(s);
+  return a === null ? s.trim() : a > 0 ? `+${a}` : `${a}`;
+}
+
+// Format an American price for display, honoring the user's chosen odds format.
 export function fmtOdds(o: number): string {
+  if (getOddsMode() === "decimal") return americanToDecimal(o).toFixed(2);
   return o > 0 ? `+${o}` : `${o}`;
 }
 
@@ -80,11 +160,12 @@ export function fmtDate(iso: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-// validate American odds + units inputs; returns parsed values or an error string
+// validate odds (American or decimal) + units inputs; returns parsed values
+// (odds always American int) or an error string
 export function parseBetInputs(odds: string, stake: string): { odds: number; stake: number } | string {
-  const o = parseInt(odds, 10);
+  const o = parseOddsInput(odds);
   const s = parseFloat(stake);
-  if (isNaN(o) || Math.abs(o) < 100) return "Odds must be American, e.g. -150 or +130.";
+  if (o === null) return "Odds must be American (-150, +130) or decimal (1.67, 2.30).";
   if (isNaN(s) || s <= 0) return "Units must be a positive number.";
   return { odds: o, stake: s };
 }

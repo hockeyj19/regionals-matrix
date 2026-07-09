@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { MatrixData, ReviewRow } from "@/lib/types";
-import { MATRIX_MARKETS } from "@/lib/format";
+import { MATRIX_MARKETS, displayTypedOdds } from "@/lib/format";
 
 export function ReviewArchive({ rows }: { rows: ReviewRow[] }) {
   const [q, setQ] = useState("");
@@ -76,12 +76,12 @@ export function ReviewArchive({ rows }: { rows: ReviewRow[] }) {
                     <span className={r.f1_result === "win" ? "text-emerald-400 font-medium" : ""}>
                       {r.fighter1_name}
                     </span>
-                    {r.price1 ? <span className="text-neutral-500"> {r.price1}</span> : null}
+                    {r.price1 ? <span className="text-neutral-500"> {displayTypedOdds(r.price1)}</span> : null}
                     <span className="text-neutral-600"> vs </span>
                     <span className={r.f1_result === "loss" ? "text-emerald-400 font-medium" : ""}>
                       {r.fighter2_name}
                     </span>
-                    {r.price2 ? <span className="text-neutral-500"> {r.price2}</span> : null}
+                    {r.price2 ? <span className="text-neutral-500"> {displayTypedOdds(r.price2)}</span> : null}
                   </span>
                   {hasMx && (
                     <button

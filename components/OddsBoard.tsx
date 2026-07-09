@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { boutMatch, sameFighter, fmtAmerican } from "@/lib/board";
+import { boutMatch, sameFighter } from "@/lib/board";
+import { fmtOdds, parseOddsInput, displayTypedOdds } from "@/lib/format";
 import { LineHistoryModal } from "@/components/LineHistoryModal";
 import type { EventRow, FightRow, UserData } from "@/lib/types";
 
@@ -51,17 +52,10 @@ function impliedProb(o: number): number {
   return o < 0 ? -o / (-o + 100) : 100 / (o + 100);
 }
 
-// parse a user's typed price ("-150", "+200", "150") to American odds
-function parseNote(s: string | null): number | null {
-  if (!s) return null;
-  const n = parseInt(s.trim(), 10);
-  return Number.isNaN(n) || n === 0 ? null : n;
-}
-
 // green when the board pays BETTER than the user's own line (positive value),
 // red when it pays worse; null when they agree or the user has no note
 function valueTone(note: string | null, board: number | null): "pos" | "neg" | null {
-  const mo = parseNote(note);
+  const mo = parseOddsInput(note);
   if (mo === null || board === null || mo === board) return null;
   return impliedProb(board) < impliedProb(mo) ? "pos" : "neg";
 }
@@ -90,7 +84,7 @@ function PriceButton({
       title={price === null ? "No BetOnline line" : "Chart this line's movement"}
       className={`rounded px-1.5 py-0.5 text-sm font-semibold tabular-nums text-right ${color}`}
     >
-      {price === null ? "—" : fmtAmerican(price)}
+      {price === null ? "—" : fmtOdds(price)}
     </button>
   );
 }
@@ -111,7 +105,7 @@ function StaticPrice({ price, tone }: { price: number | null; tone: "pos" | "neg
       title={price === null ? "No FanDuel line" : "FanDuel"}
       className={`px-1.5 py-0.5 text-sm font-semibold tabular-nums text-right ${color}`}
     >
-      {price === null ? "—" : fmtAmerican(price)}
+      {price === null ? "—" : fmtOdds(price)}
     </span>
   );
 }
@@ -123,7 +117,7 @@ function PropCell({ price }: { price: number | null }) {
         price === null ? "text-neutral-700" : "text-neutral-300"
       }`}
     >
-      {price === null ? "—" : fmtAmerican(price)}
+      {price === null ? "—" : fmtOdds(price)}
     </span>
   );
 }
@@ -403,7 +397,7 @@ export function OddsBoard({
                               {name}
                             </span>
                             <span className="text-[11px] tabular-nums text-right text-neutral-400">
-                              {myPrice && myPrice.trim() ? myPrice.trim() : "—"}
+                              {myPrice && myPrice.trim() ? displayTypedOdds(myPrice) : "—"}
                             </span>
                             <div className="flex justify-end">
                               {activeBook === "betonline" ? (
@@ -439,7 +433,7 @@ export function OddsBoard({
                                       {totalSide === "over" ? "O" : "U"}
                                       {t.line}{" "}
                                       <span className="text-[11px] text-neutral-300">
-                                        {o === null ? "—" : fmtAmerican(o)}
+                                        {o === null ? "—" : fmtOdds(o)}
                                       </span>
                                     </div>
                                   );

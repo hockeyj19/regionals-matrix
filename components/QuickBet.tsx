@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { FightRow, NewBet } from "@/lib/types";
-import { bookLabel, eventStartISO, parseBetInputs, sideBtn } from "@/lib/format";
+import { bookLabel, eventStartISO, parseBetInputs, sideBtn, fmtOdds } from "@/lib/format";
 import {
   fetchFightBoard,
   fetchFightProps,
@@ -272,7 +272,7 @@ export function QuickBet({
             title={board ? `BetOnline board, ${freshness(board.capturedAt)}` : "BetOnline board"}
             className="rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-200"
           >
-            {fmtAmerican(boardPrice)}
+            {fmtOdds(boardPrice)}
             <span className="text-neutral-500"> · board</span>
           </span>
         ) : (

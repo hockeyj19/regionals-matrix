@@ -13,7 +13,7 @@ import type {
   BetRow,
   MatrixData,
 } from "@/lib/types";
-import { eventStarted, sortEvents, formatEventMeta } from "@/lib/format";
+import { eventStarted, sortEvents, formatEventMeta, displayTypedOdds, normalizeTypedOdds } from "@/lib/format";
 import { GridIcon, DollarIcon, UserIcon } from "@/components/icons";
 import { GrowingTextarea } from "@/components/GrowingTextarea";
 import { QuickBet } from "@/components/QuickBet";
@@ -731,9 +731,9 @@ export function Matrix({ user }: { user: User }) {
                             </span>
                             {expanded && (
                               <input
-                                defaultValue={d?.price1 ?? ""}
+                                defaultValue={displayTypedOdds(d?.price1 ?? "")}
                                 onClick={(e) => e.stopPropagation()}
-                                onBlur={(e) => saveField(f.id, "price1", e.target.value)}
+                                onBlur={(e) => saveField(f.id, "price1", normalizeTypedOdds(e.target.value))}
                                 className="w-16 text-center rounded-md bg-neutral-800 border border-neutral-700 px-1 py-1 text-sm focus:border-emerald-500 outline-none"
                               />
                             )}
@@ -745,9 +745,9 @@ export function Matrix({ user }: { user: User }) {
                             </span>
                             {expanded && (
                               <input
-                                defaultValue={d?.price2 ?? ""}
+                                defaultValue={displayTypedOdds(d?.price2 ?? "")}
                                 onClick={(e) => e.stopPropagation()}
-                                onBlur={(e) => saveField(f.id, "price2", e.target.value)}
+                                onBlur={(e) => saveField(f.id, "price2", normalizeTypedOdds(e.target.value))}
                                 className="w-16 text-center rounded-md bg-neutral-800 border border-neutral-700 px-1 py-1 text-sm focus:border-emerald-500 outline-none"
                               />
                             )}

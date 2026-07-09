@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } f
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import type { PublicBet } from "@/lib/types";
-import { betProfit, bookLabel, fmtDate, fmtOdds } from "@/lib/format";
+import { betProfit, bookLabel, fmtDate, fmtOdds, getOddsMode, setOddsMode, type OddsMode } from "@/lib/format";
 
 /**
  * Public tipster profile. The public bets, badges, and per-window records all
@@ -72,6 +72,12 @@ export function Profile({
   >([]);
   const [modalLoading, setModalLoading] = useState(false);
   const [nowTs] = useState(() => Date.now()); // frozen per mount, keeps render pure
+  const [oddsFmt, setOddsFmt] = useState<OddsMode>("american");
+  useEffect(() => setOddsFmt(getOddsMode()), []);
+  function pickOddsFmt(m: OddsMode) {
+    setOddsMode(m);
+    setOddsFmt(m);
+  }
   const fileRef = useRef<HTMLInputElement>(null);
 
   // self: username + about-me + all-time fighter-note count
@@ -376,6 +382,26 @@ export function Profile({
                   </>
                 )}
               </div>
+              {isSelf && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-neutral-500">Odds format</span>
+                  <div className="inline-flex rounded-lg border border-neutral-800 bg-neutral-900/40 p-0.5">
+                    {(["american", "decimal"] as const).map((m) => (
+                      <button
+                        key={m}
+                        onClick={() => pickOddsFmt(m)}
+                        className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${
+                          oddsFmt === m
+                            ? "bg-neutral-100 text-neutral-900"
+                            : "text-neutral-400 hover:text-neutral-200"
+                        }`}
+                      >
+                        {m === "american" ? "American" : "Decimal"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {!isSelf && (
                 <div className="flex flex-wrap gap-2">
                   <button
