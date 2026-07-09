@@ -61,6 +61,7 @@ export function Profile({
   const [avatarMsg, setAvatarMsg] = useState("");
   const [bio, setBio] = useState("");
   const [notesCount, setNotesCount] = useState(0);
+  const [noteCounts, setNoteCounts] = useState<Record<string, number>>({});
   const [notifOn, setNotifOn] = useState(false);
   const [search, setSearch] = useState("");
   const [searchMsg, setSearchMsg] = useState("");
@@ -108,15 +109,22 @@ export function Profile({
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [d, f] = await Promise.all([
+      const [d, f, nc] = await Promise.all([
         supabase.from("profile_directory").select("*"),
         supabase.from("follows").select("following_id").eq("follower_id", user.id),
+        supabase.from("public_note_counts").select("user_id, note_count"),
       ]);
       if (!alive) return;
       setDir((d.data as DirRow[]) ?? []);
       setMyFollowing(
         new Set(((f.data as { following_id: string }[]) ?? []).map((r) => r.following_id))
       );
+      // public per-user note counts; empty (0 shown) until the view exists
+      const counts: Record<string, number> = {};
+      for (const r of (nc.data as { user_id: string; note_count: number }[]) ?? []) {
+        counts[r.user_id] = Number(r.note_count) || 0;
+      }
+      setNoteCounts(counts);
     })();
     return () => {
       alive = false;
@@ -292,6 +300,12 @@ export function Profile({
   }, [picks, nowTs]);
 
   const joinDate = shownJoin ?? (isSelf ? user.created_at ?? null : null);
+  // own count is computed live; another user's comes from the public aggregate
+  const shownNotes = isSelf
+    ? notesCount
+    : shownRow
+    ? noteCounts[shownRow.user_id] ?? 0
+    : 0;
 
   function resultTag(b: PublicBet) {
     const cls =
@@ -455,7 +469,7 @@ export function Profile({
                     </span>
                   )}
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-gradient-to-b from-emerald-500/15 to-neutral-950 px-3 py-1 text-xs font-semibold text-emerald-300 shadow">
-                    {isSelf ? notesCount : 0} note{isSelf && notesCount === 1 ? "" : "s"}
+                    {shownNotes} note{shownNotes === 1 ? "" : "s"}
                   </span>
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-500/40 bg-gradient-to-b from-sky-500/15 to-neutral-950 px-3 py-1 text-xs font-semibold text-sky-300 shadow">
                     {picks.length} pick{picks.length === 1 ? "" : "s"}

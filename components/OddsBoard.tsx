@@ -8,9 +8,9 @@ import type { EventRow, FightRow, UserData } from "@/lib/types";
 
 /**
  * The Odds board: BetOnline moneylines with movement, laid over the app's own
- * fight cards. The left column is the event list - UFC cards in date order
- * first, every other promotion after; the right column is the selected card,
- * main event at the top down to the first prelim. Prices come from the bots'
+ * fight cards. One column of collapsible events - the soonest UFC card pinned to
+ * the top and open by default, every other promotion below it in date order and
+ * collapsed. Expand a card to see it main-event-first. Prices come from the bots'
  * `bol_board` ledger, matched to each fight by name; every price opens its
  * movement history. Single book by design - this is BetOnline, the sharp board.
  */
@@ -104,6 +104,24 @@ function PropCell({ price }: { price: number | null }) {
   );
 }
 
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      className={`w-4 h-4 shrink-0 text-neutral-500 transition-transform ${
+        open ? "rotate-180" : ""
+      }`}
+    >
+      <path
+        fillRule="evenodd"
+        d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+        clipRule="evenodd"
+      />
+    </svg>
+  );
+}
+
 export function OddsBoard({
   events,
   fights,
@@ -116,7 +134,8 @@ export function OddsBoard({
   const [board, setBoard] = useState<BoardRow[]>([]);
   const [props, setProps] = useState<PropRow[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+  const [initialized, setInitialized] = useState(false);
   const [chart, setChart] = useState<
     { fightKey: string; side: 1 | 2; name: string } | null
   >(null);
@@ -202,7 +221,7 @@ export function OddsBoard({
 
   // events that actually carry BetOnline lines, UFC first then the rest,
   // each in date order; and the fights per event, main event first
-  const { tabs, lastUpdate } = useMemo(() => {
+  const { tabs, lastUpdate, topUfcId } = useMemo(() => {
     const fightsByEvent: Record<string, FightRow[]> = {};
     for (const f of fights) (fightsByEvent[f.event_id] ??= []).push(f);
     let last = "";
@@ -218,26 +237,34 @@ export function OddsBoard({
       })
       .filter((x) => x.withPrice > 0);
 
-    priced.sort((x, y) => {
-      const xu = isUFC(x.ev);
-      const yu = isUFC(y.ev);
-      if (xu !== yu) return xu ? -1 : 1;
-      return (x.ev.event_date || "").localeCompare(y.ev.event_date || "");
-    });
-    return { tabs: priced, lastUpdate: last };
+    // chronological, then pin the soonest UFC card to the very top
+    priced.sort((x, y) =>
+      (x.ev.event_date || "").localeCompare(y.ev.event_date || "")
+    );
+    const ufcIdx = priced.findIndex((p) => isUFC(p.ev));
+    const topUfcId = ufcIdx >= 0 ? priced[ufcIdx].ev.id : null;
+    if (ufcIdx > 0) priced.unshift(priced.splice(ufcIdx, 1)[0]);
+    return { tabs: priced, lastUpdate: last, topUfcId };
   }, [events, fights, board, matchFight]);
 
-  // default to the first UFC card (soonest) once data is in
+  // start with only the soonest UFC card open; respect toggles after that
   useEffect(() => {
-    if (selected || tabs.length === 0) return;
-    const firstUFC = tabs.find((t) => isUFC(t.ev)) ?? tabs[0];
-    setSelected(firstUFC.ev.id);
-  }, [tabs, selected]);
+    if (initialized || tabs.length === 0) return;
+    setOpenIds(new Set(topUfcId ? [topUfcId] : []));
+    setInitialized(true);
+  }, [tabs, topUfcId, initialized]);
 
-  const active = tabs.find((t) => t.ev.id === selected) ?? tabs[0] ?? null;
+  function toggle(id: string) {
+    setOpenIds((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  }
 
   return (
-    <div className="max-w-5xl mx-auto p-3 sm:p-4">
+    <div className="max-w-3xl mx-auto p-3 sm:p-4">
       <div className="mb-3">
         <h2 className="text-lg font-bold">BetOnline board</h2>
         <p className="text-[11px] text-neutral-500">
@@ -259,139 +286,129 @@ export function OddsBoard({
         </div>
       )}
 
-      {loaded && tabs.length > 0 && active && (
-        <div className="flex gap-3">
-          {/* left: event tabs */}
-          <div className="w-32 sm:w-44 shrink-0 space-y-1">
-            {tabs.map(({ ev }) => {
-              const on = ev.id === active.ev.id;
-              return (
+      {loaded && tabs.length > 0 && (
+        <div className="space-y-2">
+          {tabs.map(({ ev, evFights }) => {
+            const open = openIds.has(ev.id);
+            return (
+              <div
+                key={ev.id}
+                className="rounded-xl border border-neutral-800 bg-neutral-900/40 overflow-hidden"
+              >
                 <button
-                  key={ev.id}
-                  onClick={() => setSelected(ev.id)}
-                  className={`w-full text-left rounded-lg border px-2 py-1.5 ${
-                    on
-                      ? "border-emerald-500 bg-emerald-600/15"
-                      : "border-neutral-800 hover:bg-neutral-900"
-                  }`}
+                  onClick={() => toggle(ev.id)}
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2.5 hover:bg-neutral-900/60"
                 >
-                  <span
-                    className={`block text-xs font-semibold truncate ${
-                      on ? "text-emerald-300" : "text-neutral-300"
-                    }`}
-                  >
-                    {ev.event_name}
-                  </span>
-                  {ev.event_date && (
-                    <span className="block text-[10px] text-neutral-600">
-                      {ev.event_date}
+                  <div className="text-left min-w-0">
+                    <span className="block text-sm font-semibold text-neutral-200 truncate">
+                      {ev.event_name}
                     </span>
-                  )}
+                    {ev.event_date && (
+                      <span className="block text-[10px] text-neutral-600">
+                        {ev.event_date}
+                      </span>
+                    )}
+                  </div>
+                  <Chevron open={open} />
                 </button>
-              );
-            })}
-          </div>
-
-          {/* right: the selected card, main event first */}
-          <div className="flex-1 min-w-0 rounded-xl border border-neutral-800 bg-neutral-900/40 overflow-hidden">
-            <div className="px-3 py-2 border-b border-neutral-800 bg-neutral-900/60">
-              <span className="text-sm font-semibold text-neutral-200">
-                {active.ev.event_name}
-              </span>
-            </div>
-            {/* column header */}
-            <div className="grid grid-cols-[minmax(0,1fr)_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem] items-center gap-x-1 px-2 sm:px-3 py-1 border-b border-neutral-800 text-[9px] uppercase tracking-wide text-neutral-600">
-              <span />
-              <span className="text-right text-emerald-600">Mine</span>
-              <span className="text-right">ML</span>
-              <span className="text-right">Total</span>
-              <span className="text-right">KO</span>
-              <span className="text-right">Sub</span>
-              <span className="text-right">Dec</span>
-            </div>
-            <div className="divide-y divide-neutral-900">
-              {active.evFights.map((f, i) => {
-                const m = matchFight(f);
-                const fk = m?.fightKey ?? null;
-                const isMain =
-                  f.is_main_event ||
-                  (i === 0 && !active.evFights.some((x) => x.is_main_event));
-                const totals = fk ? totalsFor(fk) : [];
-                const ud = userData[f.id];
-                const fighterRow = (
-                  name: string,
-                  sp: SidePrice | undefined,
-                  dim: boolean,
-                  myPrice: string | null,
-                  totalSide: "over" | "under"
-                ) => (
-                  <div className="grid grid-cols-[minmax(0,1fr)_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem] items-center gap-x-1 py-0.5">
-                    <span className={`text-sm truncate ${dim ? "text-neutral-300" : ""}`}>
-                      {name}
-                    </span>
-                    <span className="text-[11px] tabular-nums text-right text-neutral-400">
-                      {myPrice && myPrice.trim() ? myPrice.trim() : "—"}
-                    </span>
-                    <div className="flex justify-end">
-                      <PriceButton
-                        price={sp ? sp.cur : null}
-                        tone={valueTone(myPrice, sp ? sp.cur : null)}
-                        onOpen={() =>
-                          m &&
-                          sp &&
-                          setChart({ fightKey: m.fightKey, side: sp.side, name })
-                        }
-                      />
+                {open && (
+                  <div className="border-t border-neutral-800">
+                    <div className="grid grid-cols-[minmax(0,1fr)_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem] items-center gap-x-1 px-2 sm:px-3 py-1 border-b border-neutral-800 text-[9px] uppercase tracking-wide text-neutral-600">
+                      <span />
+                      <span className="text-right text-emerald-600">Mine</span>
+                      <span className="text-right">ML</span>
+                      <span className="text-right">Total</span>
+                      <span className="text-right">KO</span>
+                      <span className="text-right">Sub</span>
+                      <span className="text-right">Dec</span>
                     </div>
-                    <div className="text-[10px] tabular-nums text-right leading-tight text-neutral-400">
-                      {totals.length === 0 ? (
-                        <span className="text-neutral-700">—</span>
-                      ) : (
-                        totals.map((t) => {
-                          const o = totalSide === "over" ? t.over : t.under;
-                          return (
-                            <div key={t.line}>
-                              {totalSide === "over" ? "O" : "U"}
-                              {t.line}{" "}
-                              <span className="text-[11px] text-neutral-300">
-                                {o === null ? "—" : fmtAmerican(o)}
+                    <div className="divide-y divide-neutral-900">
+                      {evFights.map((f, i) => {
+                        const m = matchFight(f);
+                        const fk = m?.fightKey ?? null;
+                        const isMain =
+                          f.is_main_event ||
+                          (i === 0 && !evFights.some((x) => x.is_main_event));
+                        const totals = fk ? totalsFor(fk) : [];
+                        const ud = userData[f.id];
+                        const fighterRow = (
+                          name: string,
+                          sp: SidePrice | undefined,
+                          dim: boolean,
+                          myPrice: string | null,
+                          totalSide: "over" | "under"
+                        ) => (
+                          <div className="grid grid-cols-[minmax(0,1fr)_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem] items-center gap-x-1 py-0.5">
+                            <span className={`text-sm truncate ${dim ? "text-neutral-300" : ""}`}>
+                              {name}
+                            </span>
+                            <span className="text-[11px] tabular-nums text-right text-neutral-400">
+                              {myPrice && myPrice.trim() ? myPrice.trim() : "—"}
+                            </span>
+                            <div className="flex justify-end">
+                              <PriceButton
+                                price={sp ? sp.cur : null}
+                                tone={valueTone(myPrice, sp ? sp.cur : null)}
+                                onOpen={() =>
+                                  m &&
+                                  sp &&
+                                  setChart({ fightKey: m.fightKey, side: sp.side, name })
+                                }
+                              />
+                            </div>
+                            <div className="text-[10px] tabular-nums text-right leading-tight text-neutral-400">
+                              {totals.length === 0 ? (
+                                <span className="text-neutral-700">—</span>
+                              ) : (
+                                totals.map((t) => {
+                                  const o = totalSide === "over" ? t.over : t.under;
+                                  return (
+                                    <div key={t.line}>
+                                      {totalSide === "over" ? "O" : "U"}
+                                      {t.line}{" "}
+                                      <span className="text-[11px] text-neutral-300">
+                                        {o === null ? "—" : fmtAmerican(o)}
+                                      </span>
+                                    </div>
+                                  );
+                                })
+                              )}
+                            </div>
+                            <PropCell
+                              price={fk && sp ? methodPrice(fk, sp.name, "ko_tko") : null}
+                            />
+                            <PropCell
+                              price={fk && sp ? methodPrice(fk, sp.name, "submission") : null}
+                            />
+                            <PropCell
+                              price={fk && sp ? methodPrice(fk, sp.name, "decision") : null}
+                            />
+                          </div>
+                        );
+                        return (
+                          <div key={f.id} className="px-2 sm:px-3 py-2">
+                            <div className="text-[10px] mb-0.5">
+                              <span
+                                className={
+                                  isMain
+                                    ? "text-amber-400 font-semibold uppercase tracking-wide"
+                                    : "text-neutral-600"
+                                }
+                              >
+                                {isMain ? "Main Event" : f.weight_class || ""}
                               </span>
                             </div>
-                          );
-                        })
-                      )}
+                            {fighterRow(f.fighter1_name, m?.a, false, ud?.price1 ?? null, "over")}
+                            {fighterRow(f.fighter2_name, m?.b, true, ud?.price2 ?? null, "under")}
+                          </div>
+                        );
+                      })}
                     </div>
-                    <PropCell
-                      price={fk && sp ? methodPrice(fk, sp.name, "ko_tko") : null}
-                    />
-                    <PropCell
-                      price={fk && sp ? methodPrice(fk, sp.name, "submission") : null}
-                    />
-                    <PropCell
-                      price={fk && sp ? methodPrice(fk, sp.name, "decision") : null}
-                    />
                   </div>
-                );
-                return (
-                  <div key={f.id} className="px-2 sm:px-3 py-2">
-                    <div className="text-[10px] mb-0.5">
-                      <span
-                        className={
-                          isMain
-                            ? "text-amber-400 font-semibold uppercase tracking-wide"
-                            : "text-neutral-600"
-                        }
-                      >
-                        {isMain ? "Main Event" : f.weight_class || ""}
-                      </span>
-                    </div>
-                    {fighterRow(f.fighter1_name, m?.a, false, ud?.price1 ?? null, "over")}
-                    {fighterRow(f.fighter2_name, m?.b, true, ud?.price2 ?? null, "under")}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
