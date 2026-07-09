@@ -13,7 +13,7 @@ import type {
   BetRow,
   MatrixData,
 } from "@/lib/types";
-import { eventStarted, sortEvents, formatEventMeta, tapologyUrl } from "@/lib/format";
+import { eventStarted, sortEvents, formatEventMeta } from "@/lib/format";
 import { GridIcon, DollarIcon, UserIcon } from "@/components/icons";
 import { GrowingTextarea } from "@/components/GrowingTextarea";
 import { QuickBet } from "@/components/QuickBet";
@@ -726,15 +726,9 @@ export function Matrix({ user }: { user: User }) {
                         {/* names, price stacked underneath each */}
                         <div className="flex items-start justify-center gap-2 sm:gap-3">
                           <div className="flex-1 min-w-0 flex flex-col items-center gap-1">
-                            <a
-                              href={tapologyUrl(f.fighter1_name)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="w-full text-sm font-medium text-center truncate hover:text-emerald-400 hover:underline"
-                            >
+                            <span className="w-full text-sm font-medium text-center truncate">
                               {f.fighter1_name}
-                            </a>
+                            </span>
                             {expanded && (
                               <input
                                 defaultValue={d?.price1 ?? ""}
@@ -746,15 +740,9 @@ export function Matrix({ user }: { user: User }) {
                           </div>
                           <span className="text-neutral-600 text-xs px-1 pt-0.5">VS</span>
                           <div className="flex-1 min-w-0 flex flex-col items-center gap-1">
-                            <a
-                              href={tapologyUrl(f.fighter2_name)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="w-full text-sm font-medium text-center truncate hover:text-emerald-400 hover:underline"
-                            >
+                            <span className="w-full text-sm font-medium text-center truncate">
                               {f.fighter2_name}
-                            </a>
+                            </span>
                             {expanded && (
                               <input
                                 defaultValue={d?.price2 ?? ""}
