@@ -17,6 +17,13 @@ function impliedProb(o: number): number {
   return o < 0 ? -o / (-o + 100) : 100 / (o + 100);
 }
 
+// parse a user's typed tape-note price ("-150", "+200", "150") to American odds
+function parseNote(s: string | null): number | null {
+  if (!s) return null;
+  const n = parseInt(s.trim(), 10);
+  return Number.isNaN(n) || n === 0 ? null : n;
+}
+
 function fmtTime(ms: number): string {
   return new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
@@ -34,15 +41,16 @@ export function LineHistoryModal({
   fightKey,
   side,
   fighterName,
+  notePrice,
   onClose,
 }: {
   fightKey: string;
   side: 1 | 2;
   fighterName: string;
+  notePrice: string | null;
   onClose: () => void;
 }) {
   const [pts, setPts] = useState<Pt[] | null>(null);
-  const [oppCur, setOppCur] = useState<number | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -54,7 +62,6 @@ export function LineHistoryModal({
       .then(({ data }) => {
         if (!alive) return;
         const col = side === 1 ? "fighter1_odds" : "fighter2_odds";
-        const oppCol = side === 1 ? "fighter2_odds" : "fighter1_odds";
         const rows = data ?? [];
         const raw: Pt[] = rows
           .map((r) => ({
@@ -62,14 +69,7 @@ export function LineHistoryModal({
             v: (r as Record<string, number | null>)[col],
           }))
           .filter((p): p is Pt => typeof p.v === "number");
-        // opponent's latest price, for the vig
-        let opp: number | null = null;
-        for (const r of rows) {
-          const ov = (r as Record<string, number | null>)[oppCol];
-          if (typeof ov === "number") opp = ov;
-        }
         setPts(raw);
-        setOppCur(opp);
       });
     return () => {
       alive = false;
@@ -110,13 +110,13 @@ export function LineHistoryModal({
           <p className="text-sm text-neutral-500">No recorded price for this fighter yet.</p>
         )}
 
-        {pts !== null && pts.length > 0 && <Chart pts={pts} oppCur={oppCur} />}
+        {pts !== null && pts.length > 0 && <Chart pts={pts} notePrice={notePrice} />}
       </div>
     </div>
   );
 }
 
-function Chart({ pts, oppCur }: { pts: Pt[]; oppCur: number | null }) {
+function Chart({ pts, notePrice }: { pts: Pt[]; notePrice: string | null }) {
   const [hover, setHover] = useState<{ x: number; t: number; v: number } | null>(null);
 
   const open = pts[0].v;
@@ -125,7 +125,11 @@ function Chart({ pts, oppCur }: { pts: Pt[]; oppCur: number | null }) {
   const hi = Math.max(...vals);
   const lo = Math.min(...vals);
   const impliedCur = impliedProb(cur);
-  const vig = oppCur !== null ? impliedCur + impliedProb(oppCur) - 1 : null;
+  // "Notes": how the current price compares to the user's own tape-note price,
+  // in implied-probability points. Positive = the current price is better value
+  // than what they noted (pays more); negative = worse. Blank without a note.
+  const noteOdds = parseNote(notePrice);
+  const noteDiff = noteOdds === null ? null : (impliedProb(noteOdds) - impliedCur) * 100;
 
   // layout
   const W = 460;
@@ -180,8 +184,19 @@ function Chart({ pts, oppCur }: { pts: Pt[]; oppCur: number | null }) {
       <div className="grid grid-cols-4 gap-2 text-center">
         <Stat label="Open" value={fmtAmerican(open)} />
         <Stat label="Current" value={fmtAmerican(cur)} tone="text-emerald-400" />
-        <Stat label="Implied %" value={`${(impliedCur * 100).toFixed(1)}%`} small />
-        <Stat label="Vig %" value={vig === null ? "—" : `${(vig * 100).toFixed(1)}%`} small />
+        <Stat label="Implied" value={`${(impliedCur * 100).toFixed(1)}%`} small />
+        <Stat
+          label="Notes"
+          value={noteDiff === null ? "—" : `${noteDiff > 0 ? "+" : ""}${noteDiff.toFixed(1)}%`}
+          tone={
+            noteDiff === null || Math.abs(noteDiff) < 0.05
+              ? ""
+              : noteDiff > 0
+              ? "text-emerald-400"
+              : "text-red-400"
+          }
+          small
+        />
       </div>
 
       <div className="relative">

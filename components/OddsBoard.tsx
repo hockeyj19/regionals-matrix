@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { boutMatch, sameFighter, fmtAmerican, freshness } from "@/lib/board";
+import { boutMatch, sameFighter, fmtAmerican } from "@/lib/board";
 import { LineHistoryModal } from "@/components/LineHistoryModal";
 import type { EventRow, FightRow, UserData } from "@/lib/types";
 
@@ -163,7 +163,7 @@ export function OddsBoard({
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   const [initialized, setInitialized] = useState(false);
   const [chart, setChart] = useState<
-    { fightKey: string; side: 1 | 2; name: string } | null
+    { fightKey: string; side: 1 | 2; name: string; notePrice: string | null } | null
   >(null);
 
   const load = useCallback(async () => {
@@ -271,11 +271,9 @@ export function OddsBoard({
 
   // events that actually carry lines on the active book, UFC first then the
   // rest, each in date order; and the fights per event, main event first
-  const { tabs, lastUpdate, topUfcId } = useMemo(() => {
+  const { tabs, topUfcId } = useMemo(() => {
     const fightsByEvent: Record<string, FightRow[]> = {};
     for (const f of fights) (fightsByEvent[f.event_id] ??= []).push(f);
-    let last = "";
-    for (const r of activeBoard) if (r.updated_at > last) last = r.updated_at;
 
     const priced = events
       .map((ev) => {
@@ -294,7 +292,7 @@ export function OddsBoard({
     const ufcIdx = priced.findIndex((p) => isUFC(p.ev));
     const topUfcId = ufcIdx >= 0 ? priced[ufcIdx].ev.id : null;
     if (ufcIdx > 0) priced.unshift(priced.splice(ufcIdx, 1)[0]);
-    return { tabs: priced, lastUpdate: last, topUfcId };
+    return { tabs: priced, topUfcId };
   }, [events, fights, activeBoard, matchFight]);
 
   // start with only the soonest UFC card open; respect toggles after that
@@ -316,10 +314,7 @@ export function OddsBoard({
   return (
     <div className="max-w-3xl mx-auto p-3 sm:p-4">
       <div className="mb-3">
-        <h2 className="text-lg font-bold">
-          {activeBook === "fanduel" ? "FanDuel" : "BetOnline"} board
-        </h2>
-        <div className="mt-2 inline-flex rounded-lg border border-neutral-800 bg-neutral-900/40 p-0.5">
+        <div className="inline-flex rounded-lg border border-neutral-800 bg-neutral-900/40 p-0.5">
           {(["betonline", "fanduel"] as const).map((bk) => (
             <button
               key={bk}
@@ -334,12 +329,6 @@ export function OddsBoard({
             </button>
           ))}
         </div>
-        <p className="mt-2 text-[11px] text-neutral-500">
-          {activeBook === "fanduel"
-            ? "FanDuel moneylines from the market feed."
-            : "Live moneylines and how they've moved since open — tap any price for its history."}
-          {lastUpdate ? ` Updated ${freshness(lastUpdate)}.` : ""}
-        </p>
       </div>
 
       {!loaded && <p className="text-neutral-500">Reading the board…</p>}
@@ -383,8 +372,8 @@ export function OddsBoard({
                   <Chevron open={open} />
                 </button>
                 {open && (
-                  <div className="border-t border-neutral-800">
-                    <div className="grid grid-cols-[minmax(0,1fr)_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem] items-center gap-x-1 px-2 sm:px-3 py-1 border-b border-neutral-800 text-[9px] uppercase tracking-wide text-neutral-600">
+                  <div className="border-t border-neutral-800 overflow-x-auto">
+                    <div className="grid grid-cols-[minmax(10rem,1fr)_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem] items-center gap-x-1 px-2 sm:px-3 py-1 border-b border-neutral-800 text-[9px] uppercase tracking-wide text-neutral-600">
                       <span />
                       <span className="text-right text-emerald-600">Mine</span>
                       <span className="text-right">ML</span>
@@ -409,7 +398,7 @@ export function OddsBoard({
                           myPrice: string | null,
                           totalSide: "over" | "under"
                         ) => (
-                          <div className="grid grid-cols-[minmax(0,1fr)_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem] items-center gap-x-1 py-0.5">
+                          <div className="grid grid-cols-[minmax(10rem,1fr)_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem] items-center gap-x-1 py-0.5">
                             <span className={`text-sm truncate ${dim ? "text-neutral-300" : ""}`}>
                               {name}
                             </span>
@@ -424,7 +413,12 @@ export function OddsBoard({
                                   onOpen={() =>
                                     m &&
                                     sp &&
-                                    setChart({ fightKey: m.fightKey, side: sp.side, name })
+                                    setChart({
+                                      fightKey: m.fightKey,
+                                      side: sp.side,
+                                      name,
+                                      notePrice: myPrice,
+                                    })
                                   }
                                 />
                               ) : (
@@ -503,6 +497,7 @@ export function OddsBoard({
           fightKey={chart.fightKey}
           side={chart.side}
           fighterName={chart.name}
+          notePrice={chart.notePrice}
           onClose={() => setChart(null)}
         />
       )}
