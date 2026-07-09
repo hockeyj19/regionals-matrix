@@ -47,6 +47,29 @@ function isUFC(e: EventRow): boolean {
   return (e.org || "").toUpperCase().includes("UFC");
 }
 
+// Same per-promotion color system as the Notes page, so an event reads the same
+// on both screens.
+const ORG_COLORS: Record<string, string> = {
+  UFC: "text-red-400",
+  "Road to UFC": "text-red-300",
+  "Dana White's Contender Series": "text-red-300",
+  PFL: "text-blue-400",
+  LFA: "text-sky-400",
+  "Cage Warriors": "text-yellow-400",
+  KSW: "text-orange-400",
+  Oktagon: "text-pink-400",
+  CFFC: "text-purple-400",
+  "Brave CF": "text-amber-400",
+  "UAE Warriors": "text-teal-400",
+  Rizin: "text-rose-400",
+  ACA: "text-lime-400",
+  "ONE Championship": "text-cyan-400",
+};
+
+function orgColor(org: string): string {
+  return ORG_COLORS[org] ?? "text-emerald-400";
+}
+
 
 function impliedProb(o: number): number {
   return o < 0 ? -o / (-o + 100) : 100 / (o + 100);
@@ -315,8 +338,8 @@ export function OddsBoard({
               onClick={() => setActiveBook(bk)}
               className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${
                 activeBook === bk
-                  ? "bg-neutral-100 text-neutral-900"
-                  : "text-neutral-400 hover:text-neutral-200"
+                  ? "border border-emerald-500/50 bg-black text-emerald-400"
+                  : "border border-transparent text-neutral-400 hover:text-emerald-400"
               }`}
             >
               {bk === "betonline" ? "BetOnline" : "FanDuel"}
@@ -354,6 +377,9 @@ export function OddsBoard({
                   className="w-full flex items-center justify-between gap-2 px-3 py-2.5 hover:bg-neutral-900/60"
                 >
                   <div className="text-left min-w-0">
+                    <span className={`block text-[10px] font-semibold uppercase tracking-wide truncate ${orgColor(ev.org)}`}>
+                      {ev.org}
+                    </span>
                     <span className="block text-sm font-semibold text-neutral-200 truncate">
                       {ev.event_name}
                     </span>
