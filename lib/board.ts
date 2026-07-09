@@ -20,12 +20,14 @@ type LineRow = {
   fighter1_odds: number | null;
   fighter2_odds: number | null;
   captured_at: string;
+  opened_at?: string | null; // first time the bots saw this fight's line
 };
 
 export type FightBoard = {
   side1: number | null; // board price for the fight's fighter1
   side2: number | null; // board price for the fight's fighter2
   capturedAt: string;
+  openedAt: string | null; // when BetOnline first posted this moneyline
 } | null;
 
 function samePerson(a: string, b: string): boolean {
@@ -83,6 +85,7 @@ export type PropLine = {
   ou_side: string | null;
   ou_line: number | null;
   odds: number;
+  openedAt: string | null; // when BetOnline first posted this exact outcome
 };
 
 // current BetOnline prop prices for a fight, from the bots' prop ledger
@@ -90,7 +93,7 @@ export async function fetchFightProps(f1: string, f2: string): Promise<PropLine[
   const { data, error } = await supabase.from("bol_current_props").select("*");
   if (error || !data) return null;
   const out: PropLine[] = [];
-  for (const row of data as (PropLine & { fight_key: string })[]) {
+  for (const row of data as (PropLine & { fight_key: string; opened_at?: string | null })[]) {
     const parts = String(row.fight_key).split(" vs ");
     if (parts.length !== 2) continue;
     const [ra, rb] = parts;
@@ -98,15 +101,16 @@ export async function fetchFightProps(f1: string, f2: string): Promise<PropLine[
       out.push({
         market: row.market, fighter: row.fighter, method: row.method,
         round: row.round, ou_side: row.ou_side, ou_line: row.ou_line,
-        odds: row.odds,
+        odds: row.odds, openedAt: row.opened_at ?? null,
       });
     }
   }
   return out;
 }
 
-// the board price for a specific prop selection, or null if the board lacks it
-export function matchPropOdds(
+// the full board line for a specific prop selection (price + when it opened),
+// or null if the board lacks it
+export function matchPropLine(
   props: PropLine[],
   betType: string,
   fighterName: string,
@@ -114,7 +118,7 @@ export function matchPropOdds(
   round: string,
   ouSide: string,
   ouLine: number | null
-): number | null {
+): PropLine | null {
   if (betType === "totals") {
     const hit = props.find(
       (p) =>
@@ -124,7 +128,7 @@ export function matchPropOdds(
         p.ou_line !== null &&
         Math.abs(p.ou_line - ouLine) < 1e-6
     );
-    return hit ? hit.odds : null;
+    return hit ?? null;
   }
   const hit = props.find((p) => {
     if (p.market !== betType) return false;
@@ -135,6 +139,20 @@ export function matchPropOdds(
       return false;
     return true;
   });
+  return hit ?? null;
+}
+
+// price-only view of matchPropLine, kept for existing callers
+export function matchPropOdds(
+  props: PropLine[],
+  betType: string,
+  fighterName: string,
+  method: string,
+  round: string,
+  ouSide: string,
+  ouLine: number | null
+): number | null {
+  const hit = matchPropLine(props, betType, fighterName, method, round, ouSide, ouLine);
   return hit ? hit.odds : null;
 }
 
@@ -174,6 +192,7 @@ export async function fetchFightBoard(f1: string, f2: string): Promise<FightBoar
       side1: forward ? row.fighter1_odds : row.fighter2_odds,
       side2: forward ? row.fighter2_odds : row.fighter1_odds,
       capturedAt: row.captured_at,
+      openedAt: row.opened_at ?? null,
     };
   }
   return null;

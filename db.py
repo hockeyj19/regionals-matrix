@@ -237,7 +237,7 @@ def upsert_fight(event_id, fighter1_name, fighter2_name, weight_class=None,
     overwritten."""
     q = (supabase.table("fights")
          .select("id, fighter1_name, fighter2_name, fighter1_id, fighter2_id, "
-                 "weight_class")
+                 "weight_class, bout_order, is_main_event")
          .eq("event_id", event_id)
          .execute())
     rows = q.data or []
@@ -282,6 +282,12 @@ def upsert_fight(event_id, fighter1_name, fighter2_name, weight_class=None,
                 updates["fighter2_id"] = fid
         if weight_class and not row.get("weight_class"):
             updates["weight_class"] = weight_class
+        # keep card position in sync with the source, so adopted rows from
+        # the Sherdog era shed their old 987-999 ordering scheme
+        if bout_order is not None and bout_order != row.get("bout_order"):
+            updates["bout_order"] = bout_order
+        if bool(is_main_event) != bool(row.get("is_main_event")):
+            updates["is_main_event"] = bool(is_main_event)
         if updates:
             supabase.table("fights").update(updates).eq("id", fight_id).execute()
         return fight_id
@@ -310,9 +316,12 @@ def prune_fights(event_id, keep_ids, max_removals=4):
          .eq("event_id", event_id)
          .execute())
     stale = [row for row in (q.data or []) if row["id"] not in keep_ids]
-    if len(stale) > max_removals:
-        print(f"  ! {len(stale)} stale bouts found - too many to prune safely; "
-              f"skipping this event (likely a parse hiccup, will retry next run).")
+    # Safety valve, proportional: a healthy full-card parse may clear any
+    # backlog (stale <= bouts actually seen), but a suspiciously small parse
+    # (2 bouts "replacing" a 13-bout card) still can't wipe an event.
+    if len(stale) > max(max_removals, len(keep_ids)):
+        print(f"  ! {len(stale)} stale bouts vs {len(keep_ids)} parsed - "
+              f"too many to prune safely; skipping this event.")
         return 0
     removed = 0
     for row in stale:
@@ -320,6 +329,109 @@ def prune_fights(event_id, keep_ids, max_removals=4):
         removed += 1
         print(f"  - Removed stale bout: {row['fighter1_name']} vs {row['fighter2_name']}")
     return removed
+
+
+def get_unpriced_bol_bets():
+    """Verified BetOnline moneylines with no price verdict yet - the
+    server-side market check runs once per bet, settled or not."""
+    q = (supabase.table("user_bets")
+         .select("id, selection, odds, placed_at, fighter_id")
+         .eq("bet_type", "moneyline")
+         .eq("book", "BetOnline.ag")
+         .is_("price_check", "null")
+         .execute())
+    return q.data or []
+
+
+def fetch_ledger_rows(fighter_name, placed_at_iso, window=5):
+    """(rows at-or-before placed_at, newest first; rows after, oldest
+    first) from the bots' board ledger, pre-filtered by surname in SQL
+    and matched precisely by the caller."""
+    nn = norm_name(fighter_name)
+    if not nn:
+        return [], []
+    token = nn.split()[-1]
+    flt = f"fighter1.ilike.%{token}%,fighter2.ilike.%{token}%"
+    qb = (supabase.table("bol_odds_snapshots").select("*")
+          .or_(flt).lte("captured_at", placed_at_iso)
+          .order("captured_at", desc=True).limit(window).execute())
+    qa = (supabase.table("bol_odds_snapshots").select("*")
+          .or_(flt).gte("captured_at", placed_at_iso)
+          .order("captured_at", desc=False).limit(window).execute())
+    return qb.data or [], qa.data or []
+
+
+def get_unpriced_bol_props():
+    """Verified BetOnline PROP bets (method/round/method+round/totals) with no
+    price verdict yet - the server-side market check runs once per bet."""
+    q = (supabase.table("user_bets")
+         .select("id, selection, odds, placed_at, fighter_id, bet_type, "
+                 "prop_method, prop_round, ou_line, event_source_url")
+         .in_("bet_type", ["method", "round", "method_round", "over", "under"])
+         .eq("book", "BetOnline.ag")
+         .is_("price_check", "null")
+         .execute())
+    return q.data or []
+
+
+def fetch_prop_ledger(fighter_name, placed_at_iso, window=300):
+    """(rows at-or-before placed_at, newest first; rows after, oldest first)
+    from the bots' PROP ledger for the fight this fighter is in - prefiltered
+    by surname in SQL, matched precisely by the caller."""
+    nn = norm_name(fighter_name)
+    if not nn:
+        return [], []
+    token = nn.split()[-1]
+    qb = (supabase.table("bol_prop_snapshots").select("*")
+          .ilike("fight_key", f"%{token}%")
+          .lte("captured_at", placed_at_iso)
+          .order("captured_at", desc=True).limit(window).execute())
+    qa = (supabase.table("bol_prop_snapshots").select("*")
+          .ilike("fight_key", f"%{token}%")
+          .gte("captured_at", placed_at_iso)
+          .order("captured_at", desc=False).limit(window).execute())
+    return qb.data or [], qa.data or []
+
+
+def fetch_ledger_rows_before(fighter_name, cutoff_iso, floor_iso, limit=15):
+    """Board-ledger rows at-or-before cutoff (newest first), bounded below by
+    floor_iso so an older fight of the same fighter can't satisfy the opener
+    check. Prefiltered by surname in SQL, matched precisely by the caller."""
+    nn = norm_name(fighter_name)
+    if not nn:
+        return []
+    token = nn.split()[-1]
+    flt = f"fighter1.ilike.%{token}%,fighter2.ilike.%{token}%"
+    q = (supabase.table("bol_odds_snapshots").select("*")
+         .or_(flt).lte("captured_at", cutoff_iso)
+         .gte("captured_at", floor_iso)
+         .order("captured_at", desc=True).limit(limit).execute())
+    return q.data or []
+
+
+def fetch_prop_ledger_before(fighter_name, cutoff_iso, floor_iso, limit=120):
+    """Prop-ledger rows at-or-before cutoff (newest first), bounded below by
+    floor_iso - same opener-check role as fetch_ledger_rows_before."""
+    nn = norm_name(fighter_name)
+    if not nn:
+        return []
+    token = nn.split()[-1]
+    q = (supabase.table("bol_prop_snapshots").select("*")
+         .ilike("fight_key", f"%{token}%")
+         .lte("captured_at", cutoff_iso)
+         .gte("captured_at", floor_iso)
+         .order("captured_at", desc=True).limit(limit).execute())
+    return q.data or []
+
+
+def set_price_check(bet_id, status, market_best):
+    """Stamp the server's market verdict on a bet (service role only -
+    the insert trigger nulls any client-supplied claim)."""
+    supabase.table("user_bets").update({
+        "price_check": status,
+        "market_best": market_best,
+        "market_book": "BetOnline.ag" if market_best is not None else None,
+    }).eq("id", bet_id).execute()
 
 
 def get_delete_requests():

@@ -36,7 +36,7 @@ import re
 import sys
 import time
 import unicodedata
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import http_client
 from bs4 import BeautifulSoup
 from scrape_gidstats import parse_event_page
@@ -769,6 +769,271 @@ def archive_past_results(cache=None):
     print(f"Archive done: {total} new row(s).")
 
 
+PRICE_GRACE_SECONDS = 180
+# A fresh BetOnline market can't take verified bets for its first 30 minutes,
+# so nobody farms the leaderboard off soft early openers. The lookback floor
+# keeps an older fight of the same fighter from satisfying the check.
+OPENER_EMBARGO_SECONDS = 30 * 60
+OPENER_LOOKBACK_DAYS = 45
+
+
+def _names_match(a, b):
+    """Same fighter across spellings - the light local twin of the db
+    matcher (exact, surname+initial, or token subset)."""
+    na, nb = _nn(a), _nn(b)
+    if not na or not nb:
+        return False
+    if na == nb:
+        return True
+    ta, tb = na.split(), nb.split()
+    if ta[-1] == tb[-1] and ta[0][:1] == tb[0][:1]:
+        return True
+    sa, sb = set(ta), set(tb)
+    return len(sa) >= 2 and len(sb) >= 2 and (sa <= sb or sb <= sa)
+
+
+def _ledger_side(row, name):
+    if _names_match(row.get("fighter1", ""), name):
+        return "fighter1"
+    if _names_match(row.get("fighter2", ""), name):
+        return "fighter2"
+    return None
+
+
+def _iso_seconds_between(earlier, later):
+    try:
+        a = datetime.fromisoformat(str(earlier).replace("Z", "+00:00"))
+        b = datetime.fromisoformat(str(later).replace("Z", "+00:00"))
+        return abs((b - a).total_seconds())
+    except (TypeError, ValueError):
+        return None
+
+
+def _embargo_window(placed_iso):
+    """(cutoff_iso, floor_iso) for the opener check: the market must already
+    have existed at cutoff (placed - embargo) for the bet to verify."""
+    try:
+        p = datetime.fromisoformat(str(placed_iso).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None, None
+    cutoff = p - timedelta(seconds=OPENER_EMBARGO_SECONDS)
+    floor = p - timedelta(days=OPENER_LOOKBACK_DAYS)
+    return cutoff.isoformat(), floor.isoformat()
+
+
+def _ml_opener_ok(name, placed_iso):
+    """True when this fight's moneyline was already on the board at least
+    OPENER_EMBARGO_SECONDS before the bet was logged. Fail-open on errors:
+    the embargo must never falsely reject an honest bet."""
+    cutoff, floor = _embargo_window(placed_iso)
+    if cutoff is None:
+        return True
+    try:
+        from db import fetch_ledger_rows_before
+        rows = fetch_ledger_rows_before(name, cutoff, floor)
+    except Exception:
+        return True
+    return any(_ledger_side(r, name) for r in rows)
+
+
+def _prop_opener_ok(name, placed_iso, market, bet):
+    """True when this exact prop outcome was already on the board at least
+    OPENER_EMBARGO_SECONDS before the bet was logged. Fail-open on errors."""
+    cutoff, floor = _embargo_window(placed_iso)
+    if cutoff is None:
+        return True
+    try:
+        from db import fetch_prop_ledger_before
+        rows = fetch_prop_ledger_before(name, cutoff, floor)
+    except Exception:
+        return True
+    return any(_prop_row_matches(r, market, name, bet) for r in rows)
+
+
+def verify_bet_prices():
+    """Server-side market check for verified BetOnline moneylines.
+
+    The bet's placed_at is server-stamped (unforgeable) and the bots'
+    ledger is server-collected, so comparing the two is tamper-proof:
+      verified    - the claimed price WAS the board price at log time
+                    (or the board moved to it within a short grace window)
+      off-market  - the board showed something else; the real price is
+                    stored alongside for everyone to see
+      unavailable - the fight wasn't in the ledger around that moment
+                    (bot downtime, or BOL hadn't boarded it) - never a
+                    false rejection."""
+    from db import get_unpriced_bol_bets, fetch_ledger_rows, set_price_check
+    bets = get_unpriced_bol_bets()
+    if not bets:
+        return
+    print(f"Price verification: checking {len(bets)} BetOnline bet(s)...")
+    v = o = u = e = 0
+    for b in bets:
+        name = _bet_fighter_name(b)
+        placed = b.get("placed_at")
+        try:
+            claimed = int(b.get("odds"))
+        except (TypeError, ValueError):
+            claimed = None
+        if not name or not placed or claimed is None:
+            set_price_check(b["id"], "unavailable", None)
+            u += 1
+            continue
+        before, after = fetch_ledger_rows(name, placed)
+        board_price = None
+        for cand in before:
+            side = _ledger_side(cand, name)
+            if side and cand.get(f"{side}_odds") is not None:
+                board_price = int(cand[f"{side}_odds"])
+                break
+        next_price = next_gap = None
+        for cand in after:
+            side = _ledger_side(cand, name)
+            if side and cand.get(f"{side}_odds") is not None:
+                next_price = int(cand[f"{side}_odds"])
+                next_gap = _iso_seconds_between(placed, cand.get("captured_at"))
+                break
+        if board_price is not None and claimed == board_price:
+            if _ml_opener_ok(name, placed):
+                set_price_check(b["id"], "verified", board_price)
+                v += 1
+                print(f"  + {b['selection']}: board was {board_price:+d} at log time - verified")
+            else:
+                set_price_check(b["id"], "early_market", board_price)
+                e += 1
+                print(f"  ! {b['selection']}: logged within "
+                      f"{OPENER_EMBARGO_SECONDS // 60}m of the opener - marked early")
+        elif (next_price is not None and next_gap is not None
+              and next_gap <= PRICE_GRACE_SECONDS and claimed == next_price):
+            if _ml_opener_ok(name, placed):
+                set_price_check(b["id"], "verified", next_price)
+                v += 1
+                print(f"  + {b['selection']}: board moved to {next_price:+d} "
+                      f"within {int(next_gap)}s - verified")
+            else:
+                set_price_check(b["id"], "early_market", next_price)
+                e += 1
+                print(f"  ! {b['selection']}: logged within "
+                      f"{OPENER_EMBARGO_SECONDS // 60}m of the opener - marked early")
+        elif board_price is not None:
+            set_price_check(b["id"], "off-market", board_price)
+            o += 1
+            print(f"  ! {b['selection']}: claimed {claimed:+d} but the board "
+                  f"was {board_price:+d} - marked off-market")
+        else:
+            set_price_check(b["id"], "unavailable", None)
+            u += 1
+            print(f"  - {b['selection']}: no board data at log time")
+    print(f"Price verification done: {v} verified, {o} off-market, "
+          f"{u} unavailable, {e} early.")
+
+
+_PROP_MARKET = {"method": "method", "round": "round",
+                "method_round": "method_round", "over": "total", "under": "total"}
+
+
+def _line_eq(a, b):
+    try:
+        return abs(float(a) - float(b)) < 1e-6
+    except (TypeError, ValueError):
+        return False
+
+
+def _prop_row_matches(row, market, fighter_name, bet):
+    """Does a prop-ledger row correspond to this bet's exact outcome?"""
+    if row.get("market") != market:
+        return False
+    if market == "total":
+        side = "over" if bet.get("bet_type") == "over" else "under"
+        return row.get("ou_side") == side and _line_eq(row.get("ou_line"), bet.get("ou_line"))
+    if not _names_match(row.get("fighter") or "", fighter_name):
+        return False
+    if market in ("method", "method_round"):
+        if (row.get("method") or "") != (bet.get("prop_method") or ""):
+            return False
+    if market in ("round", "method_round"):
+        if str(row.get("round")) != str(bet.get("prop_round")):
+            return False
+    return True
+
+
+def verify_prop_prices():
+    """Server-side market check for verified BetOnline PROP bets - the same
+    tamper-proof comparison as moneylines (server-stamped log time vs the
+    server-collected prop ledger), extended to method / round / method+round
+    / totals. Verdicts: verified, off-market (real price stored), or
+    unavailable (never a false rejection)."""
+    from db import (get_unpriced_bol_props, fetch_prop_ledger, set_price_check,
+                    get_fighter_names_for_source)
+    bets = get_unpriced_bol_props()
+    if not bets:
+        return
+    print(f"Prop verification: checking {len(bets)} BetOnline prop bet(s)...")
+    names_by_url = {}
+    v = o = u = e = 0
+    for b in bets:
+        url = b.get("event_source_url") or ""
+        if url and url not in names_by_url:
+            try:
+                names_by_url[url] = get_fighter_names_for_source(url)
+            except Exception:
+                names_by_url[url] = {}
+        name = (names_by_url.get(url, {}).get(str(b.get("fighter_id")))
+                or _bet_fighter_name(b))
+        market = _PROP_MARKET.get(b.get("bet_type"))
+        placed = b.get("placed_at")
+        try:
+            claimed = int(b.get("odds"))
+        except (TypeError, ValueError):
+            claimed = None
+        if not name or not placed or claimed is None or market is None:
+            set_price_check(b["id"], "unavailable", None)
+            u += 1
+            continue
+        before, after = fetch_prop_ledger(name, placed)
+        board = next((int(r["odds"]) for r in before
+                      if _prop_row_matches(r, market, name, b)
+                      and r.get("odds") is not None), None)
+        nxt = ngap = None
+        for r in after:
+            if _prop_row_matches(r, market, name, b) and r.get("odds") is not None:
+                nxt = int(r["odds"])
+                ngap = _iso_seconds_between(placed, r.get("captured_at"))
+                break
+        if board is not None and claimed == board:
+            if _prop_opener_ok(name, placed, market, b):
+                set_price_check(b["id"], "verified", board)
+                v += 1
+                print(f"  + {b['selection']}: board was {board:+d} at log time - verified")
+            else:
+                set_price_check(b["id"], "early_market", board)
+                e += 1
+                print(f"  ! {b['selection']}: logged within "
+                      f"{OPENER_EMBARGO_SECONDS // 60}m of the opener - marked early")
+        elif (nxt is not None and ngap is not None
+              and ngap <= PRICE_GRACE_SECONDS and claimed == nxt):
+            if _prop_opener_ok(name, placed, market, b):
+                set_price_check(b["id"], "verified", nxt)
+                v += 1
+                print(f"  + {b['selection']}: board moved to {nxt:+d} within {int(ngap)}s - verified")
+            else:
+                set_price_check(b["id"], "early_market", nxt)
+                e += 1
+                print(f"  ! {b['selection']}: logged within "
+                      f"{OPENER_EMBARGO_SECONDS // 60}m of the opener - marked early")
+        elif board is not None:
+            set_price_check(b["id"], "off-market", board)
+            o += 1
+            print(f"  ! {b['selection']}: claimed {claimed:+d} but the board was "
+                  f"{board:+d} - marked off-market")
+        else:
+            set_price_check(b["id"], "unavailable", None)
+            u += 1
+            print(f"  - {b['selection']}: no prop board data at log time")
+    print(f"Prop verification done: {v} verified, {o} off-market, "
+          f"{u} unavailable, {e} early.")
+
+
 def process_delete_requests():
     """Owner-requested bet removals, handled on every grading run.
 
@@ -817,6 +1082,16 @@ def grade_pending_bets(cache=None):
         process_delete_requests()
     except Exception as e:
         print(f"! Removal-request pass failed: {e}")
+
+    try:
+        verify_bet_prices()
+    except Exception as e:
+        print(f"! Price-verification pass failed: {e}")
+
+    try:
+        verify_prop_prices()
+    except Exception as e:
+        print(f"! Prop-verification pass failed: {e}")
 
     today = date.today()
 

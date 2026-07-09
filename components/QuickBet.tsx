@@ -6,7 +6,7 @@ import { bookLabel, eventStartISO, parseBetInputs, sideBtn, fmtOdds } from "@/li
 import {
   fetchFightBoard,
   fetchFightProps,
-  matchPropOdds,
+  matchPropLine,
   boardTotalLines,
   fmtAmerican,
   freshness,
@@ -67,6 +67,8 @@ export function QuickBet({
   // from the ledger, or (if BetOnline hasn't posted it, or the fight has
   // started) the path is closed. The book is always BetOnline, the oracle.
   const isML = betType === "moneyline";
+  // BetOnline's real per-market limits: verified bets above them are rejected.
+  const stakeCap = isML ? 5 : betType === "totals" ? 2.5 : 1.25;
   const evStart = eventStartISO(eventDate, eventTime);
   const started = evStart ? new Date(evStart).getTime() <= nowTs : false;
   const sideName = side === 1 ? fight.fighter1_name : fight.fighter2_name;
@@ -75,10 +77,19 @@ export function QuickBet({
   const totalLineOpts = betType === "totals" ? boardTotalLines(propList) : [];
   const totalLine =
     betType === "totals" ? totalLineSel ?? totalLineOpts[0] ?? null : null;
-  const boardPrice = isML
-    ? mlPrice
-    : matchPropOdds(propList, betType, sideName, method, round, ouSide, totalLine);
-  const priceReady = boardLoaded && boardPrice !== null && !started;
+  const matchedProp = isML
+    ? null
+    : matchPropLine(propList, betType, sideName, method, round, ouSide, totalLine);
+  const boardPrice = isML ? mlPrice : matchedProp ? matchedProp.odds : null;
+  // Opener embargo: a brand-new BetOnline market can't take verified bets for
+  // its first 30 minutes, so nobody snipes soft early numbers for the
+  // leaderboard. The clock starts when the bots first record the market.
+  const EMBARGO_MS = 30 * 60 * 1000;
+  const openerIso = isML ? board?.openedAt ?? null : matchedProp?.openedAt ?? null;
+  const opensAtMs = openerIso ? Date.parse(openerIso) + EMBARGO_MS : null;
+  const embargoed = boardPrice !== null && opensAtMs !== null && nowTs < opensAtMs;
+  const embargoMins = opensAtMs === null ? 0 : Math.max(1, Math.ceil((opensAtMs - nowTs) / 60000));
+  const priceReady = boardLoaded && boardPrice !== null && !started && !embargoed;
   const effectiveBook = "BetOnline.ag";
 
   useEffect(() => {
@@ -110,6 +121,8 @@ export function QuickBet({
       setError(
         started
           ? "This fight has started - verified logging is closed."
+          : embargoed
+          ? `This market just opened on BetOnline - verified betting unlocks ${embargoMins}m from now.`
           : "BetOnline hasn't posted this price yet - check back, or try another market."
       );
       return;
@@ -119,6 +132,10 @@ export function QuickBet({
     const parsed = parseBetInputs(oddsInput, stake);
     if (typeof parsed === "string") {
       setError(parsed);
+      return;
+    }
+    if (parsed.stake > stakeCap) {
+      setError(`Verified limit for this market is ${stakeCap}u - BetOnline's real limit.`);
       return;
     }
     let propRound: number | null = null;
@@ -267,6 +284,13 @@ export function QuickBet({
           ))}
         {!boardLoaded ? (
           <span className="px-2 py-1 text-xs text-neutral-600">reading board…</span>
+        ) : boardPrice !== null && !started && embargoed ? (
+          <span
+            title="New BetOnline market: verified betting opens 30 minutes after the opener"
+            className="rounded-md border border-amber-700/60 bg-amber-500/10 px-2 py-1 text-xs text-amber-400"
+          >
+            fresh opener · verified in {embargoMins}m
+          </span>
         ) : priceReady && boardPrice !== null ? (
           <span
             title={board ? `BetOnline board, ${freshness(board.capturedAt)}` : "BetOnline board"}
