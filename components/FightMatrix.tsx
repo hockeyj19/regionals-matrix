@@ -17,8 +17,8 @@ export function FightMatrix({
     fight.is_main_event || /champ|title/i.test(fight.weight_class ?? "");
   return (
     <div className="rounded-md border border-neutral-800 bg-neutral-900/60 overflow-x-auto">
-      <div className="min-w-[380px]">
-        <div className="grid grid-cols-[1fr_11rem_1fr] gap-1 items-center px-2 py-1.5 border-b border-neutral-800">
+      <div className="min-w-[16rem]">
+        <div className="grid grid-cols-[1fr_6rem_1fr] gap-1 items-center px-2 py-1.5 border-b border-neutral-800">
           <span className="text-[11px] font-semibold text-neutral-300 text-right truncate pr-1">
             {fight.fighter1_name}
           </span>
@@ -43,7 +43,7 @@ export function FightMatrix({
                   return (
                     <div
                       key={m.key}
-                      className="grid grid-cols-[1fr_11rem_1fr] gap-1 items-center px-2 py-1"
+                      className="grid grid-cols-[1fr_6rem_1fr] gap-1 items-center px-2 py-1"
                     >
                       <div className="flex justify-end">
                         <div className="w-16">
