@@ -307,7 +307,7 @@ export function BetTracker({
               <div className="min-w-0">
                 <p className="text-sm font-medium truncate">
                   {b.selection}{" "}
-                  <span className="text-neutral-500">
+                  <span className="text-emerald-400">
                     {fmtOdds(b.odds)} · {Number(b.stake)}u
                   </span>
                   {b.bet_type !== "other" && (
@@ -404,7 +404,7 @@ export function BetTracker({
                   <button
                     onClick={() => onPublish(b.id)}
                     title="Show this pick on your public profile now instead of at event start. This can't be undone - shared picks stay shared."
-                    className="rounded border border-emerald-800 px-1.5 py-0.5 text-[11px] text-emerald-500 hover:bg-neutral-900"
+                    className="rounded border border-sky-500/50 px-1.5 py-0.5 text-[11px] text-sky-300 hover:bg-neutral-900"
                   >
                     make public
                   </button>
@@ -412,7 +412,7 @@ export function BetTracker({
                 {verified && !started && b.published_at && (
                   <span
                     title="Visible on your public profile before the event"
-                    className="text-[10px] uppercase tracking-wide text-emerald-400 border border-emerald-900 rounded px-1.5 py-0.5"
+                    className="text-[10px] uppercase tracking-wide text-sky-300 border border-sky-500/40 rounded px-1.5 py-0.5"
                   >
                     public
                   </span>
