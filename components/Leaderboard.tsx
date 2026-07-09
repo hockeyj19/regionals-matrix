@@ -215,7 +215,7 @@ export function Leaderboard({
                 <div className="flex items-center justify-between gap-2 text-xs">
                   <span className="truncate">
                     {b.selection}{" "}
-                    <span className="text-neutral-500">
+                    <span className="text-emerald-400">
                       {fmtOdds(b.odds)} · {Number(b.stake)}u
                     </span>
                   </span>
@@ -227,8 +227,8 @@ export function Leaderboard({
                           : b.result === "loss"
                           ? "text-red-400"
                           : b.result === "push"
-                          ? "text-amber-400"
-                          : "text-neutral-500"
+                          ? "text-neutral-400"
+                          : "text-sky-300"
                       }
                     >
                       {b.result}
@@ -249,9 +249,6 @@ export function Leaderboard({
                   {b.book ? `${bookLabel(b.book)} · ` : ""}
                   {b.event_context ? `${b.event_context} · ` : ""}
                   {fmtDate(b.event_date ?? b.placed_at)}
-                  {b.price_check === "verified" && (
-                    <span className="ml-1 uppercase tracking-wide text-amber-300"> market ✓</span>
-                  )}
                 </p>
                 {b.price_check === "above_market" && b.market_best !== null && (
                   <p className="text-[11px] text-amber-500/80">

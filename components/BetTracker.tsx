@@ -315,11 +315,6 @@ export function BetTracker({
                       verified
                     </span>
                   )}
-                  {b.price_check === "verified" && (
-                    <span className="ml-1 text-[10px] uppercase tracking-wide text-amber-300">
-                      market ✓
-                    </span>
-                  )}
                 </p>
                 <p className="text-[11px] text-neutral-600 truncate">
                   {b.book ? `${bookLabel(b.book)} · ` : ""}

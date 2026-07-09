@@ -324,7 +324,7 @@ export function Profile({
         ? "text-red-400"
         : b.result === "push"
         ? "text-neutral-400"
-        : "text-amber-400";
+        : "text-sky-300";
     const label =
       b.result === "win" ? "won" : b.result === "loss" ? "lost" : b.result === "push" ? "push" : "pending";
     return <span className={`shrink-0 text-xs ${cls}`}>{label}</span>;
@@ -391,8 +391,8 @@ export function Profile({
                         onClick={() => pickOddsFmt(m)}
                         className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${
                           oddsFmt === m
-                            ? "bg-neutral-100 text-neutral-900"
-                            : "text-neutral-400 hover:text-neutral-200"
+                            ? "border border-emerald-500/50 bg-black text-emerald-400"
+                            : "border border-transparent text-neutral-400 hover:text-emerald-400"
                         }`}
                       >
                         {m === "american" ? "American" : m === "decimal" ? "Decimal" : "Percent"}
@@ -528,7 +528,7 @@ export function Profile({
                         <div className="flex items-center justify-between gap-2 text-xs">
                           <span className="truncate">
                             {b.selection}{" "}
-                            <span className="text-neutral-500">
+                            <span className="text-emerald-400">
                               {fmtOdds(b.odds)} · {Number(b.stake)}u
                             </span>
                           </span>
