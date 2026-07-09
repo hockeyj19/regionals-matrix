@@ -73,10 +73,11 @@ export function betProfit(b: { result: string; stake: number; odds: number }): n
 //   explicit +/- sign            -> American (whole number, |odds| >= 100)
 //   unsigned and >= 100          -> American ("150" means +150)
 //   unsigned and 1 < value < 100 -> decimal  ("2.50" -> +150, "1.91" -> -110)
+//   trailing "%"                 -> implied win probability ("60%" -> -150)
 // Anything else (0, 1, "-50", "+2.5") is not a valid price -> null.
 // ---------------------------------------------------------------------------
 
-export type OddsMode = "american" | "decimal";
+export type OddsMode = "american" | "decimal" | "percent";
 const ODDS_MODE_KEY = "odds_mode";
 let oddsMode: OddsMode | null = null; // lazy: resolved on first client read
 
@@ -86,7 +87,7 @@ export function getOddsMode(): OddsMode {
     if (typeof window !== "undefined") {
       try {
         const v = window.localStorage.getItem(ODDS_MODE_KEY);
-        if (v === "decimal" || v === "american") oddsMode = v;
+        if (v === "decimal" || v === "american" || v === "percent") oddsMode = v;
       } catch {
         /* storage unavailable: stay american */
       }
@@ -112,11 +113,32 @@ export function decimalToAmerican(d: number): number {
   return d >= 2 ? Math.round((d - 1) * 100) : -Math.round(100 / (d - 1));
 }
 
+// American -> implied win probability (0..1, vig included).
+export function americanToImplied(a: number): number {
+  return a > 0 ? 100 / (a + 100) : -a / (-a + 100);
+}
+
+// Implied win % (0..100, exclusive) -> American int. 50% = +100 (even money).
+export function percentToAmerican(p: number): number {
+  const prob = p / 100;
+  return prob <= 0.5
+    ? Math.round((100 * (1 - prob)) / prob)
+    : -Math.round((100 * prob) / (1 - prob));
+}
+
 // Universal input parser: American or decimal in, American int out (null if invalid).
 export function parseOddsInput(s: string | null | undefined): number | null {
   if (!s) return null;
   const t = s.trim().replace(/\s+/g, "");
   if (!t) return null;
+  if (t.endsWith("%")) {
+    // "60%" = a 60% implied win probability
+    const body = t.slice(0, -1);
+    if (!body || /^[+-]/.test(body)) return null;
+    const pn = Number(body);
+    if (!Number.isFinite(pn) || pn <= 0 || pn >= 100) return null;
+    return percentToAmerican(pn);
+  }
   const n = Number(t);
   if (!Number.isFinite(n) || n === 0) return null;
   if (/^[+-]/.test(t)) {
@@ -146,7 +168,9 @@ export function normalizeTypedOdds(s: string): string {
 
 // Format an American price for display, honoring the user's chosen odds format.
 export function fmtOdds(o: number): string {
-  if (getOddsMode() === "decimal") return americanToDecimal(o).toFixed(2);
+  const mode = getOddsMode();
+  if (mode === "decimal") return americanToDecimal(o).toFixed(2);
+  if (mode === "percent") return `${(americanToImplied(o) * 100).toFixed(1)}%`;
   return o > 0 ? `+${o}` : `${o}`;
 }
 
@@ -165,7 +189,7 @@ export function fmtDate(iso: string): string {
 export function parseBetInputs(odds: string, stake: string): { odds: number; stake: number } | string {
   const o = parseOddsInput(odds);
   const s = parseFloat(stake);
-  if (o === null) return "Odds must be American (-150, +130) or decimal (1.67, 2.30).";
+  if (o === null) return "Odds must be American (-150, +130), decimal (1.67), or a win % (60%).";
   if (isNaN(s) || s <= 0) return "Units must be a positive number.";
   return { odds: o, stake: s };
 }

@@ -384,9 +384,8 @@ export function Profile({
               </div>
               {isSelf && (
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-neutral-500">Odds format</span>
                   <div className="inline-flex rounded-lg border border-neutral-800 bg-neutral-900/40 p-0.5">
-                    {(["american", "decimal"] as const).map((m) => (
+                    {(["american", "decimal", "percent"] as const).map((m) => (
                       <button
                         key={m}
                         onClick={() => pickOddsFmt(m)}
@@ -396,7 +395,7 @@ export function Profile({
                             : "text-neutral-400 hover:text-neutral-200"
                         }`}
                       >
-                        {m === "american" ? "American" : "Decimal"}
+                        {m === "american" ? "American" : m === "decimal" ? "Decimal" : "Percent"}
                       </button>
                     ))}
                   </div>
