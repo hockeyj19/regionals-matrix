@@ -7,12 +7,14 @@ import { LineHistoryModal } from "@/components/LineHistoryModal";
 import type { EventRow, FightRow, UserData } from "@/lib/types";
 
 /**
- * The Odds board: BetOnline moneylines with movement, laid over the app's own
- * fight cards. One column of collapsible events - the soonest UFC card pinned to
- * the top and open by default, every other promotion below it in date order and
- * collapsed. Expand a card to see it main-event-first. Prices come from the bots'
- * `bol_board` ledger, matched to each fight by name; every price opens its
- * movement history. Single book by design - this is BetOnline, the sharp board.
+ * The Odds board: moneylines laid over the app's own fight cards, with a book
+ * toggle sitting above the board. BetOnline is the sharp board this platform
+ * grades against - its prices carry open->current movement (tap any price for
+ * history) plus the method/total props from the bots' ledger. FanDuel is a
+ * soft-book comparison pulled from the market feed (moneyline only for now);
+ * its prices are for line-shopping and don't carry movement history yet, so
+ * they render plain and non-clickable. Events are one column of collapsible
+ * cards, the soonest UFC card pinned to the top and open by default.
  */
 
 type BoardRow = {
@@ -38,6 +40,7 @@ type PropRow = {
 
 type SidePrice = { open: number | null; cur: number | null; side: 1 | 2; name: string };
 type Matched = { fightKey: string; a: SidePrice; b: SidePrice };
+type Book = "betonline" | "fanduel";
 
 function isUFC(e: EventRow): boolean {
   return (e.org || "").toUpperCase().includes("UFC");
@@ -92,6 +95,27 @@ function PriceButton({
   );
 }
 
+// FanDuel (any book without a movement ledger) shows a plain, non-clickable
+// price - same value coloring as the sharp board, but nothing to chart yet.
+function StaticPrice({ price, tone }: { price: number | null; tone: "pos" | "neg" | null }) {
+  const color =
+    price === null
+      ? "text-neutral-600"
+      : tone === "pos"
+      ? "text-emerald-400"
+      : tone === "neg"
+      ? "text-red-400"
+      : "text-neutral-200";
+  return (
+    <span
+      title={price === null ? "No FanDuel line" : "FanDuel"}
+      className={`px-1.5 py-0.5 text-sm font-semibold tabular-nums text-right ${color}`}
+    >
+      {price === null ? "—" : fmtAmerican(price)}
+    </span>
+  );
+}
+
 function PropCell({ price }: { price: number | null }) {
   return (
     <span
@@ -132,6 +156,8 @@ export function OddsBoard({
   userData: Record<string, UserData>;
 }) {
   const [board, setBoard] = useState<BoardRow[]>([]);
+  const [fdBoard, setFdBoard] = useState<BoardRow[]>([]);
+  const [activeBook, setActiveBook] = useState<Book>("betonline");
   const [props, setProps] = useState<PropRow[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
@@ -141,11 +167,14 @@ export function OddsBoard({
   >(null);
 
   const load = useCallback(async () => {
-    const [b, pr] = await Promise.all([
+    // fd_board soft-fails to [] until the FanDuel snapshot backend exists.
+    const [b, fd, pr] = await Promise.all([
       supabase.from("bol_board").select("*"),
+      supabase.from("fd_board").select("*"),
       supabase.from("bol_current_props").select("*"),
     ]);
     setBoard((b.data as BoardRow[]) ?? []);
+    setFdBoard((fd.data as BoardRow[]) ?? []);
     setProps((pr.data as PropRow[]) ?? []);
     setLoaded(true);
   }, []);
@@ -153,11 +182,32 @@ export function OddsBoard({
     load();
   }, [load]);
 
+  // Near-real-time: re-read the boards on an interval so the FanDuel worker's
+  // fresh lines (and any BetOnline movement) surface without a manual refresh.
+  // Polls only while the tab is visible; expand/collapse state is untouched.
+  useEffect(() => {
+    const tick = () => {
+      if (typeof document === "undefined" || document.visibilityState === "visible") {
+        load();
+      }
+    };
+    const id = setInterval(tick, 30000);
+    return () => clearInterval(id);
+  }, [load]);
+
+  // rows for whichever book is selected; props + movement only mean anything
+  // on the sharp (BetOnline) board
+  const activeBoard = useMemo(
+    () => (activeBook === "fanduel" ? fdBoard : board),
+    [activeBook, fdBoard, board]
+  );
+  const showProps = activeBook === "betonline";
+
   // match one app fight to a ledger row (order-insensitive), keeping each
   // side's ledger side-number so the movement chart can be opened
   const matchFight = useCallback(
     (f: FightRow): Matched | null => {
-      for (const row of board) {
+      for (const row of activeBoard) {
         const parts = String(row.fight_key).split(" vs ");
         if (parts.length !== 2) continue;
         const [ra, rb] = parts;
@@ -178,7 +228,7 @@ export function OddsBoard({
       }
       return null;
     },
-    [board]
+    [activeBoard]
   );
 
   const methodPrice = useCallback(
@@ -219,13 +269,13 @@ export function OddsBoard({
     [props]
   );
 
-  // events that actually carry BetOnline lines, UFC first then the rest,
-  // each in date order; and the fights per event, main event first
+  // events that actually carry lines on the active book, UFC first then the
+  // rest, each in date order; and the fights per event, main event first
   const { tabs, lastUpdate, topUfcId } = useMemo(() => {
     const fightsByEvent: Record<string, FightRow[]> = {};
     for (const f of fights) (fightsByEvent[f.event_id] ??= []).push(f);
     let last = "";
-    for (const r of board) if (r.updated_at > last) last = r.updated_at;
+    for (const r of activeBoard) if (r.updated_at > last) last = r.updated_at;
 
     const priced = events
       .map((ev) => {
@@ -245,7 +295,7 @@ export function OddsBoard({
     const topUfcId = ufcIdx >= 0 ? priced[ufcIdx].ev.id : null;
     if (ufcIdx > 0) priced.unshift(priced.splice(ufcIdx, 1)[0]);
     return { tabs: priced, lastUpdate: last, topUfcId };
-  }, [events, fights, board, matchFight]);
+  }, [events, fights, activeBoard, matchFight]);
 
   // start with only the soonest UFC card open; respect toggles after that
   useEffect(() => {
@@ -266,10 +316,28 @@ export function OddsBoard({
   return (
     <div className="max-w-3xl mx-auto p-3 sm:p-4">
       <div className="mb-3">
-        <h2 className="text-lg font-bold">BetOnline board</h2>
-        <p className="text-[11px] text-neutral-500">
-          Live moneylines and how they&rsquo;ve moved since open — tap any price for its
-          history.
+        <h2 className="text-lg font-bold">
+          {activeBook === "fanduel" ? "FanDuel" : "BetOnline"} board
+        </h2>
+        <div className="mt-2 inline-flex rounded-lg border border-neutral-800 bg-neutral-900/40 p-0.5">
+          {(["betonline", "fanduel"] as const).map((bk) => (
+            <button
+              key={bk}
+              onClick={() => setActiveBook(bk)}
+              className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${
+                activeBook === bk
+                  ? "bg-neutral-100 text-neutral-900"
+                  : "text-neutral-400 hover:text-neutral-200"
+              }`}
+            >
+              {bk === "betonline" ? "BetOnline" : "FanDuel"}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-[11px] text-neutral-500">
+          {activeBook === "fanduel"
+            ? "FanDuel moneylines from the market feed."
+            : "Live moneylines and how they've moved since open — tap any price for its history."}
           {lastUpdate ? ` Updated ${freshness(lastUpdate)}.` : ""}
         </p>
       </div>
@@ -278,10 +346,13 @@ export function OddsBoard({
 
       {loaded && tabs.length === 0 && (
         <div className="rounded-xl border border-dashed border-neutral-800 bg-neutral-900/20 p-4">
-          <p className="text-sm text-neutral-300">The board is warming up.</p>
+          <p className="text-sm text-neutral-300">
+            {activeBook === "fanduel" ? "No FanDuel lines yet." : "The board is warming up."}
+          </p>
           <p className="text-xs text-neutral-600 mt-1">
-            Cards appear here as the BetOnline monitors post their lines. If this stays
-            empty, check that both line-movement workers are running.
+            {activeBook === "fanduel"
+              ? "FanDuel prices appear once the scraper's market-feed pull runs. If this stays empty, check that ODDS_API_KEY is set and the snapshot step has run at least once."
+              : "Cards appear here as the BetOnline monitors post their lines. If this stays empty, check that both line-movement workers are running."}
           </p>
         </div>
       )}
@@ -329,7 +400,7 @@ export function OddsBoard({
                         const isMain =
                           f.is_main_event ||
                           (i === 0 && !evFights.some((x) => x.is_main_event));
-                        const totals = fk ? totalsFor(fk) : [];
+                        const totals = fk && showProps ? totalsFor(fk) : [];
                         const ud = userData[f.id];
                         const fighterRow = (
                           name: string,
@@ -346,15 +417,22 @@ export function OddsBoard({
                               {myPrice && myPrice.trim() ? myPrice.trim() : "—"}
                             </span>
                             <div className="flex justify-end">
-                              <PriceButton
-                                price={sp ? sp.cur : null}
-                                tone={valueTone(myPrice, sp ? sp.cur : null)}
-                                onOpen={() =>
-                                  m &&
-                                  sp &&
-                                  setChart({ fightKey: m.fightKey, side: sp.side, name })
-                                }
-                              />
+                              {activeBook === "betonline" ? (
+                                <PriceButton
+                                  price={sp ? sp.cur : null}
+                                  tone={valueTone(myPrice, sp ? sp.cur : null)}
+                                  onOpen={() =>
+                                    m &&
+                                    sp &&
+                                    setChart({ fightKey: m.fightKey, side: sp.side, name })
+                                  }
+                                />
+                              ) : (
+                                <StaticPrice
+                                  price={sp ? sp.cur : null}
+                                  tone={valueTone(myPrice, sp ? sp.cur : null)}
+                                />
+                              )}
                             </div>
                             <div className="text-[10px] tabular-nums text-right leading-tight text-neutral-400">
                               {totals.length === 0 ? (
@@ -375,13 +453,13 @@ export function OddsBoard({
                               )}
                             </div>
                             <PropCell
-                              price={fk && sp ? methodPrice(fk, sp.name, "ko_tko") : null}
+                              price={fk && sp && showProps ? methodPrice(fk, sp.name, "ko_tko") : null}
                             />
                             <PropCell
-                              price={fk && sp ? methodPrice(fk, sp.name, "submission") : null}
+                              price={fk && sp && showProps ? methodPrice(fk, sp.name, "submission") : null}
                             />
                             <PropCell
-                              price={fk && sp ? methodPrice(fk, sp.name, "decision") : null}
+                              price={fk && sp && showProps ? methodPrice(fk, sp.name, "decision") : null}
                             />
                           </div>
                         );
@@ -414,8 +492,9 @@ export function OddsBoard({
 
       {loaded && tabs.length > 0 && (
         <p className="text-[11px] text-neutral-600 mt-3">
-          One book by design — BetOnline&rsquo;s lines, the sharp board this platform grades
-          against. Movement (open → current) is the edge a static table doesn&rsquo;t show.
+          {activeBook === "fanduel"
+            ? "FanDuel's moneylines, here to line-shop against the sharp board. Grading still runs on BetOnline — this is the market for comparison."
+            : "One book by design — BetOnline's lines, the sharp board this platform grades against. Movement (open → current) is the edge a static table doesn't show."}
         </p>
       )}
 
