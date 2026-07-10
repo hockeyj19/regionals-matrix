@@ -38,6 +38,7 @@ type PropRow = {
   ou_side: string | null;
   ou_line: number | null;
   odds: number;
+  outcome: string | null;
 };
 
 type SidePrice = { open: number | null; cur: number | null; side: 1 | 2; name: string };
@@ -148,9 +149,11 @@ function PropCell({ price }: { price: number | null }) {
   );
 }
 
-// Everything the bots capture beyond the summary columns: round betting,
-// method+round combos, and every total line - each price with its implied %
-// (the market's own projection), hidden in percent mode where it's redundant.
+// The full BetOnline prop sheet for one fight, rendered the way BetOnline
+// itself lays it out: a header bar per market group, outcome rows with price
+// chips, favorites first. Section list is built from whatever the bots
+// captured, so new markets appear without code changes. Each price carries
+// its implied % (hidden in percent display mode, where it's redundant).
 function PropsPanel({
   fightKey,
   f1,
@@ -164,150 +167,81 @@ function PropsPanel({
 }) {
   const rows = propList.filter((p) => p.fight_key === fightKey);
   const showPct = getOddsMode() !== "percent";
-  const cell = (o: number | null) =>
-    o === null ? (
-      <span className="text-neutral-700">—</span>
-    ) : (
-      <span className="tabular-nums text-neutral-200">
-        {fmtOdds(o)}
-        {showPct && (
-          <span className="text-neutral-600"> {(impliedProb(o) * 100).toFixed(1)}%</span>
-        )}
-      </span>
-    );
-  const roundPrice = (name: string, rnd: number) =>
-    rows.find(
-      (p) =>
-        p.market === "round" && p.fighter !== null &&
-        sameFighter(p.fighter, name) && p.round === rnd
-    )?.odds ?? null;
-  const mrPrice = (name: string, rnd: number, meth: string) =>
-    rows.find(
-      (p) =>
-        p.market === "method_round" && p.fighter !== null &&
-        sameFighter(p.fighter, name) && p.round === rnd && p.method === meth
-    )?.odds ?? null;
-  const roundsPresent = [
-    ...new Set(
-      rows
-        .filter((p) => (p.market === "round" || p.market === "method_round") && p.round !== null)
-        .map((p) => p.round as number)
-    ),
-  ].sort((a, b) => a - b);
-  const totalLines = (() => {
-    const m = new Map<number, { over: number | null; under: number | null }>();
-    for (const p of rows) {
-      if (p.market !== "total" || p.ou_line === null) continue;
-      const e = m.get(p.ou_line) ?? { over: null, under: null };
-      if (p.ou_side === "over") e.over = p.odds;
-      else if (p.ou_side === "under") e.under = p.odds;
-      m.set(p.ou_line, e);
+  const titleCase = (mk: string) =>
+    mk.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const fallbackLabel = (p: PropRow) => {
+    const bits: string[] = [];
+    if (p.fighter) bits.push(p.fighter);
+    if (p.ou_side) bits.push(`${p.ou_side === "over" ? "Over" : "Under"} ${p.ou_line ?? ""}`);
+    if (p.method)
+      bits.push(
+        p.method === "ko_tko" ? "KO/TKO" : p.method === "submission" ? "Submission" : "Decision"
+      );
+    if (p.round !== null) bits.push(`R${p.round}`);
+    return bits.join(" ") || "—";
+  };
+  type Sec = { title: string; rs: PropRow[] };
+  const secs: Sec[] = [];
+  const add = (title: string, rs: PropRow[]) => {
+    if (rs.length)
+      secs.push({
+        title,
+        rs: rs.slice().sort((a, b) => impliedProb(b.odds) - impliedProb(a.odds)),
+      });
+  };
+  add("Method of Victory", rows.filter((p) => p.market === "method"));
+  add("Round Betting", rows.filter((p) => p.market === "round"));
+  add("Method + Round", rows.filter((p) => p.market === "method_round"));
+  add("Total Rounds", rows.filter((p) => p.market === "total"));
+  for (const mk of [...new Set(rows.filter((p) => !CORE_MARKETS.has(p.market)).map((p) => p.market))].sort()) {
+    const mrows = rows.filter((p) => p.market === mk);
+    const t = titleCase(mk);
+    if (mrows.some((p) => p.ou_side)) {
+      for (const f of [...new Set(mrows.map((p) => p.fighter ?? ""))])
+        add(f ? `${f} ${t}` : t, mrows.filter((p) => (p.fighter ?? "") === f));
+    } else {
+      const rds = [...new Set(mrows.filter((p) => p.round !== null).map((p) => p.round as number))].sort(
+        (a, b) => a - b
+      );
+      if (rds.length) for (const r of rds) add(`Round ${r} ${t}`, mrows.filter((p) => p.round === r));
+      else add(t, mrows);
     }
-    return [...m.entries()].map(([line, v]) => ({ line, ...v })).sort((a, b) => a.line - b.line);
-  })();
-  const hasRounds = rows.some((p) => p.market === "round");
-  const hasMR = rows.some((p) => p.market === "method_round");
-  const extraMarkets = [...new Set(rows.filter((p) => !CORE_MARKETS.has(p.market)).map((p) => p.market))].sort();
-  if (!hasRounds && !hasMR && totalLines.length === 0 && extraMarkets.length === 0) {
+  }
+  if (secs.length === 0) {
     return (
       <p className="mt-2 text-[10px] text-neutral-600">
-        No deeper props on the board for this fight yet.
+        No props on the board for this fight yet.
       </p>
     );
   }
-  const last = (n: string) => n.trim().split(/\s+/).slice(-1)[0];
   return (
-    <div className="mt-2 rounded-lg border border-neutral-800 bg-neutral-950/60 p-2 space-y-3 text-[11px]">
-      {hasRounds && roundsPresent.length > 0 && (
-        <div>
-          <p className="text-[9px] uppercase tracking-wide text-neutral-600 mb-1">Wins in round</p>
-          <div className="grid grid-cols-[2.2rem_1fr_1fr] gap-x-2 gap-y-0.5">
-            <span />
-            <span className="text-[9px] text-neutral-500 truncate">{last(f1)}</span>
-            <span className="text-[9px] text-neutral-500 truncate">{last(f2)}</span>
-            {roundsPresent.map((r) => (
-              <>
-                <span key={`rl${r}`} className="text-neutral-500">R{r}</span>
-                <span key={`r1${r}`}>{cell(roundPrice(f1, r))}</span>
-                <span key={`r2${r}`}>{cell(roundPrice(f2, r))}</span>
-              </>
-            ))}
+    <div className="mt-2 rounded-lg border border-neutral-800 overflow-hidden">
+      {secs.map((sec) => (
+        <div key={sec.title}>
+          <div className="bg-neutral-900/80 px-2 py-1 text-[11px] font-semibold text-neutral-300 border-b border-neutral-800">
+            {sec.title}
           </div>
-        </div>
-      )}
-      {hasMR &&
-        [f1, f2].map((name) => (
-          <div key={name}>
-            <p className="text-[9px] uppercase tracking-wide text-neutral-600 mb-1">
-              {name} — method + round
-            </p>
-            <div className="grid grid-cols-[2.2rem_1fr_1fr_1fr] gap-x-2 gap-y-0.5">
-              <span />
-              <span className="text-[9px] text-neutral-500">KO</span>
-              <span className="text-[9px] text-neutral-500">Sub</span>
-              <span className="text-[9px] text-neutral-500">Dec</span>
-              {roundsPresent.map((r) => (
-                <>
-                  <span key={`ml${r}`} className="text-neutral-500">R{r}</span>
-                  <span key={`mk${r}`}>{cell(mrPrice(name, r, "ko_tko"))}</span>
-                  <span key={`ms${r}`}>{cell(mrPrice(name, r, "submission"))}</span>
-                  <span key={`md${r}`}>{cell(mrPrice(name, r, "decision"))}</span>
-                </>
-              ))}
-            </div>
-          </div>
-        ))}
-      {totalLines.length > 0 && (
-        <div>
-          <p className="text-[9px] uppercase tracking-wide text-neutral-600 mb-1">Total rounds</p>
-          <div className="grid grid-cols-[2.2rem_1fr_1fr] gap-x-2 gap-y-0.5">
-            <span />
-            <span className="text-[9px] text-neutral-500">Over</span>
-            <span className="text-[9px] text-neutral-500">Under</span>
-            {totalLines.map((t) => (
-              <>
-                <span key={`tl${t.line}`} className="text-neutral-500">{t.line}</span>
-                <span key={`to${t.line}`}>{cell(t.over)}</span>
-                <span key={`tu${t.line}`}>{cell(t.under)}</span>
-              </>
-            ))}
-          </div>
-        </div>
-      )}
-      {extraMarkets.map((mk) => {
-        const mrows = rows.filter((p) => p.market === mk);
-        const rowLabel = (p: PropRow) => {
-          const parts: string[] = [];
-          if (p.fighter) parts.push(last(p.fighter));
-          if (p.ou_side) parts.push(`${p.ou_side === "over" ? "O" : "U"}${p.ou_line ?? ""}`);
-          if (parts.length === 0) parts.push("Tie");
-          return parts.join(" ");
-        };
-        const ord = (p: PropRow) =>
-          (p.fighter ? (sameFighter(p.fighter, f1) ? 0 : 1) : 2) * 100 +
-          (p.ou_line ?? 0) * 2 +
-          (p.ou_side === "under" ? 1 : 0);
-        return (
-          <div key={mk}>
-            <p className="text-[9px] uppercase tracking-wide text-neutral-600 mb-1">
-              {mk.replace(/_/g, " ")}
-            </p>
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-0.5">
-              {mrows
-                .slice()
-                .sort((a, b) => ord(a) - ord(b))
-                .map((p, i) => (
-                  <>
-                    <span key={`gl${mk}${i}`} className="text-neutral-400 truncate">
-                      {rowLabel(p)}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-0.5 px-2 py-1.5">
+            {sec.rs.map((p, i) => (
+              <div key={i} className="flex items-center justify-between gap-2 py-0.5">
+                <span className="text-[11px] text-neutral-300 truncate">
+                  {p.outcome ?? fallbackLabel(p)}
+                </span>
+                <span className="flex items-center gap-1 shrink-0">
+                  {showPct && (
+                    <span className="text-[9px] text-neutral-600">
+                      {(impliedProb(p.odds) * 100).toFixed(1)}%
                     </span>
-                    <span key={`gv${mk}${i}`} className="text-right">{cell(p.odds)}</span>
-                  </>
-                ))}
-            </div>
+                  )}
+                  <span className="rounded border border-neutral-700 bg-neutral-900 px-2 py-0.5 text-[11px] tabular-nums text-neutral-100 min-w-[3.2rem] text-center">
+                    {fmtOdds(p.odds)}
+                  </span>
+                </span>
+              </div>
+            ))}
           </div>
-        );
-      })}
+        </div>
+      ))}
     </div>
   );
 }

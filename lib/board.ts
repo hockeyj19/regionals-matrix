@@ -130,6 +130,27 @@ export function matchPropLine(
     );
     return hit ?? null;
   }
+  if (betType !== "method" && betType !== "round" && betType !== "method_round") {
+    // v2 stat markets (parser slugs): matchup, O/U, and round-scoped shapes
+    const hit = props.find((p) => {
+      if (p.market !== betType) return false;
+      if (p.ou_side) {
+        if (p.ou_side !== ouSide) return false;
+        if (ouLine === null || p.ou_line === null || Math.abs(p.ou_line - ouLine) > 1e-6)
+          return false;
+        if (p.fighter && !sameFighter(p.fighter, fighterName)) return false;
+      } else {
+        if (!p.fighter || !sameFighter(p.fighter, fighterName)) return false;
+      }
+      if (round) {
+        if (String(p.round) !== String(round)) return false;
+      } else if (p.round !== null) {
+        return false;
+      }
+      return true;
+    });
+    return hit ?? null;
+  }
   const hit = props.find((p) => {
     if (p.market !== betType) return false;
     if (!p.fighter || !sameFighter(p.fighter, fighterName)) return false;
