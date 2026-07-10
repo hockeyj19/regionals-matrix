@@ -72,6 +72,8 @@ function orgColor(org: string): string {
 }
 
 
+const CORE_MARKETS = new Set(["method", "round", "method_round", "total"]);
+
 function impliedProb(o: number): number {
   return o < 0 ? -o / (-o + 100) : 100 / (o + 100);
 }
@@ -205,7 +207,8 @@ function PropsPanel({
   })();
   const hasRounds = rows.some((p) => p.market === "round");
   const hasMR = rows.some((p) => p.market === "method_round");
-  if (!hasRounds && !hasMR && totalLines.length === 0) {
+  const extraMarkets = [...new Set(rows.filter((p) => !CORE_MARKETS.has(p.market)).map((p) => p.market))].sort();
+  if (!hasRounds && !hasMR && totalLines.length === 0 && extraMarkets.length === 0) {
     return (
       <p className="mt-2 text-[10px] text-neutral-600">
         No deeper props on the board for this fight yet.
@@ -271,6 +274,40 @@ function PropsPanel({
           </div>
         </div>
       )}
+      {extraMarkets.map((mk) => {
+        const mrows = rows.filter((p) => p.market === mk);
+        const rowLabel = (p: PropRow) => {
+          const parts: string[] = [];
+          if (p.fighter) parts.push(last(p.fighter));
+          if (p.ou_side) parts.push(`${p.ou_side === "over" ? "O" : "U"}${p.ou_line ?? ""}`);
+          if (parts.length === 0) parts.push("Tie");
+          return parts.join(" ");
+        };
+        const ord = (p: PropRow) =>
+          (p.fighter ? (sameFighter(p.fighter, f1) ? 0 : 1) : 2) * 100 +
+          (p.ou_line ?? 0) * 2 +
+          (p.ou_side === "under" ? 1 : 0);
+        return (
+          <div key={mk}>
+            <p className="text-[9px] uppercase tracking-wide text-neutral-600 mb-1">
+              {mk.replace(/_/g, " ")}
+            </p>
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-0.5">
+              {mrows
+                .slice()
+                .sort((a, b) => ord(a) - ord(b))
+                .map((p, i) => (
+                  <>
+                    <span key={`gl${mk}${i}`} className="text-neutral-400 truncate">
+                      {rowLabel(p)}
+                    </span>
+                    <span key={`gv${mk}${i}`} className="text-right">{cell(p.odds)}</span>
+                  </>
+                ))}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
