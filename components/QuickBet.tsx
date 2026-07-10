@@ -7,19 +7,61 @@ import {
   fetchFightBoard,
   fetchFightProps,
   matchPropLine,
-  boardTotalLines,
   fmtAmerican,
   freshness,
+  sameFighter,
   type FightBoard,
-  type PropLine, sameFighter } from "@/lib/board";
+  type PropLine,
+} from "@/lib/board";
 
-const BET_TYPE_OPTIONS = [
+/**
+ * The verified-bet slip, price-first: every market, fighter, method, round,
+ * line, and outcome renders as a chip carrying its live BetOnline price, built
+ * from the bots' ledger. Nothing is typed by hand and nothing appears that
+ * isn't actually on the board - picking IS seeing the price. Stat markets
+ * (takedowns, significant strikes, scorecards, specials) generate their own
+ * chips from whatever BetOnline is serving, no hardcoded list. The book is
+ * always BetOnline; the price is always the board's; the caps, opener embargo,
+ * and server-side verification all apply from the first tap.
+ */
+
+const CORE_KEYS = ["moneyline", "totals", "method", "round", "method_round"];
+const CORE_OPTIONS = [
   { key: "moneyline", label: "ML" },
   { key: "totals", label: "Totals" },
   { key: "method", label: "Methods" },
   { key: "round", label: "Rounds" },
   { key: "method_round", label: "Methods+Rounds" },
 ];
+const METHODS = [
+  { key: "ko_tko", label: "KO/TKO" },
+  { key: "submission", label: "Sub" },
+  { key: "decision", label: "Dec" },
+];
+
+const titleCase = (mk: string) =>
+  mk.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+function Chip({
+  active,
+  onClick,
+  label,
+  price,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  price: number | null;
+}) {
+  return (
+    <button onClick={onClick} className={sideBtn(active)}>
+      {label}
+      {price !== null && (
+        <span className={active ? " opacity-80" : " text-emerald-400"}> {fmtOdds(price)}</span>
+      )}
+    </button>
+  );
+}
 
 export function QuickBet({
   fight,
@@ -41,83 +83,165 @@ export function QuickBet({
   const [open, setOpen] = useState(embedded);
   const [side, setSide] = useState<1 | 2>(1);
   const [betType, setBetType] = useState("moneyline");
-  const [ouSide, setOuSide] = useState<"over" | "under">("over");
   const [method, setMethod] = useState("ko_tko");
-  const [round, setRound] = useState("");
-  const [odds, setOdds] = useState("");
+  const [roundSel, setRoundSel] = useState<number | null>(null);
+  const [ouSide, setOuSide] = useState<"over" | "under">("over");
+  const [totalLineSel, setTotalLineSel] = useState<number | null>(null);
+  const [statLineSel, setStatLineSel] = useState<number | null>(null);
+  const [outcomeSel, setOutcomeSel] = useState<string | null>(null);
   const [stake, setStake] = useState("");
   const [error, setError] = useState("");
   const [board, setBoard] = useState<FightBoard>(null);
   const [props, setProps] = useState<PropLine[] | null>(null);
   const [boardLoaded, setBoardLoaded] = useState(false);
-  const [totalLineSel, setTotalLineSel] = useState<number | null>(null);
-  const [statLineSel, setStatLineSel] = useState<number | null>(null);
   const [nowTs] = useState(() => Date.now()); // frozen per open; keeps render pure
 
-  const needsMethod = betType === "method" || betType === "method_round";
-  const needsRound = betType === "round" || betType === "method_round";
-  const needsLine = betType === "totals";
-
-  // A verified moneyline is priced off the BetOnline board, not typed:
-  // you accept the line the bots see, or - if BetOnline hasn't posted it,
-  // or the fight has started - the moneyline path is closed.
-  // Every verified bet - moneyline and every prop - is priced off the
-  // BetOnline board, read-only. The user picks the outcome; its price fills
-  // from the ledger, or (if BetOnline hasn't posted it, or the fight has
-  // started) the path is closed. The book is always BetOnline, the oracle.
-  const isML = betType === "moneyline";
-  // BetOnline's real per-market limits: verified bets above them are rejected.
-  const stakeCap = isML ? 5 : betType === "totals" ? 2.5 : 1.25;
-  const evStart = eventStartISO(eventDate, eventTime);
-  const started = evStart ? new Date(evStart).getTime() <= nowTs : false;
-  const sideName = side === 1 ? fight.fighter1_name : fight.fighter2_name;
+  const f1 = fight.fighter1_name;
+  const f2 = fight.fighter2_name;
+  const sideName = side === 1 ? f1 : f2;
   const propList = props ?? [];
-  // v2 stat markets on the board for this fight (parser slugs) - buttons for
-  // whatever BetOnline is actually serving, no hardcoded list.
-  const statMarkets = [...new Set(
-    propList
-      .filter((p) => !["method", "round", "method_round", "total"].includes(p.market))
-      .map((p) => p.market)
-  )].sort();
+  const isML = betType === "moneyline";
+
+  // ---- market shape ----
+  const statMarkets = [
+    ...new Set(
+      propList
+        .filter((p) => !["method", "round", "method_round", "total"].includes(p.market))
+        .map((p) => p.market)
+    ),
+  ].sort();
   const isStat = statMarkets.includes(betType);
   const statRows = isStat ? propList.filter((p) => p.market === betType) : [];
   const statIsOU = statRows.some((p) => p.ou_side !== null);
   const statFighterScoped = statRows.some((p) => p.fighter !== null);
-  const statRounds = [...new Set(
-    statRows.filter((p) => p.round !== null).map((p) => p.round as number)
-  )].sort((a, b) => a - b);
-  const statNeedsRound = isStat && statRounds.length > 0;
-  const statLineOpts = statIsOU
-    ? [...new Set(
-        statRows
-          .filter(
-            (p) =>
-              (!statFighterScoped || (p.fighter && sameFighter(p.fighter, sideName))) &&
-              p.ou_line !== null
-          )
-          .map((p) => p.ou_line as number)
-      )].sort((a, b) => a - b)
+  const forSide = (rows: PropLine[], nm: string) =>
+    rows.filter((p) => !p.fighter || sameFighter(p.fighter, nm));
+  const sideStatRows = forSide(statRows, sideName);
+  const statRounds = [
+    ...new Set(sideStatRows.filter((p) => p.round !== null).map((p) => p.round as number)),
+  ].sort((a, b) => a - b);
+  const statLines = statIsOU
+    ? [...new Set(sideStatRows.filter((p) => p.ou_line !== null).map((p) => p.ou_line as number))].sort(
+        (a, b) => a - b
+      )
     : [];
-  const statLine = statIsOU ? statLineSel ?? statLineOpts[0] ?? null : null;
+  // multiple plain outcomes for one fighter (BetOnline's specials bucket):
+  // the outcome text itself is the pick
+  const statMulti =
+    isStat && !statIsOU && statRounds.length === 0 &&
+    sideStatRows.filter((p) => p.fighter).length > 1;
+  const outcomeOpts = statMulti
+    ? sideStatRows.filter((p) => p.outcome !== null).map((p) => p.outcome as string)
+    : [];
+
   const needsSide = isStat ? statFighterScoped : betType !== "totals";
+  const needsMethod = betType === "method" || betType === "method_round";
+  const coreNeedsRound = betType === "round" || betType === "method_round";
+  const needsRound = coreNeedsRound || (isStat && statRounds.length > 0);
+  const needsLine = betType === "totals";
+  const stakeCap = isML ? 5 : betType === "totals" ? 2.5 : 1.25;
+
+  const evStart = eventStartISO(eventDate, eventTime);
+  const started = evStart ? new Date(evStart).getTime() <= nowTs : false;
   const mlPrice = !board ? null : side === 1 ? board.side1 : board.side2;
-  const totalLineOpts = betType === "totals" ? boardTotalLines(propList) : [];
-  const totalLine =
-    betType === "totals" ? totalLineSel ?? totalLineOpts[0] ?? null : null;
+
+  // ---- pricing helper: what would the board pay for this exact pick? ----
+  const priceOf = (q: {
+    side?: 1 | 2;
+    method?: string;
+    round?: number | null;
+    ou?: "over" | "under";
+    line?: number | null;
+    outcome?: string | null;
+  }): number | null => {
+    const sN = q.side ?? side;
+    const nm = sN === 1 ? f1 : f2;
+    if (isML) return !board ? null : sN === 1 ? board.side1 : board.side2;
+    const rnd = q.round !== undefined ? q.round : needsRound ? roundSel : null;
+    const line =
+      q.line !== undefined ? q.line : needsLine ? totalLine : isStat && statIsOU ? statLine : null;
+    const out = q.outcome !== undefined ? q.outcome : statMulti ? outcomeSel : null;
+    const hit = matchPropLine(
+      propList,
+      betType,
+      needsSide ? nm : "",
+      q.method ?? method,
+      rnd === null ? "" : String(rnd),
+      q.ou ?? ouSide,
+      line,
+      out
+    );
+    return hit ? hit.odds : null;
+  };
+
+  // ---- board-derived option lists (only what actually exists) ----
+  const coreRowsForSide = (mk: string) =>
+    propList.filter((p) => p.market === mk && p.fighter && sameFighter(p.fighter, sideName));
+  const methodOpts = needsMethod
+    ? METHODS.filter(
+        (m) =>
+          !(betType === "method_round" && m.key === "decision") &&
+          coreRowsForSide(betType).some((p) => p.method === m.key)
+      )
+    : [];
+  const roundOpts = coreNeedsRound
+    ? [
+        ...new Set(
+          coreRowsForSide(betType)
+            .filter((p) => p.round !== null && (betType === "round" || p.method === method))
+            .map((p) => p.round as number)
+        ),
+      ].sort((a, b) => a - b)
+    : statRounds;
+  const totalLineOpts = needsLine
+    ? [
+        ...new Set(
+          propList
+            .filter((p) => p.market === "total" && p.ou_line !== null)
+            .map((p) => p.ou_line as number)
+        ),
+      ].sort((a, b) => a - b)
+    : [];
+  const totalLine = needsLine ? totalLineSel ?? totalLineOpts[0] ?? null : null;
+  const statLine = isStat && statIsOU ? statLineSel ?? statLines[0] ?? null : null;
+
+  // keep selections pointing at things that exist on the board
+  useEffect(() => {
+    if (!boardLoaded) return;
+    if (needsMethod && methodOpts.length && !methodOpts.some((m) => m.key === method)) {
+      setMethod(methodOpts[0].key);
+    }
+    if (needsRound) {
+      if (roundOpts.length && (roundSel === null || !roundOpts.includes(roundSel))) {
+        setRoundSel(roundOpts[0]);
+      }
+    } else if (roundSel !== null) {
+      setRoundSel(null);
+    }
+    if (statMulti) {
+      if (outcomeOpts.length && (outcomeSel === null || !outcomeOpts.includes(outcomeSel))) {
+        setOutcomeSel(outcomeOpts[0]);
+      }
+    } else if (outcomeSel !== null) {
+      setOutcomeSel(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [betType, side, method, boardLoaded, propList.length]);
+
   const matchedProp = isML
     ? null
-    : isStat
-    ? matchPropLine(
+    : matchPropLine(
         propList,
         betType,
-        statFighterScoped ? sideName : "",
-        "",
-        statNeedsRound ? round : "",
-        statIsOU ? ouSide : "",
-        statIsOU ? statLine : null
-      )
-    : matchPropLine(propList, betType, sideName, method, round, ouSide, totalLine);
+        needsSide ? sideName : "",
+        method,
+        needsRound && roundSel !== null ? String(roundSel) : "",
+        ouSide,
+        needsLine ? totalLine : isStat && statIsOU ? statLine : null,
+        statMulti ? outcomeSel : null
+      );
   const boardPrice = isML ? mlPrice : matchedProp ? matchedProp.odds : null;
+
   // Opener embargo: a brand-new BetOnline market can't take verified bets for
   // its first 30 minutes, so nobody snipes soft early numbers for the
   // leaderboard. The clock starts when the bots first record the market.
@@ -125,7 +249,8 @@ export function QuickBet({
   const openerIso = isML ? board?.openedAt ?? null : matchedProp?.openedAt ?? null;
   const opensAtMs = openerIso ? Date.parse(openerIso) + EMBARGO_MS : null;
   const embargoed = boardPrice !== null && opensAtMs !== null && nowTs < opensAtMs;
-  const embargoMins = opensAtMs === null ? 0 : Math.max(1, Math.ceil((opensAtMs - nowTs) / 60000));
+  const embargoMins =
+    opensAtMs === null ? 0 : Math.max(1, Math.ceil((opensAtMs - nowTs) / 60000));
   const priceReady = boardLoaded && boardPrice !== null && !started && !embargoed;
   const effectiveBook = "BetOnline.ag";
 
@@ -140,6 +265,7 @@ export function QuickBet({
       setBoard(b);
       setProps(pr);
       setTotalLineSel(null);
+      setStatLineSel(null);
       setBoardLoaded(true);
     });
     return () => {
@@ -150,10 +276,24 @@ export function QuickBet({
   function pickType(t: string) {
     setBetType(t);
     setError("");
-    setRound("");
+    setRoundSel(null);
     setStatLineSel(null);
+    setOutcomeSel(null);
     if (t === "method_round" && method === "decision") setMethod("ko_tko");
   }
+
+  // fighter buttons carry the price when it's unambiguous for this market
+  const sidePrice = (sN: 1 | 2): number | null => {
+    if (isML) return !board ? null : sN === 1 ? board.side1 : board.side2;
+    if (isStat && !statIsOU && statRounds.length === 0) {
+      const nm = sN === 1 ? f1 : f2;
+      const rows = statRows.filter(
+        (p) => p.fighter && sameFighter(p.fighter, nm) && p.round === null && !p.ou_side
+      );
+      return rows.length === 1 ? rows[0].odds : null;
+    }
+    return null;
+  };
 
   async function submit() {
     if (!priceReady) {
@@ -166,9 +306,21 @@ export function QuickBet({
       );
       return;
     }
+    if (needsRound && roundSel === null) {
+      setError("Pick a round from the board.");
+      return;
+    }
+    if (statMulti && outcomeSel === null) {
+      setError("Pick an outcome from the board.");
+      return;
+    }
+    const ouLine = needsLine ? totalLine : isStat && statIsOU ? statLine : null;
+    if ((needsLine || (isStat && statIsOU)) && ouLine === null) {
+      setError("No line for this market on the board yet.");
+      return;
+    }
     // every verified price is the board's, not the user's
-    const oddsInput = boardPrice !== null ? fmtAmerican(boardPrice) : odds;
-    const parsed = parseBetInputs(oddsInput, stake);
+    const parsed = parseBetInputs(fmtAmerican(boardPrice as number), stake);
     if (typeof parsed === "string") {
       setError(parsed);
       return;
@@ -177,41 +329,30 @@ export function QuickBet({
       setError(`Verified limit for this market is ${stakeCap}u - BetOnline's real limit.`);
       return;
     }
-    let propRound: number | null = null;
-    if (needsRound || statNeedsRound) {
-      propRound = parseInt(round, 10);
-      if (isNaN(propRound) || propRound < 1 || propRound > 5) {
-        setError("Round must be 1-5.");
-        return;
-      }
-    }
-    const ouLine = needsLine ? totalLine : isStat && statIsOU ? statLine : null;
-    if (isStat && statIsOU && ouLine === null) {
-      setError("No line for this prop on the board yet.");
-      return;
-    }
-    const name = side === 1 ? fight.fighter1_name : fight.fighter2_name;
+    const name = sideName;
     const fid = side === 1 ? fight.fighter1_id : fight.fighter2_id;
     const effectiveType = betType === "totals" ? ouSide : betType;
+    const methodLabel =
+      method === "ko_tko" ? "KO/TKO" : method === "submission" ? "Submission" : "Decision";
+
+    let selection = name;
+    if (betType === "method") selection = `${name} by ${methodLabel}`;
+    else if (betType === "round") selection = `${name} in R${roundSel}`;
+    else if (betType === "method_round") selection = `${name} by ${methodLabel} in R${roundSel}`;
+    else if (betType === "totals")
+      selection = `${ouSide === "over" ? "Over" : "Under"} ${ouLine} — ${f1} vs ${f2}`;
+    else if (isStat) {
+      const title = titleCase(betType);
+      if (statMulti) selection = outcomeSel as string; // BetOnline's exact outcome text
+      else if (statIsOU) {
+        const who = statFighterScoped ? name : `${f1} vs ${f2}`;
+        selection = `${who} ${ouSide === "over" ? "Over" : "Under"} ${ouLine} — ${title}`;
+      } else selection = `${name}${needsRound ? ` R${roundSel}` : ""} — ${title}`;
+    }
 
     // Trust marks are the server's to write: the insert trigger nulls any
     // price_check/market_* sent from here, and the morning scrape stamps the
     // verdict from the bot ledger at the server-stamped log time.
-    const methodLabel =
-      method === "ko_tko" ? "KO/TKO" : method === "submission" ? "Submission" : "Decision";
-    let selection = name;
-    if (betType === "method") selection = `${name} by ${methodLabel}`;
-    else if (betType === "round") selection = `${name} in R${propRound}`;
-    else if (betType === "method_round") selection = `${name} by ${methodLabel} in R${propRound}`;
-    else if (betType === "totals")
-      selection = `${ouSide === "over" ? "Over" : "Under"} ${ouLine} — ${fight.fighter1_name} vs ${fight.fighter2_name}`;
-    else if (isStat) {
-      const title = betType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-      const who = statFighterScoped ? name : `${fight.fighter1_name} vs ${fight.fighter2_name}`;
-      selection = statIsOU
-        ? `${who} ${ouSide === "over" ? "Over" : "Under"} ${ouLine} — ${title}`
-        : `${name}${statNeedsRound ? ` R${propRound}` : ""} — ${title}`;
-    }
     onAdd({
       selection,
       event_context: eventLabel,
@@ -224,11 +365,11 @@ export function QuickBet({
       market_checked_at: null,
       close_odds: null,
       clv: null,
-      // for over/under bets the fighter id is just a bout locator for the grader
+      // for fight-level bets the fighter id is just a bout locator for the grader
       fighter_id: needsSide ? fid : fight.fighter1_id ?? fight.fighter2_id,
       bet_type: effectiveType,
       prop_method: needsMethod ? method : isStat && statIsOU ? ouSide : null,
-      prop_round: propRound,
+      prop_round: needsRound ? roundSel : null,
       ou_line: ouLine,
       event_source_url: eventSourceUrl,
       odds: parsed.odds,
@@ -239,11 +380,13 @@ export function QuickBet({
     setOpen(embedded);
     setSide(1);
     setBetType("moneyline");
+    setMethod("ko_tko");
+    setRoundSel(null);
     setOuSide("over");
-    setOdds("");
-    setStake("");
-    setRound("");
+    setTotalLineSel(null);
     setStatLineSel(null);
+    setOutcomeSel(null);
+    setStake("");
     setError("");
   }
 
@@ -262,70 +405,109 @@ export function QuickBet({
 
   return (
     <div className="rounded-md border border-neutral-800 bg-neutral-900/60 p-2 space-y-2">
+      {/* markets: core + whatever stat markets BetOnline is serving */}
       <div className="flex flex-wrap gap-1">
-        {BET_TYPE_OPTIONS.map((t) => (
+        {CORE_OPTIONS.map((t) => (
           <button key={t.key} onClick={() => pickType(t.key)} className={sideBtn(betType === t.key)}>
             {t.label}
           </button>
         ))}
         {statMarkets.map((mk) => (
           <button key={mk} onClick={() => pickType(mk)} className={sideBtn(betType === mk)}>
-            {mk.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+            {titleCase(mk)}
           </button>
         ))}
       </div>
+
+      {/* fighters, priced where the market makes the price unambiguous */}
       {needsSide && (
         <div className="grid grid-cols-2 gap-2">
-          <button onClick={() => setSide(1)} className={sideBtn(side === 1)}>
-            {fight.fighter1_name}
-          </button>
-          <button onClick={() => setSide(2)} className={sideBtn(side === 2)}>
-            {fight.fighter2_name}
-          </button>
+          <Chip active={side === 1} onClick={() => setSide(1)} label={f1} price={sidePrice(1)} />
+          <Chip active={side === 2} onClick={() => setSide(2)} label={f2} price={sidePrice(2)} />
         </div>
       )}
-      {needsLine && (
-        <div className="grid grid-cols-2 gap-2">
-          <button onClick={() => setOuSide("over")} className={sideBtn(ouSide === "over")}>
-            Over
-          </button>
-          <button onClick={() => setOuSide("under")} className={sideBtn(ouSide === "under")}>
-            Under
-          </button>
-        </div>
-      )}
-      {isStat && statNeedsRound && (
+
+      {/* methods as priced chips - only the ones on the board */}
+      {needsMethod && methodOpts.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          {statRounds.map((r) => (
-            <button key={r} onClick={() => setRound(String(r))} className={sideBtn(round === String(r))}>
-              R{r}
-            </button>
+          {methodOpts.map((m) => (
+            <Chip
+              key={m.key}
+              active={method === m.key}
+              onClick={() => setMethod(m.key)}
+              label={m.label}
+              price={priceOf({ method: m.key })}
+            />
           ))}
         </div>
       )}
-      {isStat && statIsOU && (
-        <div className="grid grid-cols-2 gap-2">
-          <button onClick={() => setOuSide("over")} className={sideBtn(ouSide === "over")}>
-            Over{statLine !== null ? ` ${statLine}` : ""}
-          </button>
-          <button onClick={() => setOuSide("under")} className={sideBtn(ouSide === "under")}>
-            Under{statLine !== null ? ` ${statLine}` : ""}
-          </button>
+
+      {/* rounds as priced chips - core and stat markets alike */}
+      {needsRound && roundOpts.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {roundOpts.map((r) => (
+            <Chip
+              key={r}
+              active={roundSel === r}
+              onClick={() => setRoundSel(r)}
+              label={`R${r}`}
+              price={priceOf({ round: r })}
+            />
+          ))}
         </div>
       )}
-      {isStat && statIsOU && statLineOpts.length > 1 && (
-        <select
-          value={statLine ?? ""}
-          onChange={(e) => setStatLineSel(parseFloat(e.target.value))}
-          className="rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
-        >
-          {statLineOpts.map((ln) => (
-            <option key={ln} value={ln}>
-              {ln}
-            </option>
-          ))}
-        </select>
+
+      {/* totals + stat over/unders: line picker + priced O/U chips */}
+      {(needsLine || (isStat && statIsOU)) && (
+        <div className="flex flex-wrap items-center gap-1">
+          {(needsLine ? totalLineOpts : statLines).length > 1 && (
+            <select
+              value={(needsLine ? totalLine : statLine) ?? ""}
+              onChange={(e) =>
+                needsLine
+                  ? setTotalLineSel(parseFloat(e.target.value))
+                  : setStatLineSel(parseFloat(e.target.value))
+              }
+              className="rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
+            >
+              {(needsLine ? totalLineOpts : statLines).map((ln) => (
+                <option key={ln} value={ln}>
+                  {ln}
+                  {needsLine ? " rds" : ""}
+                </option>
+              ))}
+            </select>
+          )}
+          <Chip
+            active={ouSide === "over"}
+            onClick={() => setOuSide("over")}
+            label={`Over ${(needsLine ? totalLine : statLine) ?? ""}`}
+            price={priceOf({ ou: "over" })}
+          />
+          <Chip
+            active={ouSide === "under"}
+            onClick={() => setOuSide("under")}
+            label={`Under ${(needsLine ? totalLine : statLine) ?? ""}`}
+            price={priceOf({ ou: "under" })}
+          />
+        </div>
       )}
+
+      {/* specials: BetOnline's exact outcomes as priced chips */}
+      {statMulti && outcomeOpts.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {outcomeOpts.map((o) => (
+            <Chip
+              key={o}
+              active={outcomeSel === o}
+              onClick={() => setOutcomeSel(o)}
+              label={o}
+              price={priceOf({ outcome: o })}
+            />
+          ))}
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2 items-center">
         <span
           title="Verified bets are priced and graded off the BetOnline board"
@@ -333,43 +515,6 @@ export function QuickBet({
         >
           {bookLabel(effectiveBook)}
         </span>
-        {needsMethod && (
-          <select
-            value={method}
-            onChange={(e) => setMethod(e.target.value)}
-            className="rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
-          >
-            <option value="ko_tko">KO/TKO</option>
-            <option value="submission">Submission</option>
-            {betType !== "method_round" && <option value="decision">Decision</option>}
-          </select>
-        )}
-        {needsRound && (
-          <input
-            value={round}
-            onChange={(e) => setRound(e.target.value)}
-            placeholder="Rd (1-5)"
-            className="w-20 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
-          />
-        )}
-        {needsLine &&
-          (totalLineOpts.length > 1 ? (
-            <select
-              value={totalLine ?? ""}
-              onChange={(e) => setTotalLineSel(parseFloat(e.target.value))}
-              className="rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
-            >
-              {totalLineOpts.map((ln) => (
-                <option key={ln} value={ln}>
-                  {ln} rds
-                </option>
-              ))}
-            </select>
-          ) : (
-            <span className="rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-200">
-              {totalLine !== null ? `${totalLine} rds` : "no total"}
-            </span>
-          ))}
         {!boardLoaded ? (
           <span className="px-2 py-1 text-xs text-neutral-600">reading board…</span>
         ) : boardPrice !== null && !started && embargoed ? (

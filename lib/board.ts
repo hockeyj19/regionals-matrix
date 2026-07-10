@@ -85,6 +85,7 @@ export type PropLine = {
   ou_side: string | null;
   ou_line: number | null;
   odds: number;
+  outcome: string | null; // BetOnline's own outcome text, e.g. "Over 42.5 Strikes"
   openedAt: string | null; // when BetOnline first posted this exact outcome
 };
 
@@ -101,7 +102,8 @@ export async function fetchFightProps(f1: string, f2: string): Promise<PropLine[
       out.push({
         market: row.market, fighter: row.fighter, method: row.method,
         round: row.round, ou_side: row.ou_side, ou_line: row.ou_line,
-        odds: row.odds, openedAt: row.opened_at ?? null,
+        odds: row.odds, outcome: row.outcome ?? null,
+        openedAt: row.opened_at ?? null,
       });
     }
   }
@@ -117,7 +119,8 @@ export function matchPropLine(
   method: string,
   round: string,
   ouSide: string,
-  ouLine: number | null
+  ouLine: number | null,
+  outcome: string | null = null
 ): PropLine | null {
   if (betType === "totals") {
     const hit = props.find(
@@ -134,6 +137,8 @@ export function matchPropLine(
     // v2 stat markets (parser slugs): matchup, O/U, and round-scoped shapes
     const hit = props.find((p) => {
       if (p.market !== betType) return false;
+      // exact-outcome selection (specials): BetOnline's outcome text is the key
+      if (outcome) return p.outcome === outcome;
       if (p.ou_side) {
         if (p.ou_side !== ouSide) return false;
         if (ouLine === null || p.ou_line === null || Math.abs(p.ou_line - ouLine) > 1e-6)
