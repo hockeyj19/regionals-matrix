@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { boutMatch, sameFighter } from "@/lib/board";
-import { fmtOdds, parseOddsInput, displayTypedOdds } from "@/lib/format";
+import { fmtOdds, parseOddsInput, displayTypedOdds, getOddsMode } from "@/lib/format";
 import { LineHistoryModal } from "@/components/LineHistoryModal";
 import type { EventRow, FightRow, UserData } from "@/lib/types";
 
@@ -34,6 +34,7 @@ type PropRow = {
   market: string;
   fighter: string | null;
   method: string | null;
+  round: number | null;
   ou_side: string | null;
   ou_line: number | null;
   odds: number;
@@ -145,6 +146,135 @@ function PropCell({ price }: { price: number | null }) {
   );
 }
 
+// Everything the bots capture beyond the summary columns: round betting,
+// method+round combos, and every total line - each price with its implied %
+// (the market's own projection), hidden in percent mode where it's redundant.
+function PropsPanel({
+  fightKey,
+  f1,
+  f2,
+  propList,
+}: {
+  fightKey: string;
+  f1: string;
+  f2: string;
+  propList: PropRow[];
+}) {
+  const rows = propList.filter((p) => p.fight_key === fightKey);
+  const showPct = getOddsMode() !== "percent";
+  const cell = (o: number | null) =>
+    o === null ? (
+      <span className="text-neutral-700">—</span>
+    ) : (
+      <span className="tabular-nums text-neutral-200">
+        {fmtOdds(o)}
+        {showPct && (
+          <span className="text-neutral-600"> {(impliedProb(o) * 100).toFixed(1)}%</span>
+        )}
+      </span>
+    );
+  const roundPrice = (name: string, rnd: number) =>
+    rows.find(
+      (p) =>
+        p.market === "round" && p.fighter !== null &&
+        sameFighter(p.fighter, name) && p.round === rnd
+    )?.odds ?? null;
+  const mrPrice = (name: string, rnd: number, meth: string) =>
+    rows.find(
+      (p) =>
+        p.market === "method_round" && p.fighter !== null &&
+        sameFighter(p.fighter, name) && p.round === rnd && p.method === meth
+    )?.odds ?? null;
+  const roundsPresent = [
+    ...new Set(
+      rows
+        .filter((p) => (p.market === "round" || p.market === "method_round") && p.round !== null)
+        .map((p) => p.round as number)
+    ),
+  ].sort((a, b) => a - b);
+  const totalLines = (() => {
+    const m = new Map<number, { over: number | null; under: number | null }>();
+    for (const p of rows) {
+      if (p.market !== "total" || p.ou_line === null) continue;
+      const e = m.get(p.ou_line) ?? { over: null, under: null };
+      if (p.ou_side === "over") e.over = p.odds;
+      else if (p.ou_side === "under") e.under = p.odds;
+      m.set(p.ou_line, e);
+    }
+    return [...m.entries()].map(([line, v]) => ({ line, ...v })).sort((a, b) => a.line - b.line);
+  })();
+  const hasRounds = rows.some((p) => p.market === "round");
+  const hasMR = rows.some((p) => p.market === "method_round");
+  if (!hasRounds && !hasMR && totalLines.length === 0) {
+    return (
+      <p className="mt-2 text-[10px] text-neutral-600">
+        No deeper props on the board for this fight yet.
+      </p>
+    );
+  }
+  const last = (n: string) => n.trim().split(/\s+/).slice(-1)[0];
+  return (
+    <div className="mt-2 rounded-lg border border-neutral-800 bg-neutral-950/60 p-2 space-y-3 text-[11px]">
+      {hasRounds && roundsPresent.length > 0 && (
+        <div>
+          <p className="text-[9px] uppercase tracking-wide text-neutral-600 mb-1">Wins in round</p>
+          <div className="grid grid-cols-[2.2rem_1fr_1fr] gap-x-2 gap-y-0.5">
+            <span />
+            <span className="text-[9px] text-neutral-500 truncate">{last(f1)}</span>
+            <span className="text-[9px] text-neutral-500 truncate">{last(f2)}</span>
+            {roundsPresent.map((r) => (
+              <>
+                <span key={`rl${r}`} className="text-neutral-500">R{r}</span>
+                <span key={`r1${r}`}>{cell(roundPrice(f1, r))}</span>
+                <span key={`r2${r}`}>{cell(roundPrice(f2, r))}</span>
+              </>
+            ))}
+          </div>
+        </div>
+      )}
+      {hasMR &&
+        [f1, f2].map((name) => (
+          <div key={name}>
+            <p className="text-[9px] uppercase tracking-wide text-neutral-600 mb-1">
+              {name} — method + round
+            </p>
+            <div className="grid grid-cols-[2.2rem_1fr_1fr_1fr] gap-x-2 gap-y-0.5">
+              <span />
+              <span className="text-[9px] text-neutral-500">KO</span>
+              <span className="text-[9px] text-neutral-500">Sub</span>
+              <span className="text-[9px] text-neutral-500">Dec</span>
+              {roundsPresent.map((r) => (
+                <>
+                  <span key={`ml${r}`} className="text-neutral-500">R{r}</span>
+                  <span key={`mk${r}`}>{cell(mrPrice(name, r, "ko_tko"))}</span>
+                  <span key={`ms${r}`}>{cell(mrPrice(name, r, "submission"))}</span>
+                  <span key={`md${r}`}>{cell(mrPrice(name, r, "decision"))}</span>
+                </>
+              ))}
+            </div>
+          </div>
+        ))}
+      {totalLines.length > 0 && (
+        <div>
+          <p className="text-[9px] uppercase tracking-wide text-neutral-600 mb-1">Total rounds</p>
+          <div className="grid grid-cols-[2.2rem_1fr_1fr] gap-x-2 gap-y-0.5">
+            <span />
+            <span className="text-[9px] text-neutral-500">Over</span>
+            <span className="text-[9px] text-neutral-500">Under</span>
+            {totalLines.map((t) => (
+              <>
+                <span key={`tl${t.line}`} className="text-neutral-500">{t.line}</span>
+                <span key={`to${t.line}`}>{cell(t.over)}</span>
+                <span key={`tu${t.line}`}>{cell(t.under)}</span>
+              </>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Chevron({ open }: { open: boolean }) {
   return (
     <svg
@@ -178,6 +308,7 @@ export function OddsBoard({
   const [props, setProps] = useState<PropRow[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+  const [openPropIds, setOpenPropIds] = useState<Set<string>>(new Set());
   const [initialized, setInitialized] = useState(false);
   const [chart, setChart] = useState<
     { fightKey: string; side: 1 | 2; name: string; notePrice: string | null } | null
@@ -318,6 +449,15 @@ export function OddsBoard({
     setOpenIds(new Set(topUfcId ? [topUfcId] : []));
     setInitialized(true);
   }, [tabs, topUfcId, initialized]);
+
+  function toggleProps(id: string) {
+    setOpenPropIds((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  }
 
   function toggle(id: string) {
     setOpenIds((prev) => {
@@ -479,7 +619,7 @@ export function OddsBoard({
                         );
                         return (
                           <div key={f.id} className="px-2 sm:px-3 py-2">
-                            <div className="text-[10px] mb-0.5">
+                            <div className="flex items-center justify-between text-[10px] mb-0.5">
                               <span
                                 className={
                                   isMain
@@ -489,9 +629,26 @@ export function OddsBoard({
                               >
                                 {isMain ? "Main Event" : f.weight_class || ""}
                               </span>
+                              {showProps && fk && props.some((p) => p.fight_key === fk) && (
+                                <button
+                                  onClick={() => toggleProps(f.id)}
+                                  className="text-[10px] text-neutral-500 hover:text-emerald-400"
+                                  title="Round betting, method + round, and every total line"
+                                >
+                                  props {openPropIds.has(f.id) ? "▴" : "▾"}
+                                </button>
+                              )}
                             </div>
                             {fighterRow(f.fighter1_name, m?.a, false, ud?.price1 ?? null, "over")}
                             {fighterRow(f.fighter2_name, m?.b, true, ud?.price2 ?? null, "under")}
+                            {showProps && fk && openPropIds.has(f.id) && (
+                              <PropsPanel
+                                fightKey={fk}
+                                f1={f.fighter1_name}
+                                f2={f.fighter2_name}
+                                propList={props}
+                              />
+                            )}
                           </div>
                         );
                       })}
