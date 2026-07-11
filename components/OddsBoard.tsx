@@ -295,6 +295,59 @@ function PropsPanel({
   );
 }
 
+// Desktop drag-to-scroll for the wide odds rail: click, hold, and drag
+// sideways anywhere (buttons - the MLs and the props chevron - keep their own
+// clicks) to slide the columns. A real drag also swallows the click it would
+// otherwise fire, so dragging never accidentally opens a props menu. Touch
+// devices keep their native swipe scrolling untouched.
+function DragScroller({ className, children }: { className?: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const st = useRef({ down: false, dragged: false, startX: 0, startLeft: 0 });
+  return (
+    <div
+      ref={ref}
+      className={className}
+      onPointerDown={(e: ReactPointerEvent<HTMLDivElement>) => {
+        if (e.pointerType !== "mouse") return;
+        if ((e.target as HTMLElement).closest("button")) return;
+        const el = ref.current;
+        if (!el) return;
+        st.current = { down: true, dragged: false, startX: e.clientX, startLeft: el.scrollLeft };
+      }}
+      onPointerMove={(e: ReactPointerEvent<HTMLDivElement>) => {
+        const g = st.current;
+        const el = ref.current;
+        if (!g.down || !el) return;
+        const dx = e.clientX - g.startX;
+        if (!g.dragged && Math.abs(dx) > 4) {
+          g.dragged = true;
+          try {
+            e.currentTarget.setPointerCapture(e.pointerId);
+          } catch {
+            /* pointer capture unsupported: drag still works inside the rail */
+          }
+        }
+        if (g.dragged) el.scrollLeft = g.startLeft - dx;
+      }}
+      onPointerUp={() => {
+        st.current.down = false;
+      }}
+      onPointerCancel={() => {
+        st.current.down = false;
+      }}
+      onClickCapture={(e) => {
+        if (st.current.dragged) {
+          e.preventDefault();
+          e.stopPropagation();
+          st.current.dragged = false;
+        }
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 function Chevron({ open }: { open: boolean }) {
   return (
     <svg
