@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { boutMatch, sameFighter } from "@/lib/board";
 import { fmtOdds, parseOddsInput, displayTypedOdds, getOddsMode } from "@/lib/format";
@@ -74,6 +82,36 @@ function orgColor(org: string): string {
 
 
 const CORE_MARKETS = new Set(["method", "round", "method_round", "total"]);
+
+// BetOnline's own running order on their fight page - both the props panel
+// and the bet slip present markets in this sequence, so the board reads the
+// way the book does. Anything new BetOnline ships lands after these.
+const MARKET_ORDER: string[] = [
+  "goes_the_distance",
+  "method",
+  "round",
+  "method_round",
+  "win_inside_distance_goes_distance_no_action",
+  "point_spread",
+  "fighter_wins_inside_distance",
+  "how_will_fight_end",
+  "double_chance",
+  "fight_goes_to_split_or_majority_decision",
+  "decision_method_of_victory",
+  "most_significant_strikes_landed",
+  "most_takedowns_landed",
+  "total_significant_strikes",
+  "total_takedowns",
+  "scorecard_winner_or_finish",
+  "fight_to_start",
+  "total",
+  "specials",
+];
+
+export function marketRank(mk: string): number {
+  const i = MARKET_ORDER.indexOf(mk);
+  return i === -1 ? MARKET_ORDER.length : i;
+}
 
 function impliedProb(o: number): number {
   return o < 0 ? -o / (-o + 100) : 100 / (o + 100);
@@ -192,14 +230,22 @@ function PropsPanel({
         rs: rs.slice().sort((a, b) => impliedProb(b.odds) - impliedProb(a.odds)),
       });
   };
-  add("Method of Victory", rows.filter((p) => p.market === "method"));
-  add("Round Betting", rows.filter((p) => p.market === "round"));
-  add("Method + Round", rows.filter((p) => p.market === "method_round"));
-  add("Total Rounds", rows.filter((p) => p.market === "total"));
-  for (const mk of [...new Set(rows.filter((p) => !CORE_MARKETS.has(p.market)).map((p) => p.market))].sort()) {
+  const CORE_TITLES: Record<string, string> = {
+    method: "Method of Victory",
+    round: "Round Betting",
+    method_round: "Method + Round",
+    total: "Total Rounds",
+  };
+  // every market present, walked in BetOnline's order
+  const present = [...new Set(rows.map((p) => p.market))].sort(
+    (a, b) => marketRank(a) - marketRank(b) || a.localeCompare(b)
+  );
+  for (const mk of present) {
     const mrows = rows.filter((p) => p.market === mk);
-    const t = titleCase(mk);
-    if (mrows.some((p) => p.ou_side)) {
+    const t = CORE_TITLES[mk] ?? titleCase(mk);
+    if (CORE_MARKETS.has(mk)) {
+      add(t, mrows);
+    } else if (mrows.some((p) => p.ou_side)) {
       for (const f of [...new Set(mrows.map((p) => p.fighter ?? ""))])
         add(f ? `${f} ${t}` : t, mrows.filter((p) => (p.fighter ?? "") === f));
     } else {
@@ -242,36 +288,6 @@ function PropsPanel({
                 </span>
               </div>
             ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// one fighter's own O/U stat total, stacked like the fight-total column
-function StatTotalCell({
-  lines,
-}: {
-  lines: { line: number; over: number | null; under: number | null }[];
-}) {
-  if (lines.length === 0)
-    return <span className="text-[11px] text-right text-neutral-700">—</span>;
-  return (
-    <div className="text-[10px] tabular-nums text-right leading-tight text-neutral-400">
-      {lines.map((t) => (
-        <div key={t.line}>
-          <div>
-            O{t.line}{" "}
-            <span className="text-[11px] text-neutral-300">
-              {t.over === null ? "—" : fmtOdds(t.over)}
-            </span>
-          </div>
-          <div>
-            U{t.line}{" "}
-            <span className="text-[11px] text-neutral-300">
-              {t.under === null ? "—" : fmtOdds(t.under)}
-            </span>
           </div>
         </div>
       ))}
@@ -408,6 +424,23 @@ export function OddsBoard({
           !!pp.fighter &&
           sameFighter(pp.fighter, name) &&
           pp.round === rnd
+      );
+      return r ? r.odds : null;
+    },
+    [props]
+  );
+
+  // a fighter's price in a head-to-head stat matchup (Most SS / Most TDs) -
+  // what the SS and TD rail columns show
+  const matchupPrice = useCallback(
+    (fightKey: string, name: string, market: string): number | null => {
+      const r = props.find(
+        (pp) =>
+          pp.fight_key === fightKey &&
+          pp.market === market &&
+          !pp.ou_side &&
+          !!pp.fighter &&
+          sameFighter(pp.fighter, name)
       );
       return r ? r.odds : null;
     },
@@ -569,8 +602,8 @@ export function OddsBoard({
                   <Chevron open={open} />
                 </button>
                 {open && (
-                  <div className="border-t border-neutral-800 overflow-x-auto">
-                    <div className="grid grid-cols-[minmax(10rem,1fr)_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem_3rem_3rem_3rem_4.5rem_4.5rem] items-center gap-x-1 px-2 sm:px-3 py-1 border-b border-neutral-800 text-[9px] uppercase tracking-wide text-neutral-600">
+                  <DragScroller className="border-t border-neutral-800 overflow-x-auto md:cursor-grab md:select-none">
+                    <div className="grid grid-cols-[minmax(10rem,1fr)_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem_3rem_3rem_3rem_3.4rem_3.4rem] items-center gap-x-1 px-2 sm:px-3 py-1 border-b border-neutral-800 text-[9px] uppercase tracking-wide text-neutral-600">
                       <span />
                       <span className="text-right text-emerald-600">Mine</span>
                       <span className="text-right">ML</span>
@@ -581,8 +614,8 @@ export function OddsBoard({
                       <span className="text-right">R1</span>
                       <span className="text-right">R2</span>
                       <span className="text-right">R3</span>
-                      <span className="text-right" title="Fighter's total significant strikes O/U">SS</span>
-                      <span className="text-right" title="Fighter's total takedowns O/U">TD</span>
+                      <span className="text-right" title="Most significant strikes landed (head-to-head)">SS</span>
+                      <span className="text-right" title="Most takedowns landed (head-to-head)">TD</span>
                     </div>
                     <div className="divide-y divide-neutral-900">
                       {evFights.map((f, i) => {
@@ -600,7 +633,7 @@ export function OddsBoard({
                           myPrice: string | null,
                           totalSide: "over" | "under"
                         ) => (
-                          <div className="grid grid-cols-[minmax(10rem,1fr)_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem_3rem_3rem_3rem_4.5rem_4.5rem] items-center gap-x-1 py-0.5">
+                          <div className="grid grid-cols-[minmax(10rem,1fr)_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem_3rem_3rem_3rem_3.4rem_3.4rem] items-center gap-x-1 py-0.5">
                             <span className={`text-sm truncate ${dim ? "text-neutral-300" : ""}`}>
                               {name}
                             </span>
@@ -666,11 +699,19 @@ export function OddsBoard({
                             <PropCell
                               price={fk && sp && showProps ? roundWinPrice(fk, sp.name, 3) : null}
                             />
-                            <StatTotalCell
-                              lines={fk && sp && showProps ? statTotalsFor(fk, sp.name, "total_significant_strikes") : []}
+                            <PropCell
+                              price={
+                                fk && sp && showProps
+                                  ? matchupPrice(fk, sp.name, "most_significant_strikes_landed")
+                                  : null
+                              }
                             />
-                            <StatTotalCell
-                              lines={fk && sp && showProps ? statTotalsFor(fk, sp.name, "total_takedowns") : []}
+                            <PropCell
+                              price={
+                                fk && sp && showProps
+                                  ? matchupPrice(fk, sp.name, "most_takedowns_landed")
+                                  : null
+                              }
                             />
                           </div>
                         );
@@ -686,7 +727,7 @@ export function OddsBoard({
                               className={canProps ? "cursor-pointer" : undefined}
                               title={canProps ? "Tap for all props" : undefined}
                             >
-                              <div className="flex items-center justify-between text-[10px] mb-0.5">
+                              <div className="text-[10px] mb-0.5">
                                 <span
                                   className={
                                     isMain
@@ -696,33 +737,39 @@ export function OddsBoard({
                                 >
                                   {isMain ? "Main Event" : f.weight_class || ""}
                                 </span>
+                              </div>
+                              <div className="flex items-stretch">
+                                <div className="min-w-0 grow">
+                                  {fighterRow(f.fighter1_name, m?.a, false, ud?.price1 ?? null, "over")}
+                                  {fighterRow(f.fighter2_name, m?.b, true, ud?.price2 ?? null, "under")}
+                                </div>
                                 {canProps && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toggleProps(f.id);
-                                    }}
-                                    title="All props for this fight"
-                                    className="rounded border border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/10 p-0.5"
-                                  >
-                                    <svg
-                                      viewBox="0 0 20 20"
-                                      fill="currentColor"
-                                      className={`w-3 h-3 transition-transform ${
-                                        openPropIds.has(f.id) ? "rotate-180" : ""
-                                      }`}
+                                  <div className="sticky right-0 z-10 flex items-center pl-1.5 bg-gradient-to-l from-neutral-950 via-neutral-950/90 to-transparent">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleProps(f.id);
+                                      }}
+                                      title="All props for this fight"
+                                      className="rounded border border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/10 p-0.5"
                                     >
-                                      <path
-                                        fillRule="evenodd"
-                                        d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
-                                        clipRule="evenodd"
-                                      />
-                                    </svg>
-                                  </button>
+                                      <svg
+                                        viewBox="0 0 20 20"
+                                        fill="currentColor"
+                                        className={`w-3 h-3 transition-transform ${
+                                          openPropIds.has(f.id) ? "rotate-180" : ""
+                                        }`}
+                                      >
+                                        <path
+                                          fillRule="evenodd"
+                                          d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                                          clipRule="evenodd"
+                                        />
+                                      </svg>
+                                    </button>
+                                  </div>
                                 )}
                               </div>
-                              {fighterRow(f.fighter1_name, m?.a, false, ud?.price1 ?? null, "over")}
-                              {fighterRow(f.fighter2_name, m?.b, true, ud?.price2 ?? null, "under")}
                             </div>
                             {showProps && fk && openPropIds.has(f.id) && (
                               <PropsPanel
@@ -736,7 +783,7 @@ export function OddsBoard({
                         );
                       })}
                     </div>
-                  </div>
+                  </DragScroller>
                 )}
               </div>
             );

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { FightRow, NewBet } from "@/lib/types";
 import { bookLabel, eventStartISO, parseBetInputs, sideBtn, fmtOdds } from "@/lib/format";
+import { marketRank } from "@/components/OddsBoard";
 import {
   fetchFightBoard,
   fetchFightProps,
@@ -109,7 +110,7 @@ export function QuickBet({
         .filter((p) => !["method", "round", "method_round", "total"].includes(p.market))
         .map((p) => p.market)
     ),
-  ].sort();
+  ].sort((a, b) => marketRank(a) - marketRank(b) || a.localeCompare(b)); // BetOnline's order
   const isStat = statMarkets.includes(betType);
   const statRows = isStat ? propList.filter((p) => p.market === betType) : [];
   const statIsOU = statRows.some((p) => p.ou_side !== null);
@@ -130,9 +131,13 @@ export function QuickBet({
     ...new Set(sideStatRows.filter((p) => p.round !== null).map((p) => p.round as number)),
   ].sort((a, b) => a - b);
   const statLines = statIsOU
-    ? [...new Set(sideStatRows.filter((p) => p.ou_line !== null).map((p) => p.ou_line as number))].sort(
-        (a, b) => a - b
-      )
+    ? [
+        ...new Set(
+          sideStatRows
+            .filter((p) => p.ou_line !== null && p.ou_line !== 0)
+            .map((p) => p.ou_line as number)
+        ),
+      ].sort((a, b) => a - b)
     : [];
   // multiple plain outcomes for one fighter (BetOnline's specials bucket):
   // the outcome text itself is the pick
@@ -218,6 +223,11 @@ export function QuickBet({
     : [];
   const totalLine = needsLine ? totalLineSel ?? totalLineOpts[0] ?? null : null;
   const statLine = isStat && statIsOU ? statLineSel ?? statLines[0] ?? null : null;
+  // "o42.5" / "u0.5" - the book's own line, never a bare "Over 0"
+  const ouLabel = (p: "o" | "u") => {
+    const ln = needsLine ? totalLine : statLine;
+    return ln === null ? (p === "o" ? "Over" : "Under") : `${p}${ln}`;
+  };
 
   // keep selections pointing at things that exist on the board
   useEffect(() => {
@@ -514,13 +524,13 @@ export function QuickBet({
           <Chip
             active={ouSide === "over"}
             onClick={() => setOuSide("over")}
-            label={`Over ${(needsLine ? totalLine : statLine) ?? ""}`}
+            label={ouLabel("o")}
             price={priceOf({ ou: "over" })}
           />
           <Chip
             active={ouSide === "under"}
             onClick={() => setOuSide("under")}
-            label={`Under ${(needsLine ? totalLine : statLine) ?? ""}`}
+            label={ouLabel("u")}
             price={priceOf({ ou: "under" })}
           />
         </div>
