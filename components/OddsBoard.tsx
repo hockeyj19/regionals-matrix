@@ -106,7 +106,10 @@ function PriceButton({
       : "text-neutral-200 hover:bg-neutral-800 hover:underline";
   return (
     <button
-      onClick={onOpen}
+      onClick={(e) => {
+        e.stopPropagation(); // MLs open the movement chart, not the props menu
+        onOpen();
+      }}
       disabled={price === null}
       title={price === null ? "No BetOnline line" : "Chart this line's movement"}
       className={`rounded px-1.5 py-0.5 text-sm font-semibold tabular-nums text-right ${color}`}
@@ -246,6 +249,36 @@ function PropsPanel({
   );
 }
 
+// one fighter's own O/U stat total, stacked like the fight-total column
+function StatTotalCell({
+  lines,
+}: {
+  lines: { line: number; over: number | null; under: number | null }[];
+}) {
+  if (lines.length === 0)
+    return <span className="text-[11px] text-right text-neutral-700">—</span>;
+  return (
+    <div className="text-[10px] tabular-nums text-right leading-tight text-neutral-400">
+      {lines.map((t) => (
+        <div key={t.line}>
+          <div>
+            O{t.line}{" "}
+            <span className="text-[11px] text-neutral-300">
+              {t.over === null ? "—" : fmtOdds(t.over)}
+            </span>
+          </div>
+          <div>
+            U{t.line}{" "}
+            <span className="text-[11px] text-neutral-300">
+              {t.under === null ? "—" : fmtOdds(t.under)}
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Chevron({ open }: { open: boolean }) {
   return (
     <svg
@@ -361,6 +394,39 @@ export function OddsBoard({
           pp.method === method
       );
       return r ? r.odds : null;
+    },
+    [props]
+  );
+
+  // fighter wins in round N (market="round"), for the R1-R3 columns
+  const roundWinPrice = useCallback(
+    (fightKey: string, name: string, rnd: number): number | null => {
+      const r = props.find(
+        (pp) =>
+          pp.fight_key === fightKey &&
+          pp.market === "round" &&
+          !!pp.fighter &&
+          sameFighter(pp.fighter, name) &&
+          pp.round === rnd
+      );
+      return r ? r.odds : null;
+    },
+    [props]
+  );
+
+  // a fighter's own O/U stat totals (significant strikes / takedowns)
+  const statTotalsFor = useCallback(
+    (fightKey: string, name: string, market: string) => {
+      const lines = new Map<number, { over: number | null; under: number | null }>();
+      for (const pp of props) {
+        if (pp.fight_key !== fightKey || pp.market !== market || pp.ou_line === null) continue;
+        if (!pp.fighter || !sameFighter(pp.fighter, name)) continue;
+        const e = lines.get(pp.ou_line) ?? { over: null, under: null };
+        if (pp.ou_side === "over") e.over = pp.odds;
+        else if (pp.ou_side === "under") e.under = pp.odds;
+        lines.set(pp.ou_line, e);
+      }
+      return [...lines.entries()].map(([line, v]) => ({ line, ...v })).sort((a, b) => a.line - b.line);
     },
     [props]
   );
@@ -504,7 +570,7 @@ export function OddsBoard({
                 </button>
                 {open && (
                   <div className="border-t border-neutral-800 overflow-x-auto">
-                    <div className="grid grid-cols-[minmax(10rem,1fr)_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem] items-center gap-x-1 px-2 sm:px-3 py-1 border-b border-neutral-800 text-[9px] uppercase tracking-wide text-neutral-600">
+                    <div className="grid grid-cols-[minmax(10rem,1fr)_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem_3rem_3rem_3rem_4.5rem_4.5rem] items-center gap-x-1 px-2 sm:px-3 py-1 border-b border-neutral-800 text-[9px] uppercase tracking-wide text-neutral-600">
                       <span />
                       <span className="text-right text-emerald-600">Mine</span>
                       <span className="text-right">ML</span>
@@ -512,6 +578,11 @@ export function OddsBoard({
                       <span className="text-right">KO</span>
                       <span className="text-right">Sub</span>
                       <span className="text-right">Dec</span>
+                      <span className="text-right">R1</span>
+                      <span className="text-right">R2</span>
+                      <span className="text-right">R3</span>
+                      <span className="text-right" title="Fighter's total significant strikes O/U">SS</span>
+                      <span className="text-right" title="Fighter's total takedowns O/U">TD</span>
                     </div>
                     <div className="divide-y divide-neutral-900">
                       {evFights.map((f, i) => {
@@ -529,7 +600,7 @@ export function OddsBoard({
                           myPrice: string | null,
                           totalSide: "over" | "under"
                         ) => (
-                          <div className="grid grid-cols-[minmax(10rem,1fr)_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem] items-center gap-x-1 py-0.5">
+                          <div className="grid grid-cols-[minmax(10rem,1fr)_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem_3rem_3rem_3rem_4.5rem_4.5rem] items-center gap-x-1 py-0.5">
                             <span className={`text-sm truncate ${dim ? "text-neutral-300" : ""}`}>
                               {name}
                             </span>
@@ -586,32 +657,73 @@ export function OddsBoard({
                             <PropCell
                               price={fk && sp && showProps ? methodPrice(fk, sp.name, "decision") : null}
                             />
+                            <PropCell
+                              price={fk && sp && showProps ? roundWinPrice(fk, sp.name, 1) : null}
+                            />
+                            <PropCell
+                              price={fk && sp && showProps ? roundWinPrice(fk, sp.name, 2) : null}
+                            />
+                            <PropCell
+                              price={fk && sp && showProps ? roundWinPrice(fk, sp.name, 3) : null}
+                            />
+                            <StatTotalCell
+                              lines={fk && sp && showProps ? statTotalsFor(fk, sp.name, "total_significant_strikes") : []}
+                            />
+                            <StatTotalCell
+                              lines={fk && sp && showProps ? statTotalsFor(fk, sp.name, "total_takedowns") : []}
+                            />
                           </div>
                         );
+                        const canProps =
+                          showProps && !!fk && props.some((p) => p.fight_key === fk);
                         return (
                           <div key={f.id} className="px-2 sm:px-3 py-2">
-                            <div className="flex items-center justify-between text-[10px] mb-0.5">
-                              <span
-                                className={
-                                  isMain
-                                    ? "text-amber-400 font-semibold uppercase tracking-wide"
-                                    : "text-neutral-600"
-                                }
-                              >
-                                {isMain ? "Main Event" : f.weight_class || ""}
-                              </span>
-                              {showProps && fk && props.some((p) => p.fight_key === fk) && (
-                                <button
-                                  onClick={() => toggleProps(f.id)}
-                                  className="text-[10px] text-neutral-500 hover:text-emerald-400"
-                                  title="Round betting, method + round, and every total line"
+                            {/* the whole matchup is a tap target for the props
+                                menu - only the ML prices carve themselves out
+                                (they open the movement chart instead) */}
+                            <div
+                              onClick={canProps ? () => toggleProps(f.id) : undefined}
+                              className={canProps ? "cursor-pointer" : undefined}
+                              title={canProps ? "Tap for all props" : undefined}
+                            >
+                              <div className="flex items-center justify-between text-[10px] mb-0.5">
+                                <span
+                                  className={
+                                    isMain
+                                      ? "text-amber-400 font-semibold uppercase tracking-wide"
+                                      : "text-neutral-600"
+                                  }
                                 >
-                                  props {openPropIds.has(f.id) ? "▴" : "▾"}
-                                </button>
-                              )}
+                                  {isMain ? "Main Event" : f.weight_class || ""}
+                                </span>
+                                {canProps && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleProps(f.id);
+                                    }}
+                                    title="All props for this fight"
+                                    className="rounded border border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/10 p-0.5"
+                                  >
+                                    <svg
+                                      viewBox="0 0 20 20"
+                                      fill="currentColor"
+                                      className={`w-3 h-3 transition-transform ${
+                                        openPropIds.has(f.id) ? "rotate-180" : ""
+                                      }`}
+                                    >
+                                      <path
+                                        fillRule="evenodd"
+                                        d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                                        clipRule="evenodd"
+                                      />
+                                    </svg>
+                                  </button>
+                                )}
+                              </div>
+                              {fighterRow(f.fighter1_name, m?.a, false, ud?.price1 ?? null, "over")}
+                              {fighterRow(f.fighter2_name, m?.b, true, ud?.price2 ?? null, "under")}
                             </div>
-                            {fighterRow(f.fighter1_name, m?.a, false, ud?.price1 ?? null, "over")}
-                            {fighterRow(f.fighter2_name, m?.b, true, ud?.price2 ?? null, "under")}
                             {showProps && fk && openPropIds.has(f.id) && (
                               <PropsPanel
                                 fightKey={fk}
