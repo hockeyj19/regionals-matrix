@@ -2,22 +2,21 @@
 
 import { useState } from "react";
 import type { FightRow, NewBet } from "@/lib/types";
-import { SHARP_BOOKS, SOFT_BOOKS, bookLabel, eventStartISO, parseBetInputs, sideBtn } from "@/lib/format";
+import { SHARP_BOOKS, SOFT_BOOKS, bookLabel, eventStartISO, parseBetInputs } from "@/lib/format";
 
-// Same market set and order as the verified form (QuickBet), but self-priced:
-// the bettor picks their own book and types their own number. These log as
-// unverified ("other") bets - you grade them - because the price isn't the
-// sharp board's, so there's nothing to auto-verify against.
-const BET_TYPE_OPTIONS = [
-  { key: "moneyline", label: "ML" },
-  { key: "totals", label: "Totals" },
-  { key: "method", label: "Methods" },
-  { key: "round", label: "Rounds" },
-  { key: "method_round", label: "Methods+Rounds" },
-];
+/**
+ * The unverified slip: your book, your number, your grading. Because nothing
+ * here is checked against the sharp board, there's no reason to constrain the
+ * market - write the bet however you like ("McGregor by KO in R2", "Holloway
+ * over 68.5 sig strikes", a parlay leg, anything). These log as "other" bets:
+ * out of the verified scope and off the leaderboard, with the market details
+ * living in the selection text you type.
+ */
 
 // unverified bets can be logged at any book — the soft books plus BetOnline
 const BOOK_OPTIONS = [...SOFT_BOOKS, ...SHARP_BOOKS];
+
+const MAX_SELECTION = 160;
 
 export function ManualBet({
   fight,
@@ -34,65 +33,33 @@ export function ManualBet({
   eventSourceUrl: string | null;
   onAdd: (bet: NewBet) => void;
 }) {
-  const [side, setSide] = useState<1 | 2>(1);
-  const [betType, setBetType] = useState("moneyline");
-  const [ouSide, setOuSide] = useState<"over" | "under">("over");
-  const [method, setMethod] = useState("ko_tko");
-  const [round, setRound] = useState("");
-  const [line, setLine] = useState("");
+  const [selection, setSelection] = useState("");
   const [book, setBook] = useState(SOFT_BOOKS[0]);
   const [odds, setOdds] = useState("");
   const [stake, setStake] = useState("");
   const [error, setError] = useState("");
 
-  const needsSide = betType !== "totals";
-  const needsMethod = betType === "method" || betType === "method_round";
-  const needsRound = betType === "round" || betType === "method_round";
-  const needsLine = betType === "totals";
-
-  function pickType(t: string) {
-    setBetType(t);
-    setError("");
-    if (t === "method_round" && method === "decision") setMethod("ko_tko");
-  }
-
   function submit() {
+    const sel = selection.trim().replace(/\s+/g, " ");
+    if (!sel) {
+      setError("Write the bet — anything you like, e.g. “McGregor by KO in R2”.");
+      return;
+    }
+    if (sel.length > MAX_SELECTION) {
+      setError(`Keep the bet under ${MAX_SELECTION} characters.`);
+      return;
+    }
     const parsed = parseBetInputs(odds, stake);
     if (typeof parsed === "string") {
       setError(parsed);
       return;
     }
-    let propRound: number | null = null;
-    if (needsRound) {
-      propRound = parseInt(round, 10);
-      if (isNaN(propRound) || propRound < 1 || propRound > 5) {
-        setError("Round must be 1-5.");
-        return;
-      }
-    }
-    let ouLine: number | null = null;
-    if (needsLine) {
-      ouLine = parseFloat(line);
-      if (isNaN(ouLine) || ouLine <= 0) {
-        setError("Enter a total in rounds, e.g. 2.5.");
-        return;
-      }
-    }
-    const name = side === 1 ? fight.fighter1_name : fight.fighter2_name;
-    const methodLabel =
-      method === "ko_tko" ? "KO/TKO" : method === "submission" ? "Submission" : "Decision";
-    let selection = name;
-    if (betType === "method") selection = `${name} by ${methodLabel}`;
-    else if (betType === "round") selection = `${name} in R${propRound}`;
-    else if (betType === "method_round") selection = `${name} by ${methodLabel} in R${propRound}`;
-    else if (betType === "totals")
-      selection = `${ouSide === "over" ? "Over" : "Under"} ${ouLine} — ${fight.fighter1_name} vs ${fight.fighter2_name}`;
 
     // Unverified: own book, own price, hand-graded. bet_type "other" keeps it
     // out of the verified scope and the leaderboard; the market details live in
     // the selection text.
     onAdd({
-      selection,
+      selection: sel,
       event_context: eventLabel,
       event_date: eventDate,
       event_start: eventStartISO(eventDate, eventTime),
@@ -112,12 +79,7 @@ export function ManualBet({
       odds: parsed.odds,
       stake: parsed.stake,
     });
-    setSide(1);
-    setBetType("moneyline");
-    setOuSide("over");
-    setMethod("ko_tko");
-    setRound("");
-    setLine("");
+    setSelection("");
     setOdds("");
     setStake("");
     setError("");
@@ -125,33 +87,17 @@ export function ManualBet({
 
   return (
     <div className="rounded-md border border-neutral-800 bg-neutral-900/60 p-2 space-y-2">
-      <div className="flex flex-wrap gap-1">
-        {BET_TYPE_OPTIONS.map((t) => (
-          <button key={t.key} onClick={() => pickType(t.key)} className={sideBtn(betType === t.key)}>
-            {t.label}
-          </button>
-        ))}
-      </div>
-      {needsSide && (
-        <div className="grid grid-cols-2 gap-2">
-          <button onClick={() => setSide(1)} className={sideBtn(side === 1)}>
-            {fight.fighter1_name}
-          </button>
-          <button onClick={() => setSide(2)} className={sideBtn(side === 2)}>
-            {fight.fighter2_name}
-          </button>
-        </div>
-      )}
-      {needsLine && (
-        <div className="grid grid-cols-2 gap-2">
-          <button onClick={() => setOuSide("over")} className={sideBtn(ouSide === "over")}>
-            Over
-          </button>
-          <button onClick={() => setOuSide("under")} className={sideBtn(ouSide === "under")}>
-            Under
-          </button>
-        </div>
-      )}
+      <input
+        value={selection}
+        onChange={(e) => setSelection(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") submit();
+        }}
+        maxLength={MAX_SELECTION}
+        placeholder={`Write the bet — e.g. "${fight.fighter1_name} by KO in R2"`}
+        title="Any market, any wording — you grade this one"
+        className="w-full rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1.5 text-xs outline-none focus:border-emerald-500"
+      />
       <div className="flex flex-wrap gap-2 items-center">
         <select
           value={book}
@@ -165,38 +111,11 @@ export function ManualBet({
             </option>
           ))}
         </select>
-        {needsMethod && (
-          <select
-            value={method}
-            onChange={(e) => setMethod(e.target.value)}
-            className="rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
-          >
-            <option value="ko_tko">KO/TKO</option>
-            <option value="submission">Submission</option>
-            {betType !== "method_round" && <option value="decision">Decision</option>}
-          </select>
-        )}
-        {needsRound && (
-          <input
-            value={round}
-            onChange={(e) => setRound(e.target.value)}
-            placeholder="Rd (1-5)"
-            className="w-20 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
-          />
-        )}
-        {needsLine && (
-          <input
-            value={line}
-            onChange={(e) => setLine(e.target.value)}
-            placeholder="Total (2.5)"
-            className="w-24 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
-          />
-        )}
         <input
           value={odds}
           onChange={(e) => setOdds(e.target.value)}
           placeholder="Odds (-150 / 1.67 / 60%)"
-          className="w-24 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
+          className="w-40 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
         />
         <input
           value={stake}
