@@ -113,7 +113,16 @@ export function QuickBet({
   const isStat = statMarkets.includes(betType);
   const statRows = isStat ? propList.filter((p) => p.market === betType) : [];
   const statIsOU = statRows.some((p) => p.ou_side !== null);
-  const statFighterScoped = statRows.some((p) => p.fighter !== null);
+  const statPlain = isStat && !statIsOU && !statRows.some((p) => p.round !== null);
+  // A market that mixes fighter outcomes with fight-level ones ("Fighter Wins
+  // Inside Distance": each fighter, plus "Goes to Decision") can't be picked
+  // with fighter buttons - the fight-level side would be unreachable. Every
+  // outcome becomes a chip instead; its text already says who it's on.
+  const statMixed =
+    statPlain &&
+    statRows.some((p) => p.fighter !== null) &&
+    statRows.some((p) => p.fighter === null);
+  const statFighterScoped = statRows.some((p) => p.fighter !== null) && !statMixed;
   const forSide = (rows: PropLine[], nm: string) =>
     rows.filter((p) => !p.fighter || sameFighter(p.fighter, nm));
   const sideStatRows = forSide(statRows, sideName);
@@ -129,9 +138,13 @@ export function QuickBet({
   // the outcome text itself is the pick
   const statMulti =
     isStat && !statIsOU && statRounds.length === 0 &&
-    sideStatRows.filter((p) => p.fighter).length > 1;
+    (statMixed ||
+      sideStatRows.filter((p) => p.fighter).length > 1 ||
+      (!statFighterScoped && statRows.filter((p) => p.outcome !== null).length > 1));
   const outcomeOpts = statMulti
-    ? sideStatRows.filter((p) => p.outcome !== null).map((p) => p.outcome as string)
+    ? (statMixed ? statRows : sideStatRows)
+        .filter((p) => p.outcome !== null)
+        .map((p) => p.outcome as string)
     : [];
 
   const needsSide = isStat ? statFighterScoped : betType !== "totals";
@@ -172,6 +185,7 @@ export function QuickBet({
       out
     );
     return hit ? hit.odds : null;
+    // (outcome-keyed lookups short-circuit inside matchPropLine)
   };
 
   // ---- board-derived option lists (only what actually exists) ----
@@ -329,8 +343,21 @@ export function QuickBet({
       setError(`Verified limit for this market is ${stakeCap}u - BetOnline's real limit.`);
       return;
     }
-    const name = sideName;
-    const fid = side === 1 ? fight.fighter1_id : fight.fighter2_id;
+    // on a mixed market the chosen OUTCOME decides the fighter, not the buttons
+    const mixedRow =
+      statMixed && outcomeSel !== null
+        ? statRows.find((p) => p.outcome === outcomeSel) ?? null
+        : null;
+    const mixedSide: 1 | 2 | null =
+      mixedRow && mixedRow.fighter
+        ? sameFighter(mixedRow.fighter, f1)
+          ? 1
+          : 2
+        : null;
+    const effSide: 1 | 2 = mixedSide ?? side;
+    const name = statMixed ? (mixedRow?.fighter ?? f1) : sideName;
+    const fid =
+      (statMixed ? effSide : side) === 1 ? fight.fighter1_id : fight.fighter2_id;
     const effectiveType = betType === "totals" ? ouSide : betType;
     const methodLabel =
       method === "ko_tko" ? "KO/TKO" : method === "submission" ? "Submission" : "Decision";
@@ -343,7 +370,10 @@ export function QuickBet({
       selection = `${ouSide === "over" ? "Over" : "Under"} ${ouLine} — ${f1} vs ${f2}`;
     else if (isStat) {
       const title = titleCase(betType);
-      if (statMulti) selection = outcomeSel as string; // BetOnline's exact outcome text
+      if (statMulti)
+        selection = statFighterScoped
+          ? (outcomeSel as string) // specials: BetOnline's exact outcome text
+          : `${outcomeSel} — ${title}`; // fight-level / mixed, e.g. "Goes to Decision — Fighter Wins Inside Distance"
       else if (statIsOU) {
         const who = statFighterScoped ? name : `${f1} vs ${f2}`;
         selection = `${who} ${ouSide === "over" ? "Over" : "Under"} ${ouLine} — ${title}`;
@@ -366,7 +396,10 @@ export function QuickBet({
       close_odds: null,
       clv: null,
       // for fight-level bets the fighter id is just a bout locator for the grader
-      fighter_id: needsSide ? fid : fight.fighter1_id ?? fight.fighter2_id,
+      fighter_id:
+        needsSide || (statMixed && mixedRow?.fighter)
+          ? fid
+          : fight.fighter1_id ?? fight.fighter2_id,
       bet_type: effectiveType,
       prop_method: needsMethod ? method : isStat && statIsOU ? ouSide : null,
       prop_round: needsRound ? roundSel : null,
