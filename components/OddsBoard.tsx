@@ -227,11 +227,12 @@ function PropsPanel({
   // ou_line - always rebuild O/U labels from the data so the number shows.
   // Matchup rows that carry a point (Point Spread's +/-5.5) get it appended.
   const rowLabel = (p: PropRow) => {
-    if (p.ou_side)
-      return `${p.ou_side === "over" ? "Over" : "Under"}${p.ou_line !== null ? ` ${p.ou_line}` : ""}`;
+    // a zero line is a placeholder from a stale capture, never a real total
+    const ln = p.ou_line !== null && p.ou_line !== 0 ? p.ou_line : null;
+    if (p.ou_side) return `${p.ou_side === "over" ? "Over" : "Under"}${ln !== null ? ` ${ln}` : ""}`;
     const base = p.outcome ?? fallbackLabel(p);
-    if (p.ou_line !== null && !String(base).includes(String(p.ou_line)))
-      return `${base} ${p.ou_line > 0 ? "+" : ""}${p.ou_line}`;
+    if (ln !== null && !String(base).includes(String(ln)))
+      return `${base} ${ln > 0 ? "+" : ""}${ln}`;
     return base;
   };
   type Sec = { title: string; rs: PropRow[] };
