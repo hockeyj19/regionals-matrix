@@ -87,6 +87,10 @@ const CORE_MARKETS = new Set(["method", "round", "method_round", "total"]);
 // and the bet slip present markets in this sequence, so the board reads the
 // way the book does. Anything new BetOnline ships lands after these.
 const MARKET_ORDER: string[] = [
+  // BetOnline leads with the fight-titled specials block, and carries the
+  // game total up with the main lines - so both sit at the top here.
+  "specials",
+  "total",
   "goes_the_distance",
   "method",
   "round",
@@ -104,8 +108,6 @@ const MARKET_ORDER: string[] = [
   "total_takedowns",
   "scorecard_winner_or_finish",
   "fight_to_start",
-  "total",
-  "specials",
 ];
 
 export function marketRank(mk: string): number {
@@ -221,14 +223,39 @@ function PropsPanel({
     if (p.round !== null) bits.push(`R${p.round}`);
     return bits.join(" ") || "—";
   };
+  // BetOnline serves bare "Over"/"Under" outcome text with the line living in
+  // ou_line - always rebuild O/U labels from the data so the number shows.
+  // Matchup rows that carry a point (Point Spread's +/-5.5) get it appended.
+  const rowLabel = (p: PropRow) => {
+    if (p.ou_side)
+      return `${p.ou_side === "over" ? "Over" : "Under"}${p.ou_line !== null ? ` ${p.ou_line}` : ""}`;
+    const base = p.outcome ?? fallbackLabel(p);
+    if (p.ou_line !== null && !String(base).includes(String(p.ou_line)))
+      return `${base} ${p.ou_line > 0 ? "+" : ""}${p.ou_line}`;
+    return base;
+  };
   type Sec = { title: string; rs: PropRow[] };
   const secs: Sec[] = [];
+  // BetOnline's own within-group order: Over before Under and Yes before No
+  // (whatever the price), everything else favorites-first.
+  const yesNoRank = (p: PropRow) => {
+    const o = (p.outcome ?? "").trim().toLowerCase();
+    return o === "yes" ? 0 : o === "no" ? 1 : -1;
+  };
+  const rowSort = (a: PropRow, b: PropRow) => {
+    if (a.ou_side && b.ou_side) {
+      const la = a.ou_line ?? 0;
+      const lb = b.ou_line ?? 0;
+      if (la !== lb) return la - lb;
+      return a.ou_side === "over" ? -1 : 1;
+    }
+    const ra = yesNoRank(a);
+    const rb = yesNoRank(b);
+    if (ra >= 0 && rb >= 0 && ra !== rb) return ra - rb;
+    return impliedProb(b.odds) - impliedProb(a.odds);
+  };
   const add = (title: string, rs: PropRow[]) => {
-    if (rs.length)
-      secs.push({
-        title,
-        rs: rs.slice().sort((a, b) => impliedProb(b.odds) - impliedProb(a.odds)),
-      });
+    if (rs.length) secs.push({ title, rs: rs.slice().sort(rowSort) });
   };
   const CORE_TITLES: Record<string, string> = {
     method: "Method of Victory",
@@ -274,7 +301,7 @@ function PropsPanel({
             {sec.rs.map((p, i) => (
               <div key={i} className="flex items-center justify-between gap-2 py-0.5">
                 <span className="text-[11px] text-neutral-300 truncate">
-                  {p.outcome ?? fallbackLabel(p)}
+                  {rowLabel(p)}
                 </span>
                 <span className="flex items-center gap-1 shrink-0">
                   {showPct && (
