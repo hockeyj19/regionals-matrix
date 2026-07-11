@@ -221,7 +221,7 @@ function PropsPanel({
     <div className="mt-2 rounded-lg border border-neutral-800 overflow-hidden">
       {secs.map((sec) => (
         <div key={sec.title}>
-          <div className="bg-neutral-900/80 px-2 py-1 text-[11px] font-semibold text-neutral-300 border-b border-neutral-800">
+          <div className="bg-neutral-900/80 px-2 py-1 text-[11px] font-bold text-neutral-100 border-b border-neutral-800">
             {sec.title}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-0.5 px-2 py-1.5">
