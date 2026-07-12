@@ -24,7 +24,7 @@ export default async function OgImage({
   const p = await getPublicProfile(username);
 
   const record = p ? `${p.wins}-${p.losses}-${p.pushes}` : "—";
-  const units = p ? `${p.units > 0 ? "+" : ""}${fmtUnits(p.units)}u` : "—";
+  const units = p ? fmtUnits(p.units) : "—";
   const roi = p && p.roi !== null ? `${p.roi >= 0 ? "+" : ""}${p.roi.toFixed(1)}%` : "—";
   const name = p ? p.username : "Tape Notes";
   const good = !p || p.units >= 0;
