@@ -24,7 +24,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { username } = await params;
   const p = await getPublicProfile(username);
   if (!p) return { title: "Not found — Tape Notes" };
-  const bits = [recordLine(p), `${fmtUnits(p.units)}u`];
+  const bits = [recordLine(p), fmtUnits(p.units)];
   if (p.roi !== null) bits.push(`${p.roi >= 0 ? "+" : ""}${p.roi.toFixed(1)}% ROI`);
   const desc =
     p.settled > 0
@@ -94,10 +94,7 @@ export default async function PublicProfilePage({ params }: Props) {
         <div className="shrink-0 text-right">
           <p className={`text-xs font-medium ${tone}`}>{b.result}</p>
           {b.result !== "pending" && b.result !== "push" && (
-            <p className={`text-[11px] tabular-nums ${tone}`}>
-              {profit > 0 ? "+" : ""}
-              {fmtUnits(profit)}u
-            </p>
+            <p className={`text-[11px] tabular-nums ${tone}`}>{fmtUnits(profit)}</p>
           )}
         </div>
       </li>
@@ -135,7 +132,7 @@ export default async function PublicProfilePage({ params }: Props) {
         {/* the record */}
         <section className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {stat("Record", recordLine(p))}
-          {stat("Units", `${p.units > 0 ? "+" : ""}${fmtUnits(p.units)}u`, unitTone)}
+          {stat("Units", fmtUnits(p.units), unitTone)}
           {stat(
             "ROI",
             p.roi === null ? "—" : `${p.roi >= 0 ? "+" : ""}${p.roi.toFixed(1)}%`,
