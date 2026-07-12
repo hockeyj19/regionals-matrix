@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MMA Matrix (beta)",
-  description: "Verified MMA betting records, scouting notes, and handicapping tools",
+  title: "Tape Notes",
+  description: "Verified MMA picks, tape notes, and the sharp board",
 };
 
 export const viewport: Viewport = {

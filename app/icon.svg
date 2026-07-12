@@ -1,0 +1,24 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Tape Notes">
+  <title>Tape Notes</title>
+  <rect width="512" height="512" rx="116" fill="#0a0a0a"/>
+  <rect x="5" y="5" width="502" height="502" rx="111" fill="none"
+        stroke="#10b981" stroke-opacity="0.30" stroke-width="6"/>
+
+  <!-- A strip of ticker tape, running uphill. The line printing on it dips,
+       then resolves upward - a price chart and a checkmark are the same
+       gesture. Reading the tape, and verifying it, in one shape. -->
+  <g transform="rotate(-13 256 256)">
+    <rect x="40" y="180" width="416" height="152" rx="6" fill="#10b981"/>
+    <g fill="#0a0a0a">
+      <circle cx="76"  cy="180" r="12"/><circle cx="144" cy="180" r="12"/>
+      <circle cx="212" cy="180" r="12"/><circle cx="280" cy="180" r="12"/>
+      <circle cx="348" cy="180" r="12"/><circle cx="416" cy="180" r="12"/>
+      <circle cx="76"  cy="332" r="12"/><circle cx="144" cy="332" r="12"/>
+      <circle cx="212" cy="332" r="12"/><circle cx="280" cy="332" r="12"/>
+      <circle cx="348" cy="332" r="12"/><circle cx="416" cy="332" r="12"/>
+    </g>
+    <path d="M104 238 L186 300 L410 212"
+          fill="none" stroke="#0a0a0a" stroke-width="34"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

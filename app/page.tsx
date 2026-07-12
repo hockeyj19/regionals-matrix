@@ -111,7 +111,7 @@ export default function Home() {
       <main className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center p-4">
         <div className="w-full max-w-sm space-y-4">
           <h1 className="text-2xl font-bold text-center">
-            MMA Matrix <span className="text-emerald-400 text-sm align-middle">beta</span>
+            Tape Notes <span className="text-emerald-400 text-sm align-middle">beta</span>
           </h1>
           <p className="text-center text-neutral-400 text-sm">
             {mode === "signin" ? "Sign in to your account" : "Create an account"}
