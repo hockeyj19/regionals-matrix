@@ -5,8 +5,14 @@ import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import { Matrix } from "@/components/Matrix";
 
-// TODO: flip to https://mma-matrix-beta.vercel.app after the Vercel project rename
-const SITE_URL = "https://regionals-matrix.vercel.app";
+// Where password-reset links come back to. Derived from the browser at runtime,
+// so it is always whatever URL the app is actually being served from - rename the
+// Vercel project as often as you like and this never needs touching again. The
+// literal is only the server-render fallback (auth all happens in the browser).
+const SITE_URL =
+  typeof window !== "undefined"
+    ? window.location.origin
+    : "https://tape-notes.vercel.app";
 
 export default function Home() {
   const [user, setUser] = useState<User | null>(null);
