@@ -72,11 +72,25 @@ export function Profile({
   >([]);
   const [modalLoading, setModalLoading] = useState(false);
   const [nowTs] = useState(() => Date.now()); // frozen per mount, keeps render pure
+  const [copied, setCopied] = useState(false);
   const [oddsFmt, setOddsFmt] = useState<OddsMode>("american");
   useEffect(() => setOddsFmt(getOddsMode()), []);
   function pickOddsFmt(m: OddsMode) {
     setOddsMode(m);
     setOddsFmt(m);
+  }
+
+  // A record is only worth keeping if it can travel. /profile/<name> is readable by
+  // anyone - no account, no login - so this link IS the proof.
+  async function shareProfile(name: string) {
+    const url = `${window.location.origin}/profile/${name}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      window.prompt("Copy this link:", url); // clipboard blocked - hand it over anyway
+    }
   }
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -382,6 +396,15 @@ export function Profile({
                   </>
                 )}
               </div>
+              {shown && (
+                <button
+                  onClick={() => shareProfile(shown)}
+                  title="Copy this profile's public link - anyone can open it, no account needed"
+                  className="rounded-md border border-sky-500/50 px-2 py-1 text-[11px] text-sky-300 hover:bg-sky-500/10"
+                >
+                  {copied ? "link copied" : "share"}
+                </button>
+              )}
               {isSelf && (
                 <div className="flex items-center gap-2">
                   <div className="inline-flex rounded-lg border border-neutral-800 bg-neutral-900/40 p-0.5">
