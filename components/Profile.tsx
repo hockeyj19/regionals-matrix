@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } f
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import type { PublicBet } from "@/lib/types";
-import { betProfit, bookLabel, fmtDate, fmtOdds, getOddsMode, setOddsMode, type OddsMode } from "@/lib/format";
+import { betProfit, bookLabel, fmtDate, fmtOdds, getOddsMode, setOddsMode, sideBtn, type OddsMode } from "@/lib/format";
 
 /**
  * Public tipster profile. The public bets, badges, and per-window records all
@@ -52,6 +52,9 @@ export function Profile({
   const [selfName, setSelfName] = useState<string | null>(null);
   const [selfLoaded, setSelfLoaded] = useState(false);
   const [picks, setPicks] = useState<PublicBet[]>([]);
+  const [ownBets, setOwnBets] = useState<PublicBet[]>([]);   // self only: the FULL ledger
+  const [tableScope, setTableScope] = useState<"verified" | "all">("verified");
+  const [openWindow, setOpenWindow] = useState<string | null>(null);
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
   const [dir, setDir] = useState<DirRow[]>([]);
   const [myFollowing, setMyFollowing] = useState<Set<string>>(new Set());
@@ -289,8 +292,41 @@ export function Profile({
   }, [dir, shownRow]);
 
   // per-window performance from settled public bets, bucketed by fight date
+  // Your own profile can see your whole ledger; someone else's can only ever show
+  // what they made public - their private picks are theirs. That is the honest
+  // ceiling, and why the Verified/All switch exists only on your own page.
+  useEffect(() => {
+    if (!isSelf) {
+      setOwnBets([]);
+      return;
+    }
+    let alive = true;
+    (async () => {
+      const { data } = await supabase
+        .from("user_bets")
+        .select(
+          "id, selection, bet_type, event_context, event_date, event_start, published_at, odds, stake, book, result, placed_at, price_check"
+        )
+        .eq("user_id", user.id)
+        .order("placed_at", { ascending: false });
+      if (!alive) return;
+      const rows = (data ?? []) as unknown as Omit<PublicBet, "username">[];
+      setOwnBets(rows.map((b) => ({ ...b, username: shown ?? "" })));
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [isSelf, user.id, shown]);
+
+  // What the window table scores: your full ledger (sliced by Verified/All) on
+  // your own page, their public picks on anyone else's.
+  const history = useMemo(() => {
+    const src = isSelf ? ownBets : picks;
+    return isSelf && tableScope === "all" ? src : src.filter((b) => b.bet_type !== "other");
+  }, [isSelf, ownBets, picks, tableScope]);
+
   const periods = useMemo(() => {
-    const settled = picks.filter((b) => b.result !== "pending");
+    const settled = history.filter((b) => b.result !== "pending");
     const now = new Date(nowTs);
     const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     const D = 86400000;
@@ -303,18 +339,18 @@ export function Profile({
       return new Date(d.length === 10 ? `${d}T12:00:00` : d).getTime();
     };
     const bucket = (label: string, pred: (t: number) => boolean) => {
+      const bets = settled.filter((b) => pred(dateOf(b)));
       let w = 0;
       let l = 0;
       let p = 0;
       let u = 0;
-      settled.forEach((b) => {
-        if (!pred(dateOf(b))) return;
+      bets.forEach((b) => {
         if (b.result === "win") w += 1;
         else if (b.result === "loss") l += 1;
         else p += 1;
         u += betProfit(b);
       });
-      return { label, w, l, p, units: u };
+      return { label, w, l, p, units: u, bets };
     };
     return [
       bucket("Today", (t) => t >= dayStart),
@@ -323,7 +359,7 @@ export function Profile({
       bucket("Month", (t) => t >= mStart),
       bucket("All-Time", () => true),
     ];
-  }, [picks, nowTs]);
+  }, [history, nowTs]);
 
   const joinDate = shownJoin ?? (isSelf ? user.created_at ?? null : null);
   // own count is computed live; another user's comes from the public aggregate
@@ -559,41 +595,29 @@ export function Profile({
                 </div>
               </div>
 
-              {/* Block 3 — public bets */}
+              {/* Block 3 — the record, sliced by window. Tap a row to see the picks. */}
               <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4">
-                <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wide mb-2">
-                  Public Bets
-                </p>
-                {picks.length === 0 ? (
-                  <p className="text-sm text-neutral-500">No public bets yet.</p>
-                ) : (
-                  <div className="space-y-1">
-                    {picks.map((b) => (
-                      <div key={b.id} className="border-b border-neutral-900 pb-1 last:border-0">
-                        <div className="flex items-center justify-between gap-2 text-xs">
-                          <span className="truncate">
-                            {b.selection}{" "}
-                            <span className="text-emerald-400">
-                              {fmtOdds(b.odds)} · {Number(b.stake)}u
-                            </span>
-                          </span>
-                          {resultTag(b)}
-                        </div>
-                        <p className="text-[11px] text-neutral-600 truncate">
-                          {b.book ? `${bookLabel(b.book)} · ` : ""}
-                          {b.event_context ? `${b.event_context} · ` : ""}
-                          {fmtDate(b.event_date ?? b.placed_at)}
-                        </p>
-                      </div>
+                {isSelf && (
+                  <div className="mb-2 flex items-center gap-1">
+                    {(["verified", "all"] as const).map((sc) => (
+                      <button
+                        key={sc}
+                        onClick={() => setTableScope(sc)}
+                        title={
+                          sc === "verified"
+                            ? "Board-priced picks, auto-graded from results"
+                            : "Everything, including bets you logged and graded yourself"
+                        }
+                        className={sideBtn(tableScope === sc)}
+                      >
+                        {sc === "verified" ? "Verified" : "All"}
+                      </button>
                     ))}
                   </div>
                 )}
-              </div>
-
-              {/* Block 4 — per-window performance */}
-              <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4">
                 {periods.map((pr, i) => {
                   const n = pr.w + pr.l + pr.p;
+                  const isOpen = openWindow === pr.label;
                   const box =
                     n === 0 || pr.units === 0
                       ? "border-neutral-700 bg-neutral-800 text-neutral-400"
@@ -603,21 +627,77 @@ export function Profile({
                   return (
                     <div
                       key={pr.label}
-                      className={`flex items-center justify-between py-2.5 ${
-                        i < periods.length - 1 ? "border-b border-neutral-800/70" : ""
-                      }`}
+                      className={i < periods.length - 1 ? "border-b border-neutral-800/70" : ""}
                     >
-                      <div>
-                        <p className="text-sm text-white">{pr.label}</p>
-                        <p className="text-xs text-neutral-500">
-                          {pr.w}-{pr.l}-{pr.p}
-                        </p>
-                      </div>
-                      <span
-                        className={`rounded-lg border px-2.5 py-1 text-sm font-semibold tabular-nums ${box}`}
+                      <button
+                        onClick={() => setOpenWindow(isOpen ? null : pr.label)}
+                        title={`Show the picks that settled in this window`}
+                        className="flex w-full items-center justify-between py-2.5 text-left hover:bg-neutral-900/50"
                       >
-                        {fmtU(pr.units)}
-                      </span>
+                        <div>
+                          <p className="text-sm text-white">{pr.label}</p>
+                          <p className="text-xs text-neutral-500">
+                            {pr.w}-{pr.l}-{pr.p}
+                          </p>
+                        </div>
+                        <span className="flex items-center gap-2">
+                          <span
+                            className={`rounded-lg border px-2.5 py-1 text-sm font-semibold tabular-nums ${box}`}
+                          >
+                            {fmtU(pr.units)}
+                          </span>
+                          <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            className={`shrink-0 text-neutral-600 transition-transform ${
+                              isOpen ? "rotate-180" : ""
+                            }`}
+                          >
+                            <path
+                              d="M6 9l6 6 6-6"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </span>
+                      </button>
+                      {isOpen && (
+                        <div className="pb-2">
+                          {pr.bets.length === 0 ? (
+                            <p className="pb-1 text-xs text-neutral-500">
+                              Nothing settled in this window.
+                            </p>
+                          ) : (
+                            <div className="space-y-1">
+                              {pr.bets.map((b) => (
+                                <div
+                                  key={b.id}
+                                  className="border-b border-neutral-900 pb-1 last:border-0"
+                                >
+                                  <div className="flex items-center justify-between gap-2 text-xs">
+                                    <span className="truncate">
+                                      {b.selection}{" "}
+                                      <span className="text-emerald-400">
+                                        {fmtOdds(b.odds)} · {Number(b.stake)}u
+                                      </span>
+                                    </span>
+                                    {resultTag(b)}
+                                  </div>
+                                  <p className="text-[11px] text-neutral-600 truncate">
+                                    {b.book ? `${bookLabel(b.book)} · ` : ""}
+                                    {b.event_context ? `${b.event_context} · ` : ""}
+                                    {fmtDate(b.event_date ?? b.placed_at)}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
