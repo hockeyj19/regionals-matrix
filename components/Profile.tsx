@@ -396,15 +396,17 @@ export function Profile({
                   </>
                 )}
               </div>
-              {shown && (
-                <button
-                  onClick={() => shareProfile(shown)}
-                  title="Copy this profile's public link - anyone can open it, no account needed"
-                  className="rounded-md border border-sky-500/50 px-2 py-1 text-[11px] text-sky-300 hover:bg-sky-500/10"
-                >
-                  {copied ? "link copied" : "share"}
-                </button>
-              )}
+              {/* Share sits top-right of the card; the odds toggle tucks in beneath it */}
+              <div className="ml-auto flex flex-col items-end gap-2 self-start">
+                {shown && (
+                  <button
+                    onClick={() => shareProfile(shown)}
+                    title="Copy this profile's public link - anyone can open it, no account needed"
+                    className="rounded-md border border-sky-500/50 px-2 py-1 text-[11px] text-sky-300 hover:bg-sky-500/10"
+                  >
+                    {copied ? "Link copied" : "Share"}
+                  </button>
+                )}
               {isSelf && (
                 <div className="flex items-center gap-2">
                   <div className="inline-flex rounded-lg border border-neutral-800 bg-neutral-900/40 p-0.5">
@@ -450,6 +452,7 @@ export function Profile({
                   )}
                 </div>
               )}
+              </div>
             </div>
             <h2 className="mt-3 text-2xl font-bold text-white truncate">
               {shown}
