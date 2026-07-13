@@ -63,7 +63,6 @@ export function Profile({
   const [bio, setBio] = useState("");
   const [notesCount, setNotesCount] = useState(0);
   const [noteCounts, setNoteCounts] = useState<Record<string, number>>({});
-  const [notifOn, setNotifOn] = useState(false);
   const [search, setSearch] = useState("");
   const [searchMsg, setSearchMsg] = useState("");
   const [modal, setModal] = useState<null | "followers" | "following">(null);
@@ -199,21 +198,25 @@ export function Profile({
     }
   }
 
-  function findUser() {
+  // Live matches from the directory (every user with a profile, not just those
+  // with public picks - otherwise someone who hasn't shared a pick is unfindable).
+  const matches = (() => {
     const q = search.trim().toLowerCase();
-    if (!q) return;
-    // search the directory (every user with a profile), not just bettors with
-    // public picks - otherwise a user who hasn't shared a pick can't be found
-    const match =
-      dir.find((d) => d.username.toLowerCase() === q) ??
-      dir.find((d) => d.username.toLowerCase().includes(q));
-    if (match) {
-      setSearchMsg("");
-      setSearch("");
-      onViewUser(match.username);
-    } else {
-      setSearchMsg("No user by that name.");
-    }
+    if (!q) return [];
+    const hit = dir.filter((d) => d.username.toLowerCase().includes(q));
+    hit.sort((a, b) => {
+      // exact first, then prefix, then the rest - alphabetical within each
+      const rank = (n: string) =>
+        n.toLowerCase() === q ? 0 : n.toLowerCase().startsWith(q) ? 1 : 2;
+      return rank(a.username) - rank(b.username) || a.username.localeCompare(b.username);
+    });
+    return hit.slice(0, 6);
+  })();
+
+  function pickUser(name: string) {
+    setSearch("");
+    setSearchMsg("");
+    onViewUser(name);
   }
 
   // open the followers / following list for the shown user, mapped to usernames
@@ -428,16 +431,6 @@ export function Profile({
               )}
               {!isSelf && (
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() => setNotifOn((v) => !v)}
-                    className={`rounded-md border px-3 py-1.5 text-xs font-medium ${
-                      notifOn
-                        ? "border-emerald-700 bg-emerald-600/15 text-emerald-300"
-                        : "border-neutral-700 text-neutral-300 hover:bg-neutral-900"
-                    }`}
-                  >
-                    {notifOn ? "Notifications On" : "Turn on Notifications"}
-                  </button>
                   {shownRow && (
                     <button
                       onClick={() => toggleFollow(shownRow.user_id)}
@@ -503,20 +496,46 @@ export function Profile({
                       <span className="text-neutral-400 group-hover:text-emerald-400">Following</span>
                     </button>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="relative">
                     <input
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && findUser()}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && matches[0]) pickUser(matches[0].username);
+                        if (e.key === "Escape") setSearch("");
+                      }}
                       placeholder="Find a user"
-                      className="w-36 rounded-md bg-neutral-900 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
+                      className="w-40 rounded-md bg-neutral-900 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
                     />
-                    <button
-                      onClick={findUser}
-                      className="rounded-md border border-neutral-700 px-2.5 py-1 text-xs text-neutral-400 hover:bg-neutral-900"
-                    >
-                      View
-                    </button>
+                    {matches.length > 0 && (
+                      <ul className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-md border border-neutral-700 bg-neutral-900 shadow-xl">
+                        {matches.map((m) => (
+                          <li key={m.user_id}>
+                            <button
+                              onClick={() => pickUser(m.username)}
+                              className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs text-neutral-200 hover:bg-neutral-800"
+                            >
+                              {m.avatar_url ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={m.avatar_url}
+                                  alt=""
+                                  className="h-5 w-5 rounded-full object-cover"
+                                />
+                              ) : (
+                                <span className="h-5 w-5 rounded-full border border-neutral-700 bg-neutral-800" />
+                              )}
+                              <span className="truncate">{m.username}</span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {search.trim() && matches.length === 0 && (
+                      <p className="absolute right-0 mt-1 text-[11px] text-neutral-500">
+                        No user by that name.
+                      </p>
+                    )}
                   </div>
                 </div>
                 {searchMsg && <p className="text-xs text-amber-400">{searchMsg}</p>}

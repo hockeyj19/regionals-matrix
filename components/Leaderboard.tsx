@@ -4,8 +4,18 @@ import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import type { LeaderboardRow, PublicBet } from "@/lib/types";
-import { SHARP_BOOKS, SOFT_BOOKS, bookLabel, bookTier, fmtDate, fmtOdds, fmtUnits, sideBtn } from "@/lib/format";
-import { FlagIcon } from "@/components/icons";
+import {
+  SHARP_BOOKS,
+  SOFT_BOOKS,
+  americanToImplied,
+  bookLabel,
+  bookTier,
+  fmtDate,
+  fmtOdds,
+  fmtUnits,
+  percentToAmerican,
+  sideBtn,
+} from "@/lib/format";
 import { InfoButton, LEADERBOARD_README, ReadMePanel } from "@/components/ReadMe";
 
 const MIN_BETS_TO_RANK = 5;
@@ -39,12 +49,11 @@ export function Leaderboard({
   const [marketFilter, setMarketFilter] = useState<"all" | "ml" | "prop">("all");
   const [openUser, setOpenUser] = useState<string | null>(null);
   const [userBets, setUserBets] = useState<Record<string, PublicBet[]>>({});
-  const [reporting, setReporting] = useState<string | null>(null);
-  const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(true);
   const [showInfo, setShowInfo] = useState(false);
   const [allPublic, setAllPublic] = useState<PublicBet[]>([]);
   const [collapsedPublic, setCollapsedPublic] = useState<Set<string>>(new Set());
+  const [consensus, setConsensus] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -101,18 +110,6 @@ export function Leaderboard({
         .order("placed_at", { ascending: false });
       setUserBets((prev) => ({ ...prev, [u]: data ?? [] }));
     }
-  }
-
-  async function submitReport(betId: string) {
-    const why = reason.trim();
-    if (!why) return;
-    await supabase.from("bet_reports").insert({
-      bet_id: betId,
-      reporter: user.id,
-      reason: why,
-    });
-    setReporting(null);
-    setReason("");
   }
 
   // aggregate the tier/org grouped rows into the selected board
@@ -182,6 +179,51 @@ export function Leaderboard({
   sorted.forEach((r, i) => {
     rankIndex[r.username] = i;
   });
+  // Consensus: every public pick grouped by what was actually taken. Prices are
+  // averaged as implied PROBABILITY, not raw American odds - averaging -200 and
+  // +200 arithmetically gives 0, which is nonsense. Groups with open picks float
+  // to the top: what the room is on right now is the useful part.
+  type Cons = {
+    key: string;
+    selection: string;
+    event: string;
+    n: number;
+    open: number;
+    probSum: number;
+    units: number;
+    users: string[];
+  };
+  const consMap: Record<string, Cons> = {};
+  for (const b of allPublic) {
+    const key = `${b.event_context ?? ""}||${b.selection}`;
+    const c =
+      consMap[key] ??
+      (consMap[key] = {
+        key,
+        selection: b.selection,
+        event: b.event_context ?? "",
+        n: 0,
+        open: 0,
+        probSum: 0,
+        units: 0,
+        users: [],
+      });
+    c.n += 1;
+    if (b.result === "pending") c.open += 1;
+    c.probSum += americanToImplied(b.odds);
+    c.units += Number(b.stake) || 0;
+    if (!c.users.includes(b.username)) c.users.push(b.username);
+  }
+  const consensusRows = Object.values(consMap)
+    .map((c) => ({ ...c, avgOdds: percentToAmerican((c.probSum / c.n) * 100) }))
+    .sort(
+      (a, b) =>
+        (b.open > 0 ? 1 : 0) - (a.open > 0 ? 1 : 0) ||
+        b.n - a.n ||
+        b.units - a.units ||
+        a.selection.localeCompare(b.selection)
+    );
+
   const publicByUser: Record<string, PublicBet[]> = {};
   for (const b of allPublic) {
     if (bookTier(b.book) !== tier) continue;
@@ -233,16 +275,6 @@ export function Leaderboard({
                     >
                       {b.result}
                     </span>
-                    <button
-                      onClick={() => {
-                        setReporting(reporting === b.id ? null : b.id);
-                        setReason("");
-                      }}
-                      title="Report this bet (odds not available, etc.)"
-                      className="text-neutral-600 hover:text-amber-400 p-0.5"
-                    >
-                      <FlagIcon />
-                    </button>
                   </span>
                 </div>
                 <p className="text-[11px] text-neutral-600 truncate">
@@ -264,22 +296,6 @@ export function Leaderboard({
                       {Number(b.clv).toFixed(2)}
                     </span>
                   </p>
-                )}
-                {reporting === b.id && (
-                  <div className="flex gap-2 mt-1">
-                    <input
-                      value={reason}
-                      onChange={(e) => setReason(e.target.value)}
-                      placeholder="Why? (e.g. that price was never available)"
-                      className="flex-1 min-w-0 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-amber-500"
-                    />
-                    <button
-                      onClick={() => submitReport(b.id)}
-                      className="rounded-md border border-amber-700 text-amber-400 px-2 py-1 text-xs hover:bg-neutral-900"
-                    >
-                      Report
-                    </button>
-                  </div>
                 )}
               </div>);
   }
@@ -389,6 +405,13 @@ export function Leaderboard({
           </button>
           <button onClick={() => setTier("sharp")} className={sideBtn(tier === "sharp")}>
             Sharp books
+          </button>
+          <button
+            onClick={() => setConsensus((v) => !v)}
+            title="Group every public pick by selection - what is the group actually on?"
+            className={sideBtn(consensus)}
+          >
+            Consensus
           </button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -538,7 +561,45 @@ export function Leaderboard({
         </div>
       )}
 
-      {!loading && publicUsers.length > 0 && (
+      {!loading && consensus && consensusRows.length > 0 && (
+        <div className="space-y-2 pt-2">
+          <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
+            Consensus — what the group is on
+          </p>
+          {consensusRows.map((c) => (
+            <div
+              key={c.key}
+              className="rounded-xl border border-neutral-800 bg-neutral-900/40 px-3 py-2"
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="text-sm font-medium truncate">{c.selection}</p>
+                <span className="shrink-0 text-xs font-semibold text-emerald-400">
+                  {c.n} pick{c.n === 1 ? "" : "s"}
+                </span>
+              </div>
+              <p className="text-[11px] text-neutral-500 truncate">
+                {c.event ? `${c.event} · ` : ""}
+                avg {fmtOdds(c.avgOdds)} · {fmtUnits(c.units).replace("+", "")} staked
+                {c.open > 0 && <span className="text-sky-300"> · {c.open} open</span>}
+              </p>
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {c.users.map((u) => (
+                  <button
+                    key={u}
+                    onClick={() => onOpenProfile(u)}
+                    className="rounded border border-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-400 hover:text-emerald-400 hover:border-neutral-700"
+                  >
+                    {u}
+                    {u === username && " (you)"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!loading && !consensus && publicUsers.length > 0 && (
         <div className="space-y-2 pt-2">
           <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
             All public picks
