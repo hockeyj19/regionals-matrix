@@ -53,7 +53,7 @@ export function Leaderboard({
   const [showInfo, setShowInfo] = useState(false);
   const [allPublic, setAllPublic] = useState<PublicBet[]>([]);
   const [collapsedPublic, setCollapsedPublic] = useState<Set<string>>(new Set());
-  const [consensus, setConsensus] = useState(false);
+  const [picksView, setPicksView] = useState<"public" | "consensus" | "results">("public");
 
   useEffect(() => {
     let alive = true;
@@ -156,7 +156,6 @@ export function Leaderboard({
       : avgClv(b) - avgClv(a)
   );
   const ranked = sorted.filter((r) => r.bets >= MIN_BETS_TO_RANK);
-  const building = sorted.filter((r) => r.bets < MIN_BETS_TO_RANK);
 
   // your settled verified picks across BOTH boards - fuel for the rank tracker
   const selfSettled = username
@@ -193,6 +192,17 @@ export function Leaderboard({
     units: number;
     users: string[];
   };
+  // Public = what the room is on right now. Results = the last 14 days, graded.
+  const DAY_MS = 86400000;
+  const viewPicks =
+    picksView === "results"
+      ? allPublic.filter(
+          (b) =>
+            b.result !== "pending" &&
+            Date.now() - new Date(b.event_date ?? b.placed_at).getTime() <= 14 * DAY_MS
+        )
+      : allPublic.filter((b) => b.result === "pending");
+
   const consMap: Record<string, Cons> = {};
   for (const b of allPublic) {
     const key = `${b.event_context ?? ""}||${b.selection}`;
@@ -224,8 +234,8 @@ export function Leaderboard({
         a.selection.localeCompare(b.selection)
     );
 
-  const publicByUser: Record<string, PublicBet[]> = {};
-  for (const b of allPublic) {
+  const publicByUser: Record<string, PublicBet[]> = {};  // of the chosen view
+  for (const b of viewPicks) {
     if (bookTier(b.book) !== tier) continue;
     if (ufcOnly && (b.event_context ?? "").split(" — ")[0] !== "UFC") continue;
     if (marketFilter !== "all" && betMarket(b.bet_type) !== marketFilter) continue;
@@ -406,13 +416,6 @@ export function Leaderboard({
           <button onClick={() => setTier("sharp")} className={sideBtn(tier === "sharp")}>
             Sharp books
           </button>
-          <button
-            onClick={() => setConsensus((v) => !v)}
-            title="Group every public pick by selection - what is the group actually on?"
-            className={sideBtn(consensus)}
-          >
-            Consensus
-          </button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex gap-1">
@@ -552,16 +555,35 @@ export function Leaderboard({
         </div>
       )}
 
-      {building.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-xs text-neutral-600 uppercase tracking-wide">
-            Building a record (under {MIN_BETS_TO_RANK} bets)
-          </p>
-          {building.map((r) => renderRow(r, null))}
+      {!loading && (allPublic.length > 0 || consensusRows.length > 0) && (
+        <div className="flex items-center gap-1 pt-2">
+          {(
+            [
+              ["public", "Public"],
+              ["consensus", "Consensus"],
+              ["results", "Results"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setPicksView(key)}
+              className={sideBtn(picksView === key)}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       )}
 
-      {!loading && consensus && consensusRows.length > 0 && (
+      {!loading && picksView !== "consensus" && publicUsers.length === 0 && (
+        <p className="pt-1 text-xs text-neutral-500">
+          {picksView === "results"
+            ? "No picks have graded in the last 14 days."
+            : "No open public picks right now."}
+        </p>
+      )}
+
+      {!loading && picksView === "consensus" && consensusRows.length > 0 && (
         <div className="space-y-2 pt-2">
           <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
             Consensus — what the group is on
@@ -599,11 +621,8 @@ export function Leaderboard({
         </div>
       )}
 
-      {!loading && !consensus && publicUsers.length > 0 && (
+      {!loading && picksView !== "consensus" && publicUsers.length > 0 && (
         <div className="space-y-2 pt-2">
-          <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">
-            All public picks
-          </p>
           {publicUsers.map((u) => {
             const collapsed = collapsedPublic.has(u);
             const rk = rankIndex[u];

@@ -282,7 +282,11 @@ export function BetTracker({
         </div>
       )}
 
-      {bets.map((b) => {
+      {/* Live picks only - what's public, and what's still yours alone. Graded
+          history now lives on the Profile, where it can be sliced by window. */}
+      {bets
+        .filter((b) => b.result === "pending")
+        .map((b) => {
         const p = betProfit(b);
         const verified = b.bet_type !== "other";
         const started = eventStarted(b.event_start);
