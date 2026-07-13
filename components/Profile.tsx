@@ -600,11 +600,11 @@ export function Profile({
                 </div>
               </div>
 
-              {/* Block 3 — open public picks */}
+              {/* Block 3 — public picks still pending */}
               {openPicks.length > 0 && (
                 <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4">
                   <p className="text-xs font-semibold text-sky-300 uppercase tracking-wide mb-2">
-                    Open Picks
+                    Public Picks
                   </p>
                   <div className="space-y-1">
                     {openPicks.map((b) => (
