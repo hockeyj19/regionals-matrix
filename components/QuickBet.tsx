@@ -78,7 +78,7 @@ export function QuickBet({
   eventDate: string | null;
   eventTime: string | null;
   eventSourceUrl: string | null;
-  onAdd: (bet: NewBet) => void;
+  onAdd: (bet: NewBet) => Promise<string | null>;
   embedded?: boolean;
 }) {
   const [open, setOpen] = useState(embedded);
@@ -393,7 +393,7 @@ export function QuickBet({
     // Trust marks are the server's to write: the insert trigger nulls any
     // price_check/market_* sent from here, and the morning scrape stamps the
     // verdict from the bot ledger at the server-stamped log time.
-    onAdd({
+    const failure = await onAdd({
       selection,
       event_context: eventLabel,
       event_date: eventDate,
@@ -418,6 +418,10 @@ export function QuickBet({
       odds: parsed.odds,
       stake: parsed.stake,
     });
+    if (failure) {
+      setError(failure); // the database refused - say exactly why, keep the form
+      return;
+    }
     setBoardLoaded(false);
     setBoard(null);
     setOpen(embedded);

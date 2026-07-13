@@ -367,13 +367,19 @@ export function Matrix({ user }: { user: User }) {
   }
 
   // log a bet (from a fight card or the Bets tab)
-  async function addBet(bet: NewBet) {
-    const { data: b } = await supabase
+  // Returns null on success, or the database's own words on failure. A bet that
+  // silently vanishes is worse than no bet at all: the user thinks they have a
+  // position they do not have.
+  async function addBet(bet: NewBet): Promise<string | null> {
+    const { data: b, error } = await supabase
       .from("user_bets")
       .insert({ user_id: user.id, ...bet })
       .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, settled_by, delete_requested_at, published_at, book, price_check, market_best, market_book, market_checked_at, close_odds, clv")
       .single();
-    if (b) setBets((prev) => [b, ...prev]);
+    if (error) return error.message;
+    if (!b) return "The bet did not save - please try again.";
+    setBets((prev) => [b, ...prev]);
+    return null;
   }
 
   // settle / unsettle a bet. A DB trigger enforces the same rules server-side:

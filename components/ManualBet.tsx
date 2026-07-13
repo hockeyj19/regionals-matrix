@@ -31,7 +31,7 @@ export function ManualBet({
   eventDate: string | null;
   eventTime: string | null;
   eventSourceUrl: string | null;
-  onAdd: (bet: NewBet) => void;
+  onAdd: (bet: NewBet) => Promise<string | null>;
 }) {
   const [selection, setSelection] = useState("");
   const [book, setBook] = useState(SOFT_BOOKS[0]);
@@ -39,7 +39,7 @@ export function ManualBet({
   const [stake, setStake] = useState("");
   const [error, setError] = useState("");
 
-  function submit() {
+  async function submit() {
     const sel = selection.trim().replace(/\s+/g, " ");
     if (!sel) {
       setError("Write the bet — anything you like, e.g. “McGregor by KO in R2”.");
@@ -58,7 +58,7 @@ export function ManualBet({
     // Unverified: own book, own price, hand-graded. bet_type "other" keeps it
     // out of the verified scope and the leaderboard; the market details live in
     // the selection text.
-    onAdd({
+    const failure = await onAdd({
       selection: sel,
       event_context: eventLabel,
       event_date: eventDate,
@@ -79,6 +79,10 @@ export function ManualBet({
       odds: parsed.odds,
       stake: parsed.stake,
     });
+    if (failure) {
+      setError(failure);
+      return;
+    }
     setSelection("");
     setOdds("");
     setStake("");

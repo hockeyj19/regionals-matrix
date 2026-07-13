@@ -21,7 +21,7 @@ export function BetTracker({
   bets: BetRow[];
   events: EventRow[];
   fights: FightRow[];
-  onAdd: (bet: NewBet) => void;
+  onAdd: (bet: NewBet) => Promise<string | null>;
   onSetResult: (id: string, result: string) => void;
   onDelete: (id: string) => void;
   onRequestDelete: (id: string, requested: boolean) => void;
