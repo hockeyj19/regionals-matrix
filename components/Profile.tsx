@@ -318,6 +318,11 @@ export function Profile({
     };
   }, [isSelf, user.id, shown]);
 
+  // Open picks, shown on every profile to everyone. Deliberately read from the
+  // PUBLIC view, never the private ledger: a pending pick that hasn't been
+  // published must never leak onto a page anyone can open.
+  const openPicks = useMemo(() => picks.filter((b) => b.result === "pending"), [picks]);
+
   // What the window table scores: your full ledger (sliced by Verified/All) on
   // your own page, their public picks on anyone else's.
   const history = useMemo(() => {
@@ -595,7 +600,36 @@ export function Profile({
                 </div>
               </div>
 
-              {/* Block 3 — the record, sliced by window. Tap a row to see the picks. */}
+              {/* Block 3 — open public picks */}
+              {openPicks.length > 0 && (
+                <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4">
+                  <p className="text-xs font-semibold text-sky-300 uppercase tracking-wide mb-2">
+                    Open Picks
+                  </p>
+                  <div className="space-y-1">
+                    {openPicks.map((b) => (
+                      <div key={b.id} className="border-b border-neutral-900 pb-1 last:border-0">
+                        <div className="flex items-center justify-between gap-2 text-xs">
+                          <span className="truncate">
+                            {b.selection}{" "}
+                            <span className="text-emerald-400">
+                              {fmtOdds(b.odds)} · {Number(b.stake)}u
+                            </span>
+                          </span>
+                          {resultTag(b)}
+                        </div>
+                        <p className="text-[11px] text-neutral-600 truncate">
+                          {b.book ? `${bookLabel(b.book)} · ` : ""}
+                          {b.event_context ? `${b.event_context} · ` : ""}
+                          {fmtDate(b.event_date ?? b.placed_at)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Block 4 — the record, sliced by window. Tap a row to see the picks. */}
               <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4">
                 {isSelf && (
                   <div className="mb-2 flex items-center gap-1">
