@@ -46,6 +46,7 @@ export function AdminPanel() {
   const [removals, setRemovals] = useState<RemovalRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -81,6 +82,20 @@ export function AdminPanel() {
     load();
   }
 
+  // Deleting someone's pick is irreversible, so it takes two clicks. RLS would
+  // never let an admin touch another user's row directly - this goes through a
+  // SECURITY DEFINER RPC that re-checks admin status server-side.
+  async function approveRemoval(betId: string) {
+    if (confirmDelete !== betId) {
+      setConfirmDelete(betId);
+      return;
+    }
+    const { error } = await supabase.rpc("admin_delete_bet", { p_bet_id: betId });
+    setMsg(error ? "Delete failed - are you admin?" : "");
+    setConfirmDelete(null);
+    load();
+  }
+
   async function clearRemoval(betId: string) {
     const { error } = await supabase.rpc("admin_clear_delete_request", { p_bet_id: betId });
     setMsg(error ? "Action failed - are you admin?" : "");
@@ -97,7 +112,7 @@ export function AdminPanel() {
         <div className="flex items-center justify-between gap-2">
           <p className="text-xs text-amber-400">
             {r.owner ?? "unknown"} requested removal
-            {preStart ? " (pre-start - auto-removes on the next scrape)" : " after start"}
+            {preStart ? " (pre-start)" : " (after start - this pick was already public)"}
           </p>
           <span className="text-[11px] text-neutral-600 shrink-0">
             {fmtDate(r.delete_requested_at)}
@@ -143,7 +158,21 @@ export function AdminPanel() {
             </button>
           )}
           <button
-            onClick={() => clearRemoval(r.bet_id)}
+            onClick={() => approveRemoval(r.bet_id)}
+            title="Permanently delete this bet"
+            className={`rounded-md border px-2 py-1 text-xs ${
+              confirmDelete === r.bet_id
+                ? "border-red-500 bg-red-600/25 text-red-200"
+                : "border-red-800 text-red-400 hover:bg-neutral-900"
+            }`}
+          >
+            {confirmDelete === r.bet_id ? "Click again to confirm" : "Approve (delete the bet)"}
+          </button>
+          <button
+            onClick={() => {
+              setConfirmDelete(null);
+              clearRemoval(r.bet_id);
+            }}
             className="rounded-md border border-neutral-700 text-neutral-400 px-2 py-1 text-xs hover:bg-neutral-900"
           >
             {preStart ? "Deny (keep the bet)" : "Clear request"}
