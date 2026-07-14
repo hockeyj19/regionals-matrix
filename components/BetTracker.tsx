@@ -24,10 +24,22 @@ export function BetTracker({
   onAdd: (bet: NewBet) => Promise<string | null>;
   onSetResult: (id: string, result: string) => void;
   onDelete: (id: string) => void;
-  onRequestDelete: (id: string, requested: boolean) => void;
+  onRequestDelete: (id: string, requested: boolean, reason?: string) => void;
   onPublish: (id: string) => void;
 }) {
   const [scope, setScope] = useState<"verified" | "all">("verified");
+  const [removalFor, setRemovalFor] = useState<string | null>(null);
+  const [removalReason, setRemovalReason] = useState("");
+
+  // A removal request without a reason gives the admin nothing to judge, so the
+  // reason IS the request - the button only opens the box.
+  function sendRemoval(id: string) {
+    const why = removalReason.trim();
+    if (!why) return;
+    onRequestDelete(id, true, why);
+    setRemovalFor(null);
+    setRemovalReason("");
+  }
   const [selEventId, setSelEventId] = useState("");
   const [selFightId, setSelFightId] = useState("");
   const [selEventId2, setSelEventId2] = useState("");
@@ -423,8 +435,11 @@ export function BetTracker({
                 )}
                 {verified && !b.delete_requested_at && (
                   <button
-                    onClick={() => onRequestDelete(b.id, true)}
-                    title="Ask for this bet's removal. Before the event starts it clears on the next scrape; after start an admin reviews it."
+                    onClick={() => {
+                      setRemovalFor(removalFor === b.id ? null : b.id);
+                      setRemovalReason("");
+                    }}
+                    title="Ask an admin to remove this bet - you'll be asked why"
                     className="rounded border border-neutral-700 px-1.5 py-0.5 text-[11px] text-neutral-500 hover:text-red-400 hover:bg-neutral-900"
                   >
                     request removal
@@ -438,6 +453,35 @@ export function BetTracker({
                   >
                     requested · cancel
                   </button>
+                )}
+                {removalFor === b.id && (
+                  <div className="mt-1 flex w-full gap-2">
+                    <input
+                      value={removalReason}
+                      onChange={(e) => setRemovalReason(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") sendRemoval(b.id);
+                        if (e.key === "Escape") setRemovalFor(null);
+                      }}
+                      autoFocus
+                      maxLength={160}
+                      placeholder="Why? (e.g. wrong fighter, fat-fingered the stake)"
+                      className="min-w-0 flex-1 rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs outline-none focus:border-red-500"
+                    />
+                    <button
+                      onClick={() => sendRemoval(b.id)}
+                      disabled={!removalReason.trim()}
+                      className="rounded-md border border-red-800 px-2 py-1 text-xs text-red-400 hover:bg-neutral-900 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Send
+                    </button>
+                    <button
+                      onClick={() => setRemovalFor(null)}
+                      className="rounded-md border border-neutral-700 px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-900"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 )}
                 {canDelete && (
                   <button

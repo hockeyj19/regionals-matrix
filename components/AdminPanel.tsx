@@ -17,6 +17,7 @@ type RemovalRequest = {
   event_start: string | null;
   placed_at: string;
   delete_requested_at: string;
+  delete_reason?: string | null;
   flagged: boolean;
 };
 
@@ -144,6 +145,12 @@ export function AdminPanel() {
           {r.event_context ? `${r.event_context} · ` : ""}
           placed {fmtDate(r.placed_at)}
         </p>
+        {r.delete_reason && (
+          <p className="rounded-md border border-neutral-800 bg-neutral-900/60 px-2 py-1 text-xs text-neutral-300">
+            <span className="text-neutral-500">Reason: </span>
+            {r.delete_reason}
+          </p>
+        )}
         <div className="flex flex-wrap gap-2">
           {!preStart && (
             <button

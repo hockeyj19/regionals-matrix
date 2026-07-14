@@ -72,7 +72,8 @@ export type BetRow = NewBet & {
   placed_at: string;
   grade_note: string | null;
   settled_by: string | null; // 'auto' (scraper) | 'user' | null - server-controlled
-  delete_requested_at: string | null; // owner asked for removal (verified bets)
+  delete_requested_at: string | null;
+  delete_reason: string | null; // owner asked for removal (verified bets)
   published_at: string | null; // owner made the pick public before event start
 };
 

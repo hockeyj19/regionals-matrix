@@ -167,7 +167,7 @@ export function Matrix({ user }: { user: User }) {
       .order("created_at", { ascending: false });
     const { data: bt } = await supabase
       .from("user_bets")
-      .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, settled_by, delete_requested_at, published_at, book, price_check, market_best, market_book, market_checked_at, close_odds, clv")
+      .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, settled_by, delete_requested_at, delete_reason, published_at, book, price_check, market_best, market_book, market_checked_at, close_odds, clv")
       .order("placed_at", { ascending: false });
     const { data: mx } = await supabase
       .from("user_fight_matrix")
@@ -374,7 +374,7 @@ export function Matrix({ user }: { user: User }) {
     const { data: b, error } = await supabase
       .from("user_bets")
       .insert({ user_id: user.id, ...bet })
-      .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, settled_by, delete_requested_at, published_at, book, price_check, market_best, market_book, market_checked_at, close_odds, clv")
+      .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, settled_by, delete_requested_at, delete_reason, published_at, book, price_check, market_best, market_book, market_checked_at, close_odds, clv")
       .single();
     if (error) return error.message;
     if (!b) return "The bet did not save - please try again.";
@@ -423,14 +423,17 @@ export function Matrix({ user }: { user: User }) {
   }
 
   // request (or cancel a request for) removal of a verified bet
-  async function requestBetDelete(id: string, requested: boolean) {
+  async function requestBetDelete(id: string, requested: boolean, reason?: string) {
     const stamp = requested ? new Date().toISOString() : null;
+    const why = requested ? (reason ?? "").trim() || null : null;
     setBets((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, delete_requested_at: stamp } : b))
+      prev.map((b) =>
+        b.id === id ? { ...b, delete_requested_at: stamp, delete_reason: why } : b
+      )
     );
     const { error } = await supabase
       .from("user_bets")
-      .update({ delete_requested_at: stamp })
+      .update({ delete_requested_at: stamp, delete_reason: why })
       .eq("id", id);
     if (error) loadData();
   }
