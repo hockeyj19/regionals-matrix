@@ -531,22 +531,6 @@ export function OddsBoard({
     [props]
   );
 
-  // the fight-level "goes the distance" Yes/No, for the GTD rail column
-  // (rendered Total-style: Yes on the top fighter's row, No on the bottom)
-  const gtdFor = useCallback(
-    (fightKey: string): { yes: number | null; no: number | null } => {
-      let yes: number | null = null;
-      let no: number | null = null;
-      for (const pp of props) {
-        if (pp.fight_key !== fightKey || pp.market !== "goes_the_distance") continue;
-        const o = (pp.outcome ?? "").trim().toLowerCase();
-        if (o === "yes") yes = pp.odds;
-        else if (o === "no") no = pp.odds;
-      }
-      return { yes, no };
-    },
-    [props]
-  );
 
   // a fighter's own O/U stat totals (significant strikes / takedowns)
   const statTotalsFor = useCallback(
@@ -704,22 +688,21 @@ export function OddsBoard({
                 </button>
                 {open && (
                   <DragScroller className="border-t border-neutral-800 overflow-x-auto md:cursor-grab md:select-none">
-                    <div className="grid grid-cols-[minmax(10rem,1fr)_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem_3rem_3rem_4.2rem_3.6rem_3.6rem_3rem_3rem_3rem] items-center gap-x-1 px-2 sm:px-3 py-1 border-b border-neutral-800 text-[9px] uppercase tracking-wide text-neutral-600">
+                    <div className="grid grid-cols-[minmax(10rem,1fr)_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem_3rem_4.2rem_3rem_3rem_3rem_3.6rem_3.6rem] items-center gap-x-1 px-2 sm:px-3 py-1 border-b border-neutral-800 text-[9px] uppercase tracking-wide text-neutral-600">
                       <span />
                       <span className="text-right text-emerald-600">Notes</span>
                       <span className="text-right">ML</span>
                       <span className="text-right">Total</span>
-                      <span className="text-right" title="Goes the distance — Yes (top fighter) / No (bottom fighter)">GTD</span>
                       <span className="text-right" title="Fighter wins inside the distance">ITD</span>
                       <span className="text-right">KO</span>
                       <span className="text-right">Sub</span>
                       <span className="text-right">Dec</span>
                       <span className="text-right" title="Win inside distance / goes the distance / no action">Finish Only</span>
-                      <span className="text-right" title="Most significant strikes landed (head-to-head)">Most SS</span>
-                      <span className="text-right" title="Most takedowns landed (head-to-head)">Most TD</span>
                       <span className="text-right">R1</span>
                       <span className="text-right">R2</span>
                       <span className="text-right">R3</span>
+                      <span className="text-right" title="Most significant strikes landed (head-to-head)">Most SS</span>
+                      <span className="text-right" title="Most takedowns landed (head-to-head)">Most TD</span>
                     </div>
                     <div className="divide-y divide-neutral-900">
                       {evFights.map((f, i) => {
@@ -729,7 +712,6 @@ export function OddsBoard({
                           f.is_main_event ||
                           (i === 0 && !evFights.some((x) => x.is_main_event));
                         const totals = fk && showProps ? totalsFor(fk) : [];
-                        const gtd = fk && showProps ? gtdFor(fk) : { yes: null, no: null };
                         const ud = userData[f.id];
                         const fighterRow = (
                           name: string,
@@ -738,7 +720,7 @@ export function OddsBoard({
                           myPrice: string | null,
                           totalSide: "over" | "under"
                         ) => (
-                          <div className="grid grid-cols-[minmax(10rem,1fr)_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem_3rem_3rem_4.2rem_3.6rem_3.6rem_3rem_3rem_3rem] items-center gap-x-1 py-0.5">
+                          <div className="grid grid-cols-[minmax(10rem,1fr)_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem_3rem_4.2rem_3rem_3rem_3rem_3.6rem_3.6rem] items-center gap-x-1 py-0.5">
                             <span className={`text-sm truncate ${dim ? "text-neutral-300" : ""}`}>
                               {name}
                             </span>
@@ -787,9 +769,6 @@ export function OddsBoard({
                               )}
                             </div>
                             <PropCell
-                              price={fk && showProps ? (totalSide === "over" ? gtd.yes : gtd.no) : null}
-                            />
-                            <PropCell
                               price={
                                 fk && sp && showProps
                                   ? matchupPrice(fk, sp.name, "fighter_wins_inside_distance")
@@ -813,6 +792,15 @@ export function OddsBoard({
                               }
                             />
                             <PropCell
+                              price={fk && sp && showProps ? roundWinPrice(fk, sp.name, 1) : null}
+                            />
+                            <PropCell
+                              price={fk && sp && showProps ? roundWinPrice(fk, sp.name, 2) : null}
+                            />
+                            <PropCell
+                              price={fk && sp && showProps ? roundWinPrice(fk, sp.name, 3) : null}
+                            />
+                            <PropCell
                               price={
                                 fk && sp && showProps
                                   ? matchupPrice(fk, sp.name, "most_significant_strikes_landed")
@@ -825,15 +813,6 @@ export function OddsBoard({
                                   ? matchupPrice(fk, sp.name, "most_takedowns_landed")
                                   : null
                               }
-                            />
-                            <PropCell
-                              price={fk && sp && showProps ? roundWinPrice(fk, sp.name, 1) : null}
-                            />
-                            <PropCell
-                              price={fk && sp && showProps ? roundWinPrice(fk, sp.name, 2) : null}
-                            />
-                            <PropCell
-                              price={fk && sp && showProps ? roundWinPrice(fk, sp.name, 3) : null}
                             />
                           </div>
                         );
