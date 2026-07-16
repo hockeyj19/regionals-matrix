@@ -51,18 +51,25 @@ function orgColor(org: string): string {
 function PastNotes({
   history,
   fighterId,
-  context,
+  current,
 }: {
   history: NoteHistoryRow[];
   fighterId: string;
-  context: string;
+  current: string;
 }) {
-  const past = history.filter(
-    (h) =>
-      h.fighter_id === fighterId &&
-      h.event_context !== context &&
-      (h.notes ?? "").trim() !== ""
-  );
+  // Model A: one note per fighter (shown in the box above). The reference
+  // column is the version timeline - earlier, superseded takes on this
+  // fighter. Skip the entry that equals the current note and dedupe repeats,
+  // so a value can never show as its own "prior version".
+  const cur = current.trim();
+  const seen = new Set<string>();
+  const past = history.filter((h) => {
+    if (h.fighter_id !== fighterId) return false;
+    const n = (h.notes ?? "").trim();
+    if (!n || n === cur || seen.has(n)) return false;
+    seen.add(n);
+    return true;
+  });
   if (past.length === 0) return null;
   const shown = past.slice(0, 3);
   return (
@@ -74,7 +81,7 @@ function PastNotes({
         </p>
       ))}
       {past.length > 3 && (
-        <p className="text-[11px] text-neutral-600">+{past.length - 3} more in the Notes tab</p>
+        <p className="text-[11px] text-neutral-600">+{past.length - 3} earlier version(s)</p>
       )}
     </div>
   );
@@ -231,22 +238,28 @@ export function Matrix({ user }: { user: User }) {
     );
   }
 
-  // save a note for a fighter. Each entry belongs to the booking it was
-  // written for (the event context): editing during the same booking updates
-  // that entry, a new booking gets a fresh one. The profile blob mirrors the
-  // latest text so the Fighters tab and its filters keep working.
+  // Save a fighter note. Model A: a fighter has exactly ONE note, and BOTH the
+  // Notes tab and the Library tab read and write this same record - so an edit
+  // in either place is the edit everywhere, and the two can never diverge.
+  // `user_fighter_notes` is the single source of truth; `event_context` is now
+  // only a label recording where a version was written.
+  //
+  // History is a linear, deduped version log: a new value is appended only when
+  // it actually differs from the latest stored version. Writing the same text
+  // from Notes and then Library therefore appends nothing the second time -
+  // which is precisely what made notes appear to "double" before.
   async function saveFighterNote(
     fighterId: string,
     fighterName: string,
     value: string,
     context: string
   ) {
-    const latest = noteHistory.find((h) => h.fighter_id === fighterId);
-    const sameContext = !!latest && (latest.event_context ?? "Library") === context;
-    const prevNotes = sameContext && latest ? latest.notes ?? "" : "";
-    if (value === prevNotes) return; // nothing changed, don't write
+    const prevNote = fighterNotes[fighterId]?.notes ?? "";
+    if (value === prevNote) return; // already the current note - nothing to do
 
     const now = new Date().toISOString();
+
+    // 1) the single source of truth, read by both tabs
     setFighterNotes((prev) => ({
       ...prev,
       [fighterId]: {
@@ -268,37 +281,25 @@ export function Matrix({ user }: { user: User }) {
       { onConflict: "user_id,fighter_id" }
     );
 
-    if (value.trim() === "") {
-      // clearing the box removes this booking's entry
-      if (sameContext && latest) {
-        setNoteHistory((prev) => prev.filter((h) => h.id !== latest.id));
-        await supabase.from("user_fighter_note_history").delete().eq("id", latest.id);
-      }
-      return;
-    }
+    // 2) version log. Clearing the box empties the note but keeps the history
+    // (remove a version with its trash button, or the fighter via delete).
+    if (value.trim() === "") return;
 
-    if (sameContext && latest) {
-      setNoteHistory((prev) =>
-        prev.map((h) => (h.id === latest.id ? { ...h, notes: value } : h))
-      );
-      await supabase
-        .from("user_fighter_note_history")
-        .update({ notes: value })
-        .eq("id", latest.id);
-    } else {
-      const { data: h } = await supabase
-        .from("user_fighter_note_history")
-        .insert({
-          user_id: user.id,
-          fighter_id: fighterId,
-          fighter_name: fighterName,
-          notes: value,
-          event_context: context,
-        })
-        .select("id, fighter_id, notes, event_context, created_at")
-        .single();
-      if (h) setNoteHistory((prev) => [h, ...prev]);
-    }
+    const newest = noteHistory.find((h) => h.fighter_id === fighterId);
+    if (newest && (newest.notes ?? "") === value) return; // already the latest version
+
+    const { data: h } = await supabase
+      .from("user_fighter_note_history")
+      .insert({
+        user_id: user.id,
+        fighter_id: fighterId,
+        fighter_name: fighterName,
+        notes: value,
+        event_context: context,
+      })
+      .select("id, fighter_id, notes, event_context, created_at")
+      .single();
+    if (h) setNoteHistory((prev) => [h, ...prev]);
   }
 
   // save a fighter's tags (comma-separated input -> text[])
@@ -330,12 +331,9 @@ export function Matrix({ user }: { user: User }) {
   }
 
   // the note written for THIS booking (empty for a fresh matchup)
-  function noteFor(fighterId: string, ev: EventRow): string {
-    const ctx = `${ev.org} — ${ev.event_name}`;
-    const h = noteHistory.find(
-      (x) => x.fighter_id === fighterId && x.event_context === ctx
-    );
-    return h?.notes ?? "";
+  // Model A: the fighter's single note, shown identically in Notes and Library.
+  function noteFor(fighterId: string): string {
+    return fighterNotes[fighterId]?.notes ?? "";
   }
 
   // delete a single note-history entry
@@ -647,10 +645,10 @@ export function Matrix({ user }: { user: User }) {
                     // a fight's workspace (prices, notes, tools) stays folded
                     // away until it's touched - unless it already holds work
                     const noteA = f1id
-                      ? noteFor(f1id, ev).trim()
+                      ? noteFor(f1id).trim()
                       : (d?.notes1 ?? "").trim();
                     const noteB = f2id
-                      ? noteFor(f2id, ev).trim()
+                      ? noteFor(f2id).trim()
                       : (d?.notes2 ?? "").trim();
                     const hasWork = !!(
                       (d?.price1 ?? "").trim() ||
@@ -777,7 +775,7 @@ export function Matrix({ user }: { user: User }) {
                           {f1id ? (
                             <div className="space-y-1">
                               <GrowingTextarea
-                                defaultValue={noteFor(f1id, ev)}
+                                defaultValue={noteFor(f1id)}
                                 onBlur={(v) =>
                                   saveFighterNote(f1id, f.fighter1_name, v, `${ev.org} — ${ev.event_name}`)
                                 }
@@ -785,7 +783,7 @@ export function Matrix({ user }: { user: User }) {
                               <PastNotes
                                 history={noteHistory}
                                 fighterId={f1id}
-                                context={`${ev.org} — ${ev.event_name}`}
+                                current={noteFor(f1id)}
                               />
                             </div>
                           ) : (
@@ -797,7 +795,7 @@ export function Matrix({ user }: { user: User }) {
                           {f2id ? (
                             <div className="space-y-1">
                               <GrowingTextarea
-                                defaultValue={noteFor(f2id, ev)}
+                                defaultValue={noteFor(f2id)}
                                 onBlur={(v) =>
                                   saveFighterNote(f2id, f.fighter2_name, v, `${ev.org} — ${ev.event_name}`)
                                 }
@@ -805,7 +803,7 @@ export function Matrix({ user }: { user: User }) {
                               <PastNotes
                                 history={noteHistory}
                                 fighterId={f2id}
-                                context={`${ev.org} — ${ev.event_name}`}
+                                current={noteFor(f2id)}
                               />
                             </div>
                           ) : (
