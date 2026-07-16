@@ -9,8 +9,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
-import { supabase } from "@/lib/supabaseClient";
-import { boutMatch, sameFighter } from "@/lib/board";
+import { boutMatch, fetchAllRows, sameFighter } from "@/lib/board";
 import { fmtOdds, parseOddsInput, displayTypedOdds, getOddsMode } from "@/lib/format";
 import { LineHistoryModal } from "@/components/LineHistoryModal";
 import type { EventRow, FightRow, UserData } from "@/lib/types";
@@ -416,15 +415,19 @@ export function OddsBoard({
   >(null);
 
   const load = useCallback(async () => {
-    // fd_board soft-fails to [] until the FanDuel snapshot backend exists.
+    // fetchAllRows pages past Supabase's 1,000-row-per-request cap - a
+    // bare select("*") TRUNCATES SILENTLY once a view outgrows it, which
+    // is how the alphabetical tail of the prop board (RJ Harris...,
+    // Stewart Nicoll...) vanished during fight week. fd_board still
+    // soft-fails to [] until the FanDuel snapshot backend exists.
     const [b, fd, pr] = await Promise.all([
-      supabase.from("bol_board").select("*"),
-      supabase.from("fd_board").select("*"),
-      supabase.from("bol_current_props").select("*"),
+      fetchAllRows<BoardRow>("bol_board", "fight_key"),
+      fetchAllRows<BoardRow>("fd_board", "fight_key"),
+      fetchAllRows<PropRow>("bol_current_props", "fight_key"),
     ]);
-    setBoard((b.data as BoardRow[]) ?? []);
-    setFdBoard((fd.data as BoardRow[]) ?? []);
-    setProps((pr.data as PropRow[]) ?? []);
+    setBoard(b ?? []);
+    setFdBoard(fd ?? []);
+    setProps(pr ?? []);
     setLoaded(true);
   }, []);
   useEffect(() => {

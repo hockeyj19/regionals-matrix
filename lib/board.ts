@@ -56,6 +56,62 @@ function aliasMatch(na: string, nb: string): boolean {
   return false;
 }
 
+// Supabase caps every PostgREST request at 1,000 rows and TRUNCATES
+// SILENTLY past the cap. Fight week pushed bol_current_props over it and
+// every fight_key alphabetically past the cutoff (RJ Harris...,
+// Stewart Nicoll...) vanished from the rail with no error anywhere.
+// Whole-view reads must page - and must ORDER, because unordered range
+// pagination is not stable across requests.
+const PAGE_ROWS = 1000;
+const MAX_PAGES = 20; // 20k-row circuit breaker against a runaway view
+
+export async function fetchAllRows<T>(
+  view: string,
+  orderCol: string
+): Promise<T[] | null> {
+  const out: T[] = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const from = page * PAGE_ROWS;
+    const { data, error } = await supabase
+      .from(view)
+      .select("*")
+      .order(orderCol, { ascending: true })
+      .range(from, from + PAGE_ROWS - 1);
+    if (error) {
+      // partial board beats a blank one, but never fail in silence
+      console.error(`[board] ${view} page ${page} read failed:`, error.message);
+      return out.length ? out : null;
+    }
+    if (!data || data.length === 0) break;
+    out.push(...(data as T[]));
+    if (data.length < PAGE_ROWS) break;
+  }
+  return out;
+}
+
+// Surname prefilter tokens for a set of fighters - the TS twin of the
+// scraper's _alias_surname_tokens: every fighter's surname plus every
+// declared alias surname, so a server-side ilike can never miss a
+// renamed (or book-typo'd) fighter. Tokens come out of normName(), so
+// they are [a-z0-9 ] only - safe inside a PostgREST or() string.
+export function surnameTokens(...names: string[]): string[] {
+  const toks = new Set<string>();
+  for (const name of names) {
+    const nn = normName(name);
+    if (!nn) continue;
+    const forms = new Set([nn]);
+    for (const [a, b] of FIGHTER_ALIASES) {
+      if (nn === a) forms.add(b);
+      else if (nn === b) forms.add(a);
+    }
+    for (const f of forms) {
+      const parts = f.split(" ").filter(Boolean);
+      if (parts.length) toks.add(parts[parts.length - 1]);
+    }
+  }
+  return [...toks];
+}
+
 function samePerson(a: string, b: string): boolean {
   const na = normName(a);
   const nb = normName(b);
@@ -118,7 +174,13 @@ export type PropLine = {
 
 // current BetOnline prop prices for a fight, from the bots' prop ledger
 export async function fetchFightProps(f1: string, f2: string): Promise<PropLine[] | null> {
-  const { data, error } = await supabase.from("bol_current_props").select("*");
+  // alias-aware surname prefilter, matched precisely below - the same
+  // design as the scraper's verifier. Also sidesteps the 1,000-row cap:
+  // QuickBet only ever needs this one fight's rows.
+  const toks = surnameTokens(f1, f2);
+  if (!toks.length) return null;
+  const flt = toks.map((t) => `fight_key.ilike.%${t}%`).join(",");
+  const { data, error } = await supabase.from("bol_current_props").select("*").or(flt);
   if (error || !data) return null;
   const out: PropLine[] = [];
   for (const row of data as (PropLine & { fight_key: string; opened_at?: string | null })[]) {
@@ -235,7 +297,13 @@ export function boardTotalLines(props: PropLine[]): number[] {
 }
 
 export async function fetchFightBoard(f1: string, f2: string): Promise<FightBoard> {
-  const { data, error } = await supabase.from("bol_current_lines").select("*");
+  // same prefilter + truncation guard as fetchFightProps
+  const toks = surnameTokens(f1, f2);
+  if (!toks.length) return null;
+  const flt = toks
+    .flatMap((t) => [`fighter1.ilike.%${t}%`, `fighter2.ilike.%${t}%`])
+    .join(",");
+  const { data, error } = await supabase.from("bol_current_lines").select("*").or(flt);
   if (error || !data) return null;
   for (const row of data as LineRow[]) {
     const forward = boutMatch(row.fighter1, row.fighter2, f1, f2);
