@@ -51,8 +51,10 @@ export function FighterLibrary({
     "all" | "ml" | "totals" | "method" | "round" | "method_round"
   >("all");
   const [nowTs] = useState(() => Date.now());
-  const [pickOpen, setPickOpen] = useState(true);
-  const [notesOpen, setNotesOpen] = useState(true);
+  const [pickOpen, setPickOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
+  // each fighter's note starts collapsed; expand them one at a time
+  const [openNote, setOpenNote] = useState<Record<string, boolean>>({});
 
   // your settled/in-progress verified picks, newest first (upcoming excluded)
   const pickHistory = bets
@@ -97,7 +99,7 @@ export function FighterLibrary({
       </div>
       {showInfo && <ReadMePanel paragraphs={FIGHTERS_README} />}
 
-      {/* Pick history */}
+      {/* Picks history */}
       <div
         onClick={() => setPickOpen((v) => !v)}
         className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3 cursor-pointer"
@@ -105,7 +107,7 @@ export function FighterLibrary({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
             <span className="text-xs font-semibold text-emerald-500 uppercase tracking-wide">
-              Pick history
+              Picks history
             </span>
             <Chevron open={pickOpen} />
           </div>
@@ -283,14 +285,28 @@ export function FighterLibrary({
             className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4 space-y-3"
           >
             <div className="flex items-center justify-between gap-2">
-              <a
-                href={tapologyUrl(n.fighter_name ?? "")}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm font-bold hover:text-emerald-400 hover:underline"
-              >
-                {n.fighter_name}
-              </a>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <button
+                  onClick={() =>
+                    setOpenNote((prev) => ({
+                      ...prev,
+                      [n.fighter_id]: !prev[n.fighter_id],
+                    }))
+                  }
+                  title={openNote[n.fighter_id] ? "Collapse" : "Expand"}
+                  className="shrink-0 text-neutral-500 hover:text-neutral-300"
+                >
+                  <Chevron open={!!openNote[n.fighter_id]} />
+                </button>
+                <a
+                  href={tapologyUrl(n.fighter_name ?? "")}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm font-bold truncate hover:text-emerald-400 hover:underline"
+                >
+                  {n.fighter_name}
+                </a>
+              </div>
               <div className="flex items-center gap-2 shrink-0">
                 {n.updated_at && (
                   <span className="text-[11px] text-neutral-600">
@@ -307,6 +323,8 @@ export function FighterLibrary({
               </div>
             </div>
 
+            {openNote[n.fighter_id] && (
+              <>
             <GrowingTextarea
               defaultValue={n.notes ?? ""}
               onBlur={(v) => onSaveNote(n.fighter_id, n.fighter_name ?? "", v, "Library")}
@@ -355,6 +373,8 @@ export function FighterLibrary({
                   </div>
                 )}
               </div>
+            )}
+              </>
             )}
           </div>
         );

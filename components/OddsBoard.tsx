@@ -514,7 +514,7 @@ export function OddsBoard({
     [props]
   );
 
-  // a fighter's price in a head-to-head stat matchup (Most SS / Most TDs) -
+  // a fighter's price in a head-to-head stat matchup (the SS / TD columns) -
   // what the SS and TD rail columns show
   const matchupPrice = useCallback(
     (fightKey: string, name: string, market: string): number | null => {
@@ -688,7 +688,8 @@ export function OddsBoard({
                 </button>
                 {open && (
                   <DragScroller className="border-t border-neutral-800 overflow-x-auto md:cursor-grab md:select-none">
-                    <div className="grid grid-cols-[minmax(10rem,1fr)_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem_3rem_4.2rem_3rem_3rem_3rem_3.6rem_3.6rem] items-center gap-x-1 px-2 sm:px-3 py-1 border-b border-neutral-800 text-[9px] uppercase tracking-wide text-neutral-600">
+                    <div className="grid grid-cols-[minmax(10rem,1fr)_1.75rem_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem] items-center gap-x-1 px-2 sm:px-3 py-1 border-b border-neutral-800 text-[9px] uppercase tracking-wide text-neutral-600">
+                      <span />
                       <span />
                       <span className="text-right text-emerald-600">Notes</span>
                       <span className="text-right">ML</span>
@@ -697,12 +698,12 @@ export function OddsBoard({
                       <span className="text-right">KO</span>
                       <span className="text-right">Sub</span>
                       <span className="text-right">Dec</span>
-                      <span className="text-right" title="Win inside distance / goes the distance / no action">Finish Only</span>
+                      <span className="text-right" title="Win inside distance / goes the distance / no action">FML</span>
                       <span className="text-right">R1</span>
                       <span className="text-right">R2</span>
                       <span className="text-right">R3</span>
-                      <span className="text-right" title="Most significant strikes landed (head-to-head)">Most SS</span>
-                      <span className="text-right" title="Most takedowns landed (head-to-head)">Most TD</span>
+                      <span className="text-right" title="Most significant strikes landed (head-to-head)">SS</span>
+                      <span className="text-right" title="Most takedowns landed (head-to-head)">TD</span>
                     </div>
                     <div className="divide-y divide-neutral-900">
                       {evFights.map((f, i) => {
@@ -718,12 +719,14 @@ export function OddsBoard({
                           sp: SidePrice | undefined,
                           dim: boolean,
                           myPrice: string | null,
-                          totalSide: "over" | "under"
+                          totalSide: "over" | "under",
+                          midSlot: ReactNode
                         ) => (
-                          <div className="grid grid-cols-[minmax(10rem,1fr)_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem_3rem_4.2rem_3rem_3rem_3rem_3.6rem_3.6rem] items-center gap-x-1 py-0.5">
+                          <div className="grid grid-cols-[minmax(10rem,1fr)_1.75rem_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem] items-center gap-x-1 py-0.5">
                             <span className={`text-sm truncate ${dim ? "text-neutral-300" : ""}`}>
                               {name}
                             </span>
+                            <div className="relative">{midSlot}</div>
                             <span className="text-[11px] tabular-nums text-right text-neutral-400">
                               {myPrice && myPrice.trim() ? displayTypedOdds(myPrice) : "—"}
                             </span>
@@ -818,6 +821,33 @@ export function OddsBoard({
                         );
                         const canProps =
                           showProps && !!fk && props.some((p) => p.fight_key === fk);
+                        // the expand chevron now lives in the gutter between the
+                        // fighter names and the NOTES column, centered on the
+                        // seam between the two fighter rows
+                        const chevronEl = canProps ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleProps(f.id);
+                            }}
+                            title="All props for this fight"
+                            className="absolute left-1/2 top-full -translate-x-1/2 -translate-y-1/2 z-10 rounded border border-emerald-500/50 bg-neutral-950 text-emerald-400 hover:bg-emerald-500/10 p-0.5"
+                          >
+                            <svg
+                              viewBox="0 0 20 20"
+                              fill="currentColor"
+                              className={`w-3 h-3 transition-transform ${
+                                openPropIds.has(f.id) ? "rotate-180" : ""
+                              }`}
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                          </button>
+                        ) : null;
                         return (
                           <div key={f.id} className="px-2 sm:px-3 py-2">
                             {/* the whole matchup is a tap target for the props
@@ -841,35 +871,9 @@ export function OddsBoard({
                               </div>
                               <div className="flex items-stretch">
                                 <div className="min-w-0 grow">
-                                  {fighterRow(f.fighter1_name, m?.a, false, ud?.price1 ?? null, "over")}
-                                  {fighterRow(f.fighter2_name, m?.b, true, ud?.price2 ?? null, "under")}
+                                  {fighterRow(f.fighter1_name, m?.a, false, ud?.price1 ?? null, "over", chevronEl)}
+                                  {fighterRow(f.fighter2_name, m?.b, true, ud?.price2 ?? null, "under", null)}
                                 </div>
-                                {canProps && (
-                                  <div className="sticky right-0 z-10 flex items-center pl-1.5 bg-gradient-to-l from-neutral-950 via-neutral-950/90 to-transparent">
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        toggleProps(f.id);
-                                      }}
-                                      title="All props for this fight"
-                                      className="rounded border border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/10 p-0.5"
-                                    >
-                                      <svg
-                                        viewBox="0 0 20 20"
-                                        fill="currentColor"
-                                        className={`w-3 h-3 transition-transform ${
-                                          openPropIds.has(f.id) ? "rotate-180" : ""
-                                        }`}
-                                      >
-                                        <path
-                                          fillRule="evenodd"
-                                          d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
-                                          clipRule="evenodd"
-                                        />
-                                      </svg>
-                                    </button>
-                                  </div>
-                                )}
                               </div>
                             </div>
                             {showProps && fk && openPropIds.has(f.id) && (
