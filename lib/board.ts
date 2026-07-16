@@ -42,7 +42,11 @@ export type FightBoard = {
 // (July 2026) - BetOnline boards Melisano; gidstats still lists
 // Crutchfield.
 const FIGHTER_ALIASES: ReadonlyArray<readonly [string, string]> = [
-  ["anna crutchfield", "anna melisano"],
+  // (card-source spelling, BetOnline board spelling)
+  ["anna crutchfield", "anna melisano"], // signed UFC under a new name (Jul 2026)
+  ["ezra elliott", "erza elliot"], // BetOnline typo, UFC OKC (Jul 2026)
+  ["zaur gadzhiev", "zaur gadhiev"], // BetOnline transliteration, ACA (Jul 2026)
+  ["lewis mcgrillen evans", "lewis mcgrillen"], // BetOnline drops the compound, PFL
 ];
 
 function aliasMatch(na: string, nb: string): boolean {
