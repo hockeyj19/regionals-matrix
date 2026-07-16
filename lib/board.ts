@@ -30,11 +30,34 @@ export type FightBoard = {
   openedAt: string | null; // when BetOnline first posted this moneyline
 } | null;
 
+// Cross-source fighter identity bridge. Every tier below assumes a
+// fighter's SURNAME survives across sources; when a fighter signs under
+// a new competition name, every tier fails at once and the board can't
+// place BetOnline's price on the card fight. Declared pairs bridge that.
+// Names are compared in normName() form.
+// MIRROR: fighter_aliases.py in the scraper carries the identical list
+// for the morning verifier - a pair added here must land there in the
+// same deploy, or the board shows a price the verifier can't confirm.
+// First entry: Anna Crutchfield signed with the UFC as Anna Melisano
+// (July 2026) - BetOnline boards Melisano; gidstats still lists
+// Crutchfield.
+const FIGHTER_ALIASES: ReadonlyArray<readonly [string, string]> = [
+  ["anna crutchfield", "anna melisano"],
+];
+
+function aliasMatch(na: string, nb: string): boolean {
+  for (const [a, b] of FIGHTER_ALIASES) {
+    if ((na === a && nb === b) || (na === b && nb === a)) return true;
+  }
+  return false;
+}
+
 function samePerson(a: string, b: string): boolean {
   const na = normName(a);
   const nb = normName(b);
   if (!na || !nb) return false;
   if (na === nb) return true;
+  if (aliasMatch(na, nb)) return true; // declared identity - new surname
   const ta = na.split(" ").filter(Boolean);
   const tb = nb.split(" ").filter(Boolean);
   if (!ta.length || !tb.length) return false;
