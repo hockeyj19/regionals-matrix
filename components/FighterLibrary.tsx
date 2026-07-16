@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { FighterNote, NoteHistoryRow, BetRow } from "@/lib/types";
-import { bookLabel, fmtDate, fmtOdds, sideBtn, tapologyUrl } from "@/lib/format";
+import { bookLabel, fmtDate, fmtOdds, sideBtn } from "@/lib/format";
 import { TrashIcon } from "@/components/icons";
 import { GrowingTextarea } from "@/components/GrowingTextarea";
 import { FIGHTERS_README, InfoButton, ReadMePanel } from "@/components/ReadMe";
@@ -284,28 +284,22 @@ export function FighterLibrary({
             key={n.fighter_id}
             className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4 space-y-3"
           >
-            <div className="flex items-center justify-between gap-2">
+            <div
+              onClick={() =>
+                setOpenNote((prev) => ({
+                  ...prev,
+                  [n.fighter_id]: !prev[n.fighter_id],
+                }))
+              }
+              className="flex items-center justify-between gap-2 cursor-pointer select-none group"
+            >
               <div className="flex items-center gap-1.5 min-w-0">
-                <button
-                  onClick={() =>
-                    setOpenNote((prev) => ({
-                      ...prev,
-                      [n.fighter_id]: !prev[n.fighter_id],
-                    }))
-                  }
-                  title={openNote[n.fighter_id] ? "Collapse" : "Expand"}
-                  className="shrink-0 text-neutral-500 hover:text-neutral-300"
-                >
+                <span className="shrink-0 text-neutral-500 group-hover:text-neutral-300">
                   <Chevron open={!!openNote[n.fighter_id]} />
-                </button>
-                <a
-                  href={tapologyUrl(n.fighter_name ?? "")}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm font-bold truncate hover:text-emerald-400 hover:underline"
-                >
+                </span>
+                <span className="text-sm font-bold truncate group-hover:text-emerald-400">
                   {n.fighter_name}
-                </a>
+                </span>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 {n.updated_at && (
@@ -314,7 +308,10 @@ export function FighterLibrary({
                   </span>
                 )}
                 <button
-                  onClick={() => onDeleteFighter(n.fighter_id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteFighter(n.fighter_id);
+                  }}
                   title="Remove this fighter from your notes"
                   className="rounded-md p-1.5 text-neutral-500 hover:text-red-400 hover:bg-neutral-800"
                 >
