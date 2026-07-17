@@ -38,10 +38,10 @@ const ORG_COLORS: Record<string, string> = {
   Oktagon: "text-pink-400",
   CFFC: "text-purple-400",
   "Brave CF": "text-amber-400",
-  "UAE Warriors": "text-teal-400",
+  "UAE Warriors": "text-yellow-400",
   Rizin: "text-rose-400",
   ACA: "text-lime-400",
-  "ONE Championship": "text-cyan-400",
+  "ONE Championship": "text-pink-400",
 };
 
 function orgColor(org: string): string {
