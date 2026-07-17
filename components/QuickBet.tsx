@@ -339,7 +339,9 @@ export function QuickBet({
       return;
     }
     const ouLine = needsLine ? totalLine : isStat && statIsOU ? statLine : null;
-    if ((needsLine || (isStat && statIsOU)) && ouLine === null) {
+    // a line is only required when the board actually carries lines for this
+    // market - BetOnline's SS/TD totals post with no numeric line at all
+    if ((needsLine || (isStat && statIsOU && statLines.length > 0)) && ouLine === null) {
       setError("No line for this market on the board yet.");
       return;
     }
@@ -386,7 +388,9 @@ export function QuickBet({
           : `${outcomeSel} — ${title}`; // fight-level / mixed, e.g. "Goes to Decision — Fighter Wins Inside Distance"
       else if (statIsOU) {
         const who = statFighterScoped ? name : `${f1} vs ${f2}`;
-        selection = `${who} ${ouSide === "over" ? "Over" : "Under"} ${ouLine} — ${title}`;
+        selection = `${who} ${ouSide === "over" ? "Over" : "Under"}${
+          ouLine !== null ? ` ${ouLine}` : ""
+        } — ${title}`;
       } else selection = `${name}${needsRound ? ` R${roundSel}` : ""} — ${title}`;
     }
 
