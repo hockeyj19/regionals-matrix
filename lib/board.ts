@@ -230,8 +230,12 @@ export function matchPropLine(
       if (outcome) return p.outcome === outcome;
       if (p.ou_side) {
         if (p.ou_side !== ouSide) return false;
-        if (ouLine === null || p.ou_line === null || Math.abs(p.ou_line - ouLine) > 1e-6)
-          return false;
+        // Line-less O/U markets: BetOnline posts SS/TD totals with no numeric
+        // line in its payload, so the ledger stores ou_line null. Null on both
+        // sides IS the match; mismatched nullity is not; numeric lines compare.
+        if (ouLine === null || p.ou_line === null) {
+          if (ouLine !== null || p.ou_line !== null) return false;
+        } else if (Math.abs(p.ou_line - ouLine) > 1e-6) return false;
         if (p.fighter && !sameFighter(p.fighter, fighterName)) return false;
       } else {
         if (!p.fighter || !sameFighter(p.fighter, fighterName)) return false;
