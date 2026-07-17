@@ -48,6 +48,75 @@ function orgColor(org: string): string {
   return ORG_COLORS[org] ?? "text-emerald-400";
 }
 
+// Promotion badge: a logo-sized tile in the org's brand colour with its
+// short mark. If a real logo image is dropped in at public/orgs/<slug>.png it
+// fades in over the badge automatically; otherwise the badge stands in. No
+// trademark art is reproduced here - just a coloured, lettered placeholder.
+const ORG_BADGE: Record<string, { abbr: string; bg: string; fg: string }> = {
+  UFC: { abbr: "UFC", bg: "bg-red-600", fg: "text-white" },
+  "Road to UFC": { abbr: "RTU", bg: "bg-red-500", fg: "text-white" },
+  "Dana White's Contender Series": { abbr: "DWCS", bg: "bg-zinc-600", fg: "text-white" },
+  PFL: { abbr: "PFL", bg: "bg-blue-600", fg: "text-white" },
+  LFA: { abbr: "LFA", bg: "bg-sky-600", fg: "text-white" },
+  "Cage Warriors": { abbr: "CW", bg: "bg-yellow-500", fg: "text-black" },
+  KSW: { abbr: "KSW", bg: "bg-orange-600", fg: "text-white" },
+  Oktagon: { abbr: "OKT", bg: "bg-pink-600", fg: "text-white" },
+  CFFC: { abbr: "CFFC", bg: "bg-purple-600", fg: "text-white" },
+  "Brave CF": { abbr: "BRAVE", bg: "bg-amber-600", fg: "text-black" },
+  "UAE Warriors": { abbr: "UAE", bg: "bg-teal-600", fg: "text-white" },
+  Rizin: { abbr: "RIZIN", bg: "bg-rose-600", fg: "text-white" },
+  ACA: { abbr: "ACA", bg: "bg-lime-500", fg: "text-black" },
+  "ONE Championship": { abbr: "ONE", bg: "bg-cyan-600", fg: "text-white" },
+};
+
+function orgSlug(org: string): string {
+  return org.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function OrgBadge({ org, size = 44 }: { org: string; size?: number }) {
+  const meta =
+    ORG_BADGE[org] ?? {
+      abbr: org.slice(0, 3).toUpperCase(),
+      bg: "bg-neutral-700",
+      fg: "text-white",
+    };
+  const [logoLoaded, setLogoLoaded] = useState(false);
+  const [logoFailed, setLogoFailed] = useState(false);
+  const fontClass =
+    meta.abbr.length >= 5
+      ? "text-[8px]"
+      : meta.abbr.length === 4
+      ? "text-[10px]"
+      : "text-xs";
+  return (
+    <div
+      className={`relative shrink-0 rounded-lg overflow-hidden flex items-center justify-center ring-1 ring-black/20 ${meta.bg} ${meta.fg}`}
+      style={{ width: size, height: size }}
+      title={org}
+    >
+      <span
+        className={`font-bold uppercase tracking-tight ${fontClass} ${
+          logoLoaded ? "opacity-0" : ""
+        }`}
+      >
+        {meta.abbr}
+      </span>
+      {!logoFailed && (
+        <img
+          src={`/orgs/${orgSlug(org)}.png`}
+          alt=""
+          aria-hidden
+          className={`absolute inset-0 h-full w-full bg-white object-contain transition-opacity ${
+            logoLoaded ? "opacity-100" : "opacity-0"
+          }`}
+          onLoad={() => setLogoLoaded(true)}
+          onError={() => setLogoFailed(true)}
+        />
+      )}
+    </div>
+  );
+}
+
 function PastNotes({
   history,
   fighterId,
@@ -619,12 +688,15 @@ export function Matrix({ user }: { user: User }) {
                 }
                 className="w-full flex items-center justify-between px-4 py-3 hover:bg-neutral-900/60 text-left"
               >
-                <div>
-                  <span className={`text-xs font-semibold uppercase tracking-wide ${orgColor(ev.org)}`}>
-                    {ev.org}
-                  </span>
-                  <h2 className="text-base font-bold">{ev.event_name}</h2>
-                  <p className="text-xs text-neutral-500">{formatEventMeta(ev)}</p>
+                <div className="flex items-center gap-3 min-w-0">
+                  <OrgBadge org={ev.org} />
+                  <div className="min-w-0">
+                    <span className={`text-xs font-semibold uppercase tracking-wide ${orgColor(ev.org)}`}>
+                      {ev.org}
+                    </span>
+                    <h2 className="text-base font-bold truncate">{ev.event_name}</h2>
+                    <p className="text-xs text-neutral-500">{formatEventMeta(ev)}</p>
+                  </div>
                 </div>
                 <span className="text-neutral-500 text-xl">{isOpen ? "−" : "+"}</span>
               </button>
