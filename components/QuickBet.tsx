@@ -374,6 +374,22 @@ export function QuickBet({
     const methodLabel =
       method === "ko_tko" ? "KO/TKO" : method === "submission" ? "Submission" : "Decision";
 
+    // plain fighter-scoped stat rows can carry a line and an enriched outcome
+    // (Point Spread's "Dricus Du Plessis -5.5 Pts") - adopt both into the bet
+    const plainHit =
+      isStat && !statIsOU && !statMulti && needsSide
+        ? matchPropLine(
+            propList,
+            betType,
+            name,
+            "",
+            needsRound && roundSel !== null ? String(roundSel) : "",
+            "",
+            null,
+            null
+          )
+        : null;
+
     let selection = name;
     if (betType === "method") selection = `${name} by ${methodLabel}`;
     else if (betType === "round") selection = `${name} in R${roundSel}`;
@@ -391,7 +407,9 @@ export function QuickBet({
         selection = `${who} ${ouSide === "over" ? "Over" : "Under"}${
           ouLine !== null ? ` ${ouLine}` : ""
         } — ${title}`;
-      } else selection = `${name}${needsRound ? ` R${roundSel}` : ""} — ${title}`;
+      } else if (plainHit && plainHit.ou_line !== null && plainHit.outcome)
+        selection = `${plainHit.outcome} — ${title}`;
+      else selection = `${name}${needsRound ? ` R${roundSel}` : ""} — ${title}`;
     }
 
     // Trust marks are the server's to write: the insert trigger nulls any
@@ -417,7 +435,7 @@ export function QuickBet({
       bet_type: effectiveType,
       prop_method: needsMethod ? method : isStat && statIsOU ? ouSide : null,
       prop_round: needsRound ? roundSel : null,
-      ou_line: ouLine,
+      ou_line: ouLine ?? plainHit?.ou_line ?? null,
       event_source_url: eventSourceUrl,
       odds: parsed.odds,
       stake: parsed.stake,
