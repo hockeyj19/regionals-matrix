@@ -514,6 +514,23 @@ export function OddsBoard({
     [props]
   );
 
+  // fighter wins round N on the scorecard or by finish
+  // (market="scorecard_winner_or_finish"), for the ML R1-R3 columns
+  const scorecardRoundPrice = useCallback(
+    (fightKey: string, name: string, rnd: number): number | null => {
+      const r = props.find(
+        (pp) =>
+          pp.fight_key === fightKey &&
+          pp.market === "scorecard_winner_or_finish" &&
+          !!pp.fighter &&
+          sameFighter(pp.fighter, name) &&
+          pp.round === rnd
+      );
+      return r ? r.odds : null;
+    },
+    [props]
+  );
+
   // a fighter's price in a head-to-head stat matchup (the SS / TD columns) -
   // what the SS and TD rail columns show
   const matchupPrice = useCallback(
@@ -688,7 +705,7 @@ export function OddsBoard({
                 </button>
                 {open && (
                   <DragScroller className="border-t border-neutral-800 overflow-x-auto md:cursor-grab md:select-none">
-                    <div className="grid grid-cols-[minmax(10rem,1fr)_1.75rem_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem] items-center gap-x-1 px-2 sm:px-3 py-1 border-b border-neutral-800 text-[9px] uppercase tracking-wide text-neutral-600">
+                    <div className="grid grid-cols-[minmax(10rem,1fr)_1.75rem_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem_3.2rem_3.2rem_3.2rem] items-center gap-x-1 px-2 sm:px-3 py-1 border-b border-neutral-800 text-[9px] uppercase tracking-wide text-neutral-600">
                       <span />
                       <span />
                       <span className="text-right text-emerald-600">Notes</span>
@@ -704,6 +721,9 @@ export function OddsBoard({
                       <span className="text-right">R3</span>
                       <span className="text-right" title="Most significant strikes landed (head-to-head)">SS</span>
                       <span className="text-right" title="Most takedowns landed (head-to-head)">TD</span>
+                      <span className="text-right" title="Round 1 winner - scorecard or finish">ML R1</span>
+                      <span className="text-right" title="Round 2 winner - scorecard or finish">ML R2</span>
+                      <span className="text-right" title="Round 3 winner - scorecard or finish">ML R3</span>
                     </div>
                     <div className="divide-y divide-neutral-900">
                       {evFights.map((f, i) => {
@@ -722,7 +742,7 @@ export function OddsBoard({
                           totalSide: "over" | "under",
                           midSlot: ReactNode
                         ) => (
-                          <div className="grid grid-cols-[minmax(10rem,1fr)_1.75rem_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem] items-center gap-x-1 py-0.5">
+                          <div className="grid grid-cols-[minmax(10rem,1fr)_1.75rem_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem_3.2rem_3.2rem_3.2rem] items-center gap-x-1 py-0.5">
                             <span className={`text-sm truncate ${dim ? "text-neutral-300" : ""}`}>
                               {name}
                             </span>
@@ -816,6 +836,15 @@ export function OddsBoard({
                                   ? matchupPrice(fk, sp.name, "most_takedowns_landed")
                                   : null
                               }
+                            />
+                            <PropCell
+                              price={fk && sp && showProps ? scorecardRoundPrice(fk, sp.name, 1) : null}
+                            />
+                            <PropCell
+                              price={fk && sp && showProps ? scorecardRoundPrice(fk, sp.name, 2) : null}
+                            />
+                            <PropCell
+                              price={fk && sp && showProps ? scorecardRoundPrice(fk, sp.name, 3) : null}
                             />
                           </div>
                         );
