@@ -7,9 +7,9 @@ import { betProfit, bookLabel, fmtDate, fmtOdds, fmtUnits } from "@/lib/format";
  * A tipster's public record - readable by anyone, no account needed.
  *
  * This is the page a verified pick travels on: send the link and the receiver
- * sees the record, every settled pick, and the price each was struck at. The
- * numbers are computed from the same public bets listed below them, so the
- * headline can never drift from the evidence.
+ * sees the record, the closing-line edge, every settled pick, and the price
+ * each was struck at. The numbers are computed from the same public bets listed
+ * below them, so the headline can never drift from the evidence.
  */
 
 export const dynamic = "force-dynamic"; // a record is only worth linking if it's current
@@ -20,12 +20,15 @@ function recordLine(p: { wins: number; losses: number; pushes: number }) {
   return `${p.wins}-${p.losses}-${p.pushes}`;
 }
 
+const pct = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { username } = await params;
   const p = await getPublicProfile(username);
   if (!p) return { title: "Not found — Tape Notes" };
   const bits = [recordLine(p), fmtUnits(p.units)];
-  if (p.roi !== null) bits.push(`${p.roi >= 0 ? "+" : ""}${p.roi.toFixed(1)}% ROI`);
+  if (p.roi !== null) bits.push(`${pct(p.roi)} ROI`);
+  if (p.clv !== null) bits.push(`${pct(p.clv)} CLV`);
   const desc =
     p.settled > 0
       ? `${bits.join(" · ")} — verified picks, priced off the sharp board.`
@@ -48,11 +51,41 @@ export default async function PublicProfilePage({ params }: Props) {
   const pendingPicks = p.picks.filter((b) => b.result === "pending");
   const unitTone =
     p.units > 0 ? "text-emerald-400" : p.units < 0 ? "text-red-400" : "text-neutral-300";
+  const clvTone =
+    p.clv === null ? "text-neutral-500" : p.clv >= 0 ? "text-emerald-400" : "text-red-400";
+
+  // bankroll curve: cumulative units across settled picks, oldest first, drawn
+  // as a static sparkline (server-rendered SVG - no client code)
+  const chron = [...settledPicks].sort((a, b) => {
+    const ta = new Date(a.event_date ?? a.placed_at).getTime();
+    const tb = new Date(b.event_date ?? b.placed_at).getTime();
+    return ta - tb;
+  });
+  let run = 0;
+  const curve: number[] = [0, ...chron.map((b) => (run += betProfit(b)))];
+  const showCurve = curve.length > 2;
+  let curvePoints = "";
+  let curveUp = true;
+  if (showCurve) {
+    const min = Math.min(...curve);
+    const max = Math.max(...curve);
+    const range = max - min || 1;
+    const W = 600;
+    const H = 48;
+    curvePoints = curve
+      .map((v, i) => {
+        const x = (i / (curve.length - 1)) * W;
+        const y = H - ((v - min) / range) * H;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(" ");
+    curveUp = curve[curve.length - 1] >= 0;
+  }
 
   const stat = (label: string, value: string, tone = "text-neutral-100") => (
-    <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 px-3 py-2">
+    <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 px-3 py-2.5">
       <p className="text-[10px] uppercase tracking-wide text-neutral-500">{label}</p>
-      <p className={`text-lg font-semibold ${tone}`}>{value}</p>
+      <p className={`text-xl font-semibold tabular-nums ${tone}`}>{value}</p>
     </div>
   );
 
@@ -77,6 +110,16 @@ export default async function PublicProfilePage({ params }: Props) {
             <span className="text-emerald-400">
               {fmtOdds(b.odds)} · {Number(b.stake)}u
             </span>
+            {b.clv !== null && b.clv !== undefined && (
+              <span
+                className={`ml-1 text-[11px] ${
+                  Number(b.clv) >= 0 ? "text-emerald-500/80" : "text-red-500/80"
+                }`}
+              >
+                · CLV {Number(b.clv) >= 0 ? "+" : ""}
+                {Number(b.clv).toFixed(1)}
+              </span>
+            )}
           </p>
           <p className="text-[11px] text-neutral-500 truncate">
             {[
@@ -129,17 +172,38 @@ export default async function PublicProfilePage({ params }: Props) {
           {p.bio && <p className="mt-3 text-sm text-neutral-300 whitespace-pre-wrap">{p.bio}</p>}
         </header>
 
-        {/* the record */}
+        {/* the record - the four numbers that define a sharp tipster */}
         <section className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {stat("Record", recordLine(p))}
           {stat("Units", fmtUnits(p.units), unitTone)}
-          {stat(
-            "ROI",
-            p.roi === null ? "—" : `${p.roi >= 0 ? "+" : ""}${p.roi.toFixed(1)}%`,
-            p.roi === null ? "text-neutral-500" : unitTone
-          )}
-          {stat("Pending", String(p.pending))}
+          {stat("ROI", p.roi === null ? "—" : pct(p.roi), p.roi === null ? "text-neutral-500" : unitTone)}
+          {stat("CLV", p.clv === null ? "—" : pct(p.clv), clvTone)}
         </section>
+
+        {/* bankroll over time - visual proof the record is real */}
+        {showCurve && (
+          <section className="rounded-2xl border border-neutral-800 bg-neutral-900/40 px-4 py-3">
+            <div className="flex items-baseline justify-between">
+              <p className="text-[10px] uppercase tracking-wide text-neutral-500">Bankroll</p>
+              <p className="text-[10px] text-neutral-600">{settledPicks.length} settled</p>
+            </div>
+            <svg
+              viewBox="0 0 600 48"
+              preserveAspectRatio="none"
+              className="mt-1 h-12 w-full"
+              aria-hidden="true"
+            >
+              <polyline
+                points={curvePoints}
+                fill="none"
+                stroke={curveUp ? "#10b981" : "#f87171"}
+                strokeWidth={2}
+                vectorEffect="non-scaling-stroke"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </section>
+        )}
 
         {/* the evidence */}
         <section className="rounded-2xl border border-neutral-800 bg-neutral-900/40 p-4">
@@ -158,7 +222,7 @@ export default async function PublicProfilePage({ params }: Props) {
         {pendingPicks.length > 0 && (
           <section className="rounded-2xl border border-neutral-800 bg-neutral-900/40 p-4">
             <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
-              Open picks
+              Open picks ({pendingPicks.length})
             </h2>
             <ul className="mt-1">{pendingPicks.map(pick)}</ul>
           </section>
@@ -174,8 +238,9 @@ export default async function PublicProfilePage({ params }: Props) {
             was struck — the platform reads the book&apos;s own line feed continuously, so the
             odds on a pick can&apos;t be invented after the fact. Stakes are capped at the
             book&apos;s real limits, new markets can&apos;t be bet for their first 30 minutes,
-            and results are graded automatically from official statistics. Picks appear here
-            once their event begins, and they can never be edited or quietly deleted.
+            and results are graded automatically from official statistics. CLV compares the
+            price struck to the closing line on that same board. Picks appear here once their
+            event begins, and they can never be edited or quietly deleted.
           </p>
         </section>
 
