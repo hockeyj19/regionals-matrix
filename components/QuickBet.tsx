@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { FightRow, NewBet } from "@/lib/types";
+import type { FightRow, NewBet, FighterNote } from "@/lib/types";
 import { bookLabel, eventStartISO, parseBetInputs, sideBtn, fmtOdds } from "@/lib/format";
 import { marketRank } from "@/components/OddsBoard";
 import {
@@ -72,6 +72,7 @@ export function QuickBet({
   eventSourceUrl,
   onAdd,
   embedded = false,
+  fighterNotes = {},
 }: {
   fight: FightRow;
   eventLabel: string;
@@ -80,6 +81,7 @@ export function QuickBet({
   eventSourceUrl: string | null;
   onAdd: (bet: NewBet) => Promise<string | null>;
   embedded?: boolean;
+  fighterNotes?: Record<string, FighterNote>;
 }) {
   const [open, setOpen] = useState(embedded);
   const [side, setSide] = useState<1 | 2>(1);
@@ -472,8 +474,48 @@ export function QuickBet({
     );
   }
 
+  // your scouting for this fight, surfaced from the notes library so it's in
+  // front of you while you price the pick
+  const notePair = [
+    { id: fight.fighter1_id, name: f1 },
+    { id: fight.fighter2_id, name: f2 },
+  ]
+    .map((x) => ({ ...x, note: x.id ? fighterNotes[x.id] : undefined }))
+    .filter(
+      (x) =>
+        !!x.note &&
+        (((x.note.notes ?? "").trim().length > 0) || (x.note.tags ?? []).length > 0)
+    );
+
   return (
     <div className="rounded-md border border-neutral-800 bg-neutral-900/60 p-2 space-y-2">
+      {notePair.length > 0 && (
+        <div className="rounded-md border border-neutral-800 bg-neutral-950/60 p-2 space-y-1.5">
+          <p className="text-[10px] uppercase tracking-wide text-neutral-600">Your notes</p>
+          {notePair.map((x) => (
+            <div key={x.id} className="space-y-0.5">
+              <p className="text-xs font-medium text-neutral-300">{x.name}</p>
+              {(x.note?.tags ?? []).length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {(x.note?.tags ?? []).map((tg) => (
+                    <span
+                      key={tg}
+                      className="text-[10px] text-emerald-300/80 border border-emerald-900/60 rounded px-1 py-0.5"
+                    >
+                      {tg}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {(x.note?.notes ?? "").trim() && (
+                <p className="text-[11px] text-neutral-400 whitespace-pre-wrap">
+                  {x.note?.notes}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
       {/* markets: core + whatever stat markets BetOnline is serving */}
       <div className="flex flex-wrap gap-1">
         {CORE_OPTIONS.map((t) => (

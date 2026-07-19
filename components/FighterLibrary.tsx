@@ -5,6 +5,7 @@ import type { FighterNote, NoteHistoryRow, BetRow } from "@/lib/types";
 import { bookLabel, fmtDate, fmtOdds, sideBtn } from "@/lib/format";
 import { TrashIcon } from "@/components/icons";
 import { GrowingTextarea } from "@/components/GrowingTextarea";
+import { NOTE_TEMPLATES } from "@/lib/noteTemplates";
 import { FIGHTERS_README, InfoButton, ReadMePanel } from "@/components/ReadMe";
 
 function Chevron({ open }: { open: boolean }) {
@@ -325,6 +326,7 @@ export function FighterLibrary({
             <GrowingTextarea
               defaultValue={n.notes ?? ""}
               onBlur={(v) => onSaveNote(n.fighter_id, n.fighter_name ?? "", v, "Library")}
+              templates={NOTE_TEMPLATES}
             />
 
             <input

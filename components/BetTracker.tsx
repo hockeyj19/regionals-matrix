@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { BetRow, EventRow, FightRow, NewBet } from "@/lib/types";
+import type { BetRow, EventRow, FightRow, NewBet, FighterNote } from "@/lib/types";
 import { betProfit, bookLabel, eventStarted, fmtDate, fmtOdds, fmtUnits, sideBtn } from "@/lib/format";
 import { TrashIcon } from "@/components/icons";
 import { QuickBet } from "@/components/QuickBet";
@@ -17,10 +17,12 @@ export function BetTracker({
   onDelete,
   onRequestDelete,
   onPublish,
+  fighterNotes = {},
 }: {
   bets: BetRow[];
   events: EventRow[];
   fights: FightRow[];
+  fighterNotes?: Record<string, FighterNote>;
   onAdd: (bet: NewBet) => Promise<string | null>;
   onSetResult: (id: string, result: string) => void;
   onDelete: (id: string) => void;
@@ -240,6 +242,7 @@ export function BetTracker({
             eventTime={selEvent.event_time}
             eventSourceUrl={selEvent.source_url}
             onAdd={onAdd}
+            fighterNotes={fighterNotes}
             embedded
           />
         )}

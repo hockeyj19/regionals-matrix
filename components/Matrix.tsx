@@ -16,6 +16,7 @@ import type {
 import { eventStarted, sortEvents, formatEventMeta, displayTypedOdds, normalizeTypedOdds } from "@/lib/format";
 import { GridIcon, DollarIcon, UserIcon } from "@/components/icons";
 import { GrowingTextarea } from "@/components/GrowingTextarea";
+import { NOTE_TEMPLATES } from "@/lib/noteTemplates";
 import { QuickBet } from "@/components/QuickBet";
 import { FightMatrix } from "@/components/FightMatrix";
 import { FighterLibrary } from "@/components/FighterLibrary";
@@ -644,6 +645,7 @@ export function Matrix({ user }: { user: User }) {
           bets={bets}
           events={events}
           fights={fights}
+          fighterNotes={fighterNotes}
           onAdd={addBet}
           onSetResult={setBetResult}
           onDelete={deleteBet}
@@ -851,6 +853,7 @@ export function Matrix({ user }: { user: User }) {
                                 onBlur={(v) =>
                                   saveFighterNote(f1id, f.fighter1_name, v, `${ev.org} — ${ev.event_name}`)
                                 }
+                                templates={NOTE_TEMPLATES}
                               />
                               <PastNotes
                                 history={noteHistory}
@@ -871,6 +874,7 @@ export function Matrix({ user }: { user: User }) {
                                 onBlur={(v) =>
                                   saveFighterNote(f2id, f.fighter2_name, v, `${ev.org} — ${ev.event_name}`)
                                 }
+                                templates={NOTE_TEMPLATES}
                               />
                               <PastNotes
                                 history={noteHistory}
@@ -906,6 +910,7 @@ export function Matrix({ user }: { user: User }) {
                               eventTime={ev.event_time}
                               eventSourceUrl={ev.source_url}
                               onAdd={addBet}
+                              fighterNotes={fighterNotes}
                               embedded
                             />
                           </div>
