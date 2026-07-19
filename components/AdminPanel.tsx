@@ -42,8 +42,23 @@ type AdminReport = {
   grade_note: string | null;
 };
 
+type AuditEvent = {
+  id: number;
+  bet_id: string;
+  bet_type: string | null;
+  selection: string | null;
+  event_type: string; // settle | override | unsettle
+  old_result: string | null;
+  new_result: string | null;
+  settled_by: string | null;
+  db_role: string | null;
+  note: string | null;
+  changed_at: string;
+};
+
 export function AdminPanel() {
   const [reports, setReports] = useState<AdminReport[]>([]);
+  const [audit, setAudit] = useState<AuditEvent[]>([]);
   const [removals, setRemovals] = useState<RemovalRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
@@ -59,8 +74,14 @@ export function AdminPanel() {
       .from("admin_delete_requests")
       .select("*")
       .order("delete_requested_at", { ascending: false });
+    const { data: au } = await supabase
+      .from("grade_audit")
+      .select("*")
+      .order("changed_at", { ascending: false })
+      .limit(100);
     setReports(data ?? []);
     setRemovals(rm ?? []);
+    setAudit(au ?? []);
     setLoading(false);
   }, []);
 
@@ -189,6 +210,58 @@ export function AdminPanel() {
     );
   }
 
+  function resultColor(r: string | null) {
+    return r === "win"
+      ? "text-emerald-400"
+      : r === "loss"
+      ? "text-red-400"
+      : r === "push"
+      ? "text-sky-400"
+      : "text-neutral-500";
+  }
+
+  function auditRow(a: AuditEvent) {
+    const badge =
+      a.event_type === "override"
+        ? "border-amber-700 text-amber-400"
+        : a.event_type === "unsettle"
+        ? "border-red-800 text-red-400"
+        : "border-neutral-700 text-neutral-400";
+    const actor =
+      a.settled_by === "auto"
+        ? "auto-grader"
+        : a.settled_by || (a.db_role ? `role:${a.db_role}` : "unknown");
+    return (
+      <div
+        key={a.id}
+        className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-2.5 space-y-1"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span
+            className={`text-[10px] uppercase tracking-wide border rounded px-1.5 py-0.5 ${badge}`}
+          >
+            {a.event_type}
+          </span>
+          <span className="text-[11px] text-neutral-600 shrink-0">
+            {fmtDate(a.changed_at)}
+          </span>
+        </div>
+        <div className="text-sm">
+          <span className="font-medium">{a.selection ?? a.bet_id.slice(0, 8)}</span>{" "}
+          <span className="text-neutral-500">
+            <span className={resultColor(a.old_result)}>{a.old_result ?? "pending"}</span>
+            {" → "}
+            <span className={resultColor(a.new_result)}>{a.new_result ?? "pending"}</span>
+          </span>
+        </div>
+        <p className="text-[11px] text-neutral-600">
+          by {actor}
+          {a.note ? ` · ${a.note}` : ""}
+        </p>
+      </div>
+    );
+  }
+
   const open = reports.filter((r) => r.status === "open");
   const handled = reports.filter((r) => r.status !== "open");
 
@@ -293,6 +366,19 @@ export function AdminPanel() {
         <div className="space-y-2">
           <p className="text-xs text-neutral-600 uppercase tracking-wide">Handled</p>
           {handled.map(card)}
+        </div>
+      )}
+      {audit.length > 0 && (
+        <div className="space-y-2 pt-2 border-t border-neutral-900">
+          <p className="text-xs text-neutral-600 uppercase tracking-wide">
+            Grade audit log ({audit.length}
+            {audit.length === 100 ? "+" : ""})
+          </p>
+          <p className="text-[11px] text-neutral-600">
+            Every settle and override on a verified pick, plus any change to an
+            already-settled result - who, what changed, why, and when. Append-only.
+          </p>
+          {audit.map(auditRow)}
         </div>
       )}
     </div>
