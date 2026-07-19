@@ -305,7 +305,7 @@ export function Profile({
       const { data } = await supabase
         .from("user_bets")
         .select(
-          "id, selection, bet_type, event_context, event_date, event_start, published_at, odds, stake, book, result, placed_at, price_check"
+          "id, selection, bet_type, event_context, event_date, event_start, published_at, odds, stake, book, result, placed_at, price_check, close_odds, clv"
         )
         .eq("user_id", user.id)
         .order("placed_at", { ascending: false });
@@ -349,13 +349,19 @@ export function Profile({
       let l = 0;
       let p = 0;
       let u = 0;
+      let clvSum = 0;
+      let clvN = 0;
       bets.forEach((b) => {
         if (b.result === "win") w += 1;
         else if (b.result === "loss") l += 1;
         else p += 1;
         u += betProfit(b);
+        if (b.clv !== null && b.clv !== undefined) {
+          clvSum += Number(b.clv);
+          clvN += 1;
+        }
       });
-      return { label, w, l, p, units: u, bets };
+      return { label, w, l, p, units: u, bets, avgClv: clvN > 0 ? clvSum / clvN : null };
     };
     return [
       bucket("Today", (t) => t >= dayStart),
@@ -672,6 +678,17 @@ export function Profile({
                           <p className="text-sm text-white">{pr.label}</p>
                           <p className="text-xs text-neutral-500">
                             {pr.w}-{pr.l}-{pr.p}
+                            {pr.avgClv !== null && (
+                              <span
+                                className={`ml-2 ${
+                                  pr.avgClv >= 0 ? "text-emerald-500/80" : "text-red-500/80"
+                                }`}
+                                title="Average closing-line value on settled moneylines in this window - positive means you beat the close"
+                              >
+                                CLV {pr.avgClv >= 0 ? "+" : ""}
+                                {pr.avgClv.toFixed(1)}%
+                              </span>
+                            )}
                           </p>
                         </div>
                         <span className="flex items-center gap-2">
