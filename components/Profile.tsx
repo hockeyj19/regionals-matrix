@@ -86,6 +86,27 @@ export function Profile({
   // anyone - no account, no login - so this link IS the proof.
   async function shareProfile(name: string) {
     const url = `${window.location.origin}/profile/${name}`;
+    const mine = name === selfName;
+    const shareData = {
+      title: `${name} on Tape Notes`,
+      text: mine
+        ? "My verified MMA betting record on Tape Notes"
+        : `${name}'s verified MMA betting record on Tape Notes`,
+      url,
+    };
+    // Phone: open the native share sheet (Messages / Discord / Twitter / Copy).
+    // If it's unavailable (most desktops) or the sheet is dismissed, fall back
+    // to copying the link and flashing a confirmation.
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch (e) {
+        // user closed the sheet on purpose - don't then silently copy
+        if (e instanceof Error && e.name === "AbortError") return;
+        // any other failure: fall through to the copy path
+      }
+    }
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
