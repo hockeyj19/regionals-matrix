@@ -303,9 +303,10 @@ export function BetTracker({
         const verified = b.bet_type !== "other";
         const started = eventStarted(b.event_start);
         const autoFinal = b.settled_by === "auto";
-        // unverified bets grade any time; verified ones only after the event
-        // starts, and never once the scraper has settled them from results
-        const canGrade = verified ? started && !autoFinal : true;
+        // Verified bets are NEVER user-gradeable - their results come only
+        // from the auto-grader (or an admin). Anything else would make
+        // verified records forgeable, which defeats the platform's core claim.
+        const canGrade = !verified;
         // only unverified bets are user-deletable; verified ones go through a
         // removal request (pre-start clears on the next scrape, post-start
         // needs an admin decision) so records can't be quietly curated
