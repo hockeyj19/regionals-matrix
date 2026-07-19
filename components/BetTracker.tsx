@@ -42,6 +42,7 @@ export function BetTracker({
   }
   const [selEventId, setSelEventId] = useState("");
   const [selFightId, setSelFightId] = useState("");
+  const [fighterSearch, setFighterSearch] = useState("");
   const [selEventId2, setSelEventId2] = useState("");
   const [selFightId2, setSelFightId2] = useState("");
   const [showInfo, setShowInfo] = useState(false);
@@ -50,6 +51,27 @@ export function BetTracker({
   const selFight = fights.find((f) => f.id === selFightId) ?? null;
   const selEvent2 = events.find((ev) => ev.id === selEventId2) ?? null;
   const selFight2 = fights.find((f) => f.id === selFightId2) ?? null;
+
+  // fighter quick-search: type a name, jump straight into that fight's markets.
+  // accent-insensitive so "fiziev" finds "Fiziev". scoped to the board the
+  // parent hands us, so only bettable fights ever surface.
+  const fnorm = (s: string) =>
+    s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const fq = fnorm(fighterSearch.trim());
+  const fighterMatches =
+    fq.length < 2
+      ? []
+      : fights
+          .filter(
+            (f) =>
+              fnorm(f.fighter1_name).includes(fq) ||
+              fnorm(f.fighter2_name).includes(fq)
+          )
+          .slice(0, 8)
+          .map((f) => ({
+            fight: f,
+            event: events.find((ev) => ev.id === f.event_id) ?? null,
+          }));
 
   // "verified" = structured bets tied to a fight (auto-graded); "all" adds manual ones
   const scoped = scope === "verified" ? bets.filter((b) => b.bet_type !== "other") : bets;
@@ -142,6 +164,41 @@ export function BetTracker({
         <p className="text-[11px] text-neutral-600">
           Tied to a fight on the board and auto-graded from results.
         </p>
+        <div className="relative">
+          <input
+            value={fighterSearch}
+            onChange={(e) => setFighterSearch(e.target.value)}
+            placeholder="Search a fighter to jump to their fight…"
+            className="w-full rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm outline-none focus:border-emerald-500"
+          />
+          {fighterMatches.length > 0 && (
+            <div className="absolute z-10 mt-1 w-full rounded-md border border-neutral-800 bg-neutral-900 shadow-lg divide-y divide-neutral-800 overflow-hidden">
+              {fighterMatches.map(({ fight, event }) => (
+                <button
+                  key={fight.id}
+                  onClick={() => {
+                    setSelEventId(fight.event_id);
+                    setSelFightId(fight.id);
+                    setFighterSearch("");
+                  }}
+                  className="w-full text-left px-2 py-1.5 hover:bg-neutral-800"
+                >
+                  <span className="text-sm">
+                    {fight.fighter1_name}{" "}
+                    <span className="text-neutral-600">vs</span>{" "}
+                    {fight.fighter2_name}
+                  </span>
+                  {event && (
+                    <span className="block text-[11px] text-neutral-500">
+                      {event.org} — {event.event_name}
+                      {event.event_date ? ` · ${event.event_date}` : ""}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="flex flex-wrap gap-2">
           <select
             value={selEventId}
