@@ -29,6 +29,7 @@ export type PublicProfile = {
   staked: number;
   roi: number | null; // null until something has settled
   verified: number; // picks whose price was confirmed against the sharp board
+  clv: number | null; // avg closing-line value across picks that have a close
 };
 
 function anonClient() {
@@ -67,9 +68,15 @@ export async function getPublicProfile(username: string): Promise<PublicProfile 
   let units = 0;
   let staked = 0;
   let verified = 0;
+  let clvSum = 0;
+  let clvN = 0;
 
   for (const b of picks) {
     if (b.price_check === "verified") verified += 1;
+    if (b.clv !== null && b.clv !== undefined) {
+      clvSum += Number(b.clv);
+      clvN += 1;
+    }
     if (b.result === "win") wins += 1;
     else if (b.result === "loss") losses += 1;
     else if (b.result === "push") pushes += 1;
@@ -97,5 +104,6 @@ export async function getPublicProfile(username: string): Promise<PublicProfile 
     staked,
     roi: staked > 0 ? (units / staked) * 100 : null,
     verified,
+    clv: clvN > 0 ? clvSum / clvN : null,
   };
 }

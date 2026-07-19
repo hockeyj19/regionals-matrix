@@ -5,7 +5,8 @@ import { fmtUnits } from "@/lib/format";
 /**
  * The card that renders when a profile link is pasted into Discord, iMessage or
  * anywhere else that unfurls a URL. This is what makes a verified record
- * travel: the receiver sees the number before they ever click.
+ * travel: the receiver sees the numbers before they ever click - now including
+ * closing-line value, the sharpest signal of the four.
  *
  * Rendered by satori, which supports only inline styles and needs an explicit
  * display on every element that has more than one child.
@@ -26,9 +27,13 @@ export default async function OgImage({
   const record = p ? `${p.wins}-${p.losses}-${p.pushes}` : "—";
   const units = p ? fmtUnits(p.units) : "—";
   const roi = p && p.roi !== null ? `${p.roi >= 0 ? "+" : ""}${p.roi.toFixed(1)}%` : "—";
+  const clv = p && p.clv !== null ? `${p.clv >= 0 ? "+" : ""}${p.clv.toFixed(1)}%` : "—";
   const name = p ? p.username : "Tape Notes";
   const good = !p || p.units >= 0;
   const tone = good ? "#10b981" : "#f87171";
+  // CLV gets its own tone: green if you beat the close, red if not, neutral if
+  // there isn't a closing line on any pick yet
+  const clvTone = !p || p.clv === null ? "#a3a3a3" : p.clv >= 0 ? "#10b981" : "#f87171";
   const verified = p?.verified ?? 0;
 
   const cell = (label: string, value: string, color: string) => (
@@ -36,18 +41,18 @@ export default async function OgImage({
       style={{
         display: "flex",
         flexDirection: "column",
-        gap: 8,
-        padding: "28px 36px",
-        borderRadius: 20,
+        gap: 6,
+        padding: "24px 26px",
+        borderRadius: 18,
         border: "2px solid #262626",
         background: "#111111",
-        minWidth: 260,
+        minWidth: 224,
       }}
     >
-      <div style={{ display: "flex", fontSize: 22, color: "#737373", letterSpacing: 2 }}>
+      <div style={{ display: "flex", fontSize: 20, color: "#737373", letterSpacing: 2 }}>
         {label}
       </div>
-      <div style={{ display: "flex", fontSize: 64, fontWeight: 700, color }}>{value}</div>
+      <div style={{ display: "flex", fontSize: 54, fontWeight: 700, color }}>{value}</div>
     </div>
   );
 
@@ -79,10 +84,11 @@ export default async function OgImage({
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 24 }}>
+        <div style={{ display: "flex", gap: 18 }}>
           {cell("RECORD", record, "#fafafa")}
           {cell("UNITS", units, tone)}
           {cell("ROI", roi, tone)}
+          {cell("CLV", clv, clvTone)}
         </div>
       </div>
     ),
