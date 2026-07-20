@@ -431,6 +431,39 @@ export function Matrix({ user }: { user: User }) {
     return () => window.clearTimeout(t);
   }, [pendingScrollFightId]);
 
+  // Browser back/forward moves between tabs, like any normal site. Each tab
+  // switch (and each "view someone else's profile") pushes one history entry
+  // carrying {view, profileUser}; popstate reads that entry straight back into
+  // state instead of leaving the app. Native History API, independent of
+  // Next's router, so it can't collide with the app's own URL/routing.
+  type NavState = { view: typeof view; profileUser: string | null };
+
+  useEffect(() => {
+    // seed the entry the app landed on, so backing past the first tab switch
+    // restores it correctly instead of finding an empty state
+    window.history.replaceState({ view, profileUser } as NavState, "");
+
+    function onPopState(e: PopStateEvent) {
+      const s = e.state as NavState | null;
+      setView(s?.view ?? "profile");
+      setProfileUser(s?.profileUser ?? null);
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function go(nextView: typeof view, nextProfileUser?: string | null) {
+    const targetProfileUser = nextProfileUser === undefined ? profileUser : nextProfileUser;
+    if (nextView === view && targetProfileUser === profileUser) return; // no-op, no dup entry
+    setView(nextView);
+    if (nextProfileUser !== undefined) setProfileUser(nextProfileUser);
+    window.history.pushState(
+      { view: nextView, profileUser: targetProfileUser } as NavState,
+      ""
+    );
+  }
+
   // remove a fighter from the notes library entirely (its single note/tags row)
   async function deleteFighter(fighterId: string) {
     setFighterNotes((prev) => {
@@ -545,7 +578,7 @@ export function Matrix({ user }: { user: User }) {
         <div className="max-w-4xl mx-auto flex items-center gap-2 sm:gap-3">
           <nav className="flex-1 min-w-0 overflow-x-auto flex gap-1 [&>button]:shrink-0">
               <button
-                onClick={() => setView("profile")}
+                onClick={() => go("profile")}
                 className={`rounded-lg border px-3 py-1 text-sm ${
                   view === "profile"
                     ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
@@ -555,7 +588,7 @@ export function Matrix({ user }: { user: User }) {
                 Profile
               </button>
               <button
-                onClick={() => setView("events")}
+                onClick={() => go("events")}
                 className={`rounded-lg border px-3 py-1 text-sm ${
                   view === "events"
                     ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
@@ -565,7 +598,7 @@ export function Matrix({ user }: { user: User }) {
                 Notes
               </button>
               <button
-                onClick={() => setView("bets")}
+                onClick={() => go("bets")}
                 className={`rounded-lg border px-3 py-1 text-sm ${
                   view === "bets"
                     ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
@@ -575,7 +608,7 @@ export function Matrix({ user }: { user: User }) {
                 Bets
               </button>
               <button
-                onClick={() => setView("odds")}
+                onClick={() => go("odds")}
                 className={`rounded-lg border px-3 py-1 text-sm ${
                   view === "odds"
                     ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
@@ -585,7 +618,7 @@ export function Matrix({ user }: { user: User }) {
                 Odds
               </button>
               <button
-                onClick={() => setView("leaderboard")}
+                onClick={() => go("leaderboard")}
                 className={`rounded-lg border px-3 py-1 text-sm ${
                   view === "leaderboard"
                     ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
@@ -596,7 +629,7 @@ export function Matrix({ user }: { user: User }) {
               </button>
               {isAdmin && (
                 <button
-                  onClick={() => setView("admin")}
+                  onClick={() => go("admin")}
                   className={`rounded-lg border px-3 py-1 text-sm ${
                     view === "admin"
                       ? "border-amber-500 bg-amber-600/20 text-amber-300"
@@ -619,17 +652,14 @@ export function Matrix({ user }: { user: User }) {
         <Profile
           user={user}
           target={profileUser}
-          onViewUser={(u) => setProfileUser(u)}
+          onViewUser={(u) => go("profile", u)}
         />
       ) : view === "admin" && isAdmin ? (
         <AdminPanel />
       ) : view === "leaderboard" ? (
         <Leaderboard
           user={user}
-          onOpenProfile={(u) => {
-            setProfileUser(u);
-            setView("profile");
-          }}
+          onOpenProfile={(u) => go("profile", u)}
         />
       ) : view === "bets" ? (
         <BetTracker
