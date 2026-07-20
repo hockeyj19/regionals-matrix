@@ -205,7 +205,7 @@ export function Leaderboard({
 
   const consMap: Record<string, Cons> = {};
   for (const b of allPublic) {
-    if (b.username === "Consensus_Bot") continue; // the bot mirrors consensus - never let it count itself
+    if (b.username === "Consensus") continue; // the bot mirrors consensus - never let it count itself
     const key = `${b.event_context ?? ""}||${b.selection}`;
     const c =
       consMap[key] ??
