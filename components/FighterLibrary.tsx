@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { FighterNote, NoteHistoryRow, BetRow } from "@/lib/types";
+import type { FighterNote, BetRow } from "@/lib/types";
 import { bookLabel, fmtDate, fmtOdds, sideBtn } from "@/lib/format";
 import { TrashIcon } from "@/components/icons";
 import { GrowingTextarea } from "@/components/GrowingTextarea";
@@ -29,25 +29,20 @@ function typeMatch(b: { bet_type: string | null }, f: string): boolean {
 
 export function FighterLibrary({
   notes,
-  history,
   bets,
   onSaveNote,
   onSaveTags,
-  onDeleteHistory,
   onDeleteFighter,
 }: {
   notes: Record<string, FighterNote>;
-  history: NoteHistoryRow[];
   bets: BetRow[];
-  onSaveNote: (fighterId: string, fighterName: string, value: string, context: string) => void;
+  onSaveNote: (fighterId: string, fighterName: string, value: string) => void;
   onSaveTags: (fighterId: string, fighterName: string, raw: string) => void;
-  onDeleteHistory: (id: string) => void;
   onDeleteFighter: (fighterId: string) => void;
 }) {
   const [q, setQ] = useState("");
   const [showInfo, setShowInfo] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
-  const [openHistory, setOpenHistory] = useState<Record<string, boolean>>({});
   const [histFilter, setHistFilter] = useState<
     "all" | "ml" | "totals" | "method" | "round" | "method_round"
   >("all");
@@ -70,8 +65,7 @@ export function FighterLibrary({
   const all = Object.values(notes).filter((n) => {
     const hasNote = (n.notes ?? "").trim() !== "";
     const hasTags = (n.tags ?? []).length > 0;
-    const hasHistory = history.some((h) => h.fighter_id === n.fighter_id);
-    return hasNote || hasTags || hasHistory;
+    return hasNote || hasTags;
   });
   const allTags = Array.from(new Set(all.flatMap((n) => n.tags ?? []))).sort();
 
@@ -195,14 +189,14 @@ export function FighterLibrary({
         </div>
         )}
       </div>
-      {/* Notes history */}
+      {/* Notes library */}
       <div
         onClick={() => setNotesOpen((v) => !v)}
         className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3 cursor-pointer"
       >
         <div className="flex items-center gap-1.5">
           <span className="text-xs font-semibold text-emerald-500 uppercase tracking-wide">
-            Notes history
+            Notes
           </span>
           <Chevron open={notesOpen} />
         </div>
@@ -278,8 +272,6 @@ export function FighterLibrary({
       )}
 
       {filtered.map((n) => {
-        const fh = history.filter((h) => h.fighter_id === n.fighter_id);
-        const isOpen = openHistory[n.fighter_id];
         return (
           <div
             key={n.fighter_id}
@@ -325,7 +317,7 @@ export function FighterLibrary({
               <>
             <GrowingTextarea
               defaultValue={n.notes ?? ""}
-              onBlur={(v) => onSaveNote(n.fighter_id, n.fighter_name ?? "", v, "Library")}
+              onBlur={(v) => onSaveNote(n.fighter_id, n.fighter_name ?? "", v)}
               templates={NOTE_TEMPLATES}
             />
 
@@ -336,43 +328,6 @@ export function FighterLibrary({
               className="w-full rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs outline-none focus:border-emerald-500"
             />
 
-            {fh.length > 0 && (
-              <div>
-                <button
-                  onClick={() =>
-                    setOpenHistory((prev) => ({
-                      ...prev,
-                      [n.fighter_id]: !prev[n.fighter_id],
-                    }))
-                  }
-                  className="text-xs text-neutral-500 hover:text-neutral-300"
-                >
-                  {isOpen ? "Hide history" : `History (${fh.length})`}
-                </button>
-                {isOpen && (
-                  <div className="mt-2 space-y-2 border-l border-neutral-800 pl-3">
-                    {fh.map((h) => (
-                      <div key={h.id} className="text-xs">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="text-neutral-600">
-                            {formatWhen(h.created_at)}
-                            {h.event_context ? ` · ${h.event_context}` : ""}
-                          </div>
-                          <button
-                            onClick={() => onDeleteHistory(h.id)}
-                            title="Delete this entry"
-                            className="shrink-0 rounded-md p-1.5 text-neutral-500 hover:text-red-400 hover:bg-neutral-800"
-                          >
-                            <TrashIcon />
-                          </button>
-                        </div>
-                        <div className="text-neutral-400 whitespace-pre-wrap">{h.notes}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
               </>
             )}
           </div>

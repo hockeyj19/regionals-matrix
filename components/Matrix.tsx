@@ -8,7 +8,6 @@ import type {
   FightRow,
   UserData,
   FighterNote,
-  NoteHistoryRow,
   NewBet,
   BetRow,
   MatrixData,
@@ -118,45 +117,6 @@ function OrgBadge({ org, size = 44 }: { org: string; size?: number }) {
   );
 }
 
-function PastNotes({
-  history,
-  fighterId,
-  current,
-}: {
-  history: NoteHistoryRow[];
-  fighterId: string;
-  current: string;
-}) {
-  // Model A: one note per fighter (shown in the box above). The reference
-  // column is the version timeline - earlier, superseded takes on this
-  // fighter. Skip the entry that equals the current note and dedupe repeats,
-  // so a value can never show as its own "prior version".
-  const cur = current.trim();
-  const seen = new Set<string>();
-  const past = history.filter((h) => {
-    if (h.fighter_id !== fighterId) return false;
-    const n = (h.notes ?? "").trim();
-    if (!n || n === cur || seen.has(n)) return false;
-    seen.add(n);
-    return true;
-  });
-  if (past.length === 0) return null;
-  const shown = past.slice(0, 3);
-  return (
-    <div className="space-y-1 border-l border-neutral-800 pl-2">
-      {shown.map((h) => (
-        <p key={h.id} className="text-[11px] text-neutral-500 whitespace-pre-wrap">
-          <span className="text-neutral-600">{h.event_context ?? "Library"} · </span>
-          {h.notes}
-        </p>
-      ))}
-      {past.length > 3 && (
-        <p className="text-[11px] text-neutral-600">+{past.length - 3} earlier version(s)</p>
-      )}
-    </div>
-  );
-}
-
 function fightHasMatrix(d?: MatrixData): boolean {
   if (!d) return false;
   return Object.values(d).some((m) =>
@@ -202,7 +162,6 @@ export function Matrix({ user }: { user: User }) {
   const [fights, setFights] = useState<FightRow[]>([]);
   const [userData, setUserData] = useState<Record<string, UserData>>({});
   const [fighterNotes, setFighterNotes] = useState<Record<string, FighterNote>>({});
-  const [noteHistory, setNoteHistory] = useState<NoteHistoryRow[]>([]);
   const [view, setView] = useState<
     "profile" | "events" | "odds" | "fighters" | "bets" | "leaderboard" | "admin"
   >("profile");
@@ -238,10 +197,6 @@ export function Matrix({ user }: { user: User }) {
     const { data: fn } = await supabase
       .from("user_fighter_notes")
       .select("fighter_id, fighter_name, notes, tags, updated_at");
-    const { data: nh } = await supabase
-      .from("user_fighter_note_history")
-      .select("id, fighter_id, notes, event_context, created_at")
-      .order("created_at", { ascending: false });
     const { data: bt } = await supabase
       .from("user_bets")
       .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, settled_by, delete_requested_at, delete_reason, published_at, book, price_check, market_best, market_book, market_checked_at, close_odds, clv")
@@ -262,7 +217,6 @@ export function Matrix({ user }: { user: User }) {
     const nmap: Record<string, FighterNote> = {};
     (fn ?? []).forEach((row) => (nmap[row.fighter_id] = row));
     setFighterNotes(nmap);
-    setNoteHistory(nh ?? []);
     setBets(bt ?? []);
     const mmap: Record<string, MatrixData> = {};
     (mx ?? []).forEach((row) => (mmap[row.fight_id] = row.data ?? {}));
@@ -314,15 +268,13 @@ export function Matrix({ user }: { user: User }) {
   // `user_fighter_notes` is the single source of truth; `event_context` is now
   // only a label recording where a version was written.
   //
-  // History is a linear, deduped version log: a new value is appended only when
-  // it actually differs from the latest stored version. Writing the same text
-  // from Notes and then Library therefore appends nothing the second time -
-  // which is precisely what made notes appear to "double" before.
+  // One note per fighter, full stop: upsert the single shared row read by both
+  // the Notes card and the Library. No version history - editing or erasing
+  // replaces it in place, everywhere.
   async function saveFighterNote(
     fighterId: string,
     fighterName: string,
-    value: string,
-    context: string
+    value: string
   ) {
     const prevNote = fighterNotes[fighterId]?.notes ?? "";
     if (value === prevNote) return; // already the current note - nothing to do
@@ -350,35 +302,6 @@ export function Matrix({ user }: { user: User }) {
       },
       { onConflict: "user_id,fighter_id" }
     );
-
-    // 2) version log. Clearing the box is a full delete: the note empties in
-    // both tabs (one shared row) and its history is dropped too, so nothing you
-    // erased lingers anywhere.
-    if (value.trim() === "") {
-      await supabase
-        .from("user_fighter_note_history")
-        .delete()
-        .eq("user_id", user.id)
-        .eq("fighter_id", fighterId);
-      setNoteHistory((prev) => prev.filter((h) => h.fighter_id !== fighterId));
-      return;
-    }
-
-    const newest = noteHistory.find((h) => h.fighter_id === fighterId);
-    if (newest && (newest.notes ?? "") === value) return; // already the latest version
-
-    const { data: h } = await supabase
-      .from("user_fighter_note_history")
-      .insert({
-        user_id: user.id,
-        fighter_id: fighterId,
-        fighter_name: fighterName,
-        notes: value,
-        event_context: context,
-      })
-      .select("id, fighter_id, notes, event_context, created_at")
-      .single();
-    if (h) setNoteHistory((prev) => [h, ...prev]);
   }
 
   // save a fighter's tags (comma-separated input -> text[])
@@ -415,29 +338,15 @@ export function Matrix({ user }: { user: User }) {
     return fighterNotes[fighterId]?.notes ?? "";
   }
 
-  // delete a single note-history entry
-  async function deleteHistoryEntry(id: string) {
-    setNoteHistory((prev) => prev.filter((h) => h.id !== id));
-    await supabase.from("user_fighter_note_history").delete().eq("id", id);
-  }
-
-  // remove a fighter from the notes library entirely: the note/tags record and
-  // every history entry. Clearing the note text alone leaves the fighter here if
-  // it still has history, so this is the way to make it disappear.
+  // remove a fighter from the notes library entirely (its single note/tags row)
   async function deleteFighter(fighterId: string) {
     setFighterNotes((prev) => {
       const next = { ...prev };
       delete next[fighterId];
       return next;
     });
-    setNoteHistory((prev) => prev.filter((h) => h.fighter_id !== fighterId));
     await supabase
       .from("user_fighter_notes")
-      .delete()
-      .eq("user_id", user.id)
-      .eq("fighter_id", fighterId);
-    await supabase
-      .from("user_fighter_note_history")
       .delete()
       .eq("user_id", user.id)
       .eq("fighter_id", fighterId);
@@ -632,11 +541,9 @@ export function Matrix({ user }: { user: User }) {
       ) : view === "fighters" ? (
         <FighterLibrary
           notes={fighterNotes}
-          history={noteHistory}
           bets={bets}
           onSaveNote={saveFighterNote}
           onSaveTags={saveFighterTags}
-          onDeleteHistory={deleteHistoryEntry}
           onDeleteFighter={deleteFighter}
         />
       ) : view === "admin" && isAdmin ? (
@@ -856,20 +763,11 @@ export function Matrix({ user }: { user: User }) {
                           className="grid grid-cols-2 gap-2"
                         >
                           {f1id ? (
-                            <div className="space-y-1">
-                              <GrowingTextarea
-                                defaultValue={noteFor(f1id)}
-                                onBlur={(v) =>
-                                  saveFighterNote(f1id, f.fighter1_name, v, `${ev.org} — ${ev.event_name}`)
-                                }
-                                templates={NOTE_TEMPLATES}
-                              />
-                              <PastNotes
-                                history={noteHistory}
-                                fighterId={f1id}
-                                current={noteFor(f1id)}
-                              />
-                            </div>
+                            <GrowingTextarea
+                              defaultValue={noteFor(f1id)}
+                              onBlur={(v) => saveFighterNote(f1id, f.fighter1_name, v)}
+                              templates={NOTE_TEMPLATES}
+                            />
                           ) : (
                             <GrowingTextarea
                               defaultValue={d?.notes1 ?? ""}
@@ -877,20 +775,11 @@ export function Matrix({ user }: { user: User }) {
                             />
                           )}
                           {f2id ? (
-                            <div className="space-y-1">
-                              <GrowingTextarea
-                                defaultValue={noteFor(f2id)}
-                                onBlur={(v) =>
-                                  saveFighterNote(f2id, f.fighter2_name, v, `${ev.org} — ${ev.event_name}`)
-                                }
-                                templates={NOTE_TEMPLATES}
-                              />
-                              <PastNotes
-                                history={noteHistory}
-                                fighterId={f2id}
-                                current={noteFor(f2id)}
-                              />
-                            </div>
+                            <GrowingTextarea
+                              defaultValue={noteFor(f2id)}
+                              onBlur={(v) => saveFighterNote(f2id, f.fighter2_name, v)}
+                              templates={NOTE_TEMPLATES}
+                            />
                           ) : (
                             <GrowingTextarea
                               defaultValue={d?.notes2 ?? ""}
