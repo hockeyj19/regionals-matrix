@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { FighterNote, BetRow } from "@/lib/types";
-import { bookLabel, fmtDate, fmtOdds, sideBtn } from "@/lib/format";
+import { betProfit, bookLabel, fmtDate, fmtOdds, fmtUnits, sideBtn } from "@/lib/format";
 import { TrashIcon } from "@/components/icons";
 import { GrowingTextarea } from "@/components/GrowingTextarea";
 import { NOTE_TEMPLATES } from "@/lib/noteTemplates";
@@ -18,6 +18,13 @@ function Chevron({ open }: { open: boolean }) {
         strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
+}
+
+function searchMatch(b: { selection: string; event_context: string | null }, q: string): boolean {
+  const s = q.trim().toLowerCase();
+  if (!s) return true;
+  return (b.selection ?? "").toLowerCase().includes(s) ||
+    (b.event_context ?? "").toLowerCase().includes(s);
 }
 
 function typeMatch(b: { bet_type: string | null }, f: string): boolean {
@@ -48,6 +55,7 @@ export function FighterLibrary({
   >("all");
   const [nowTs] = useState(() => Date.now());
   const [pickOpen, setPickOpen] = useState(false);
+  const [pickSearch, setPickSearch] = useState("");
   const [notesOpen, setNotesOpen] = useState(false);
   // each fighter's note starts collapsed; expand them one at a time
   const [openNote, setOpenNote] = useState<Record<string, boolean>>({});
@@ -131,7 +139,13 @@ export function FighterLibrary({
         </div>
         {pickOpen && (
         <div className="space-y-2 mt-3 cursor-auto" onClick={(e) => e.stopPropagation()}>
-          {pickHistory.filter((b) => typeMatch(b, histFilter)).length === 0 && (
+          <input
+            value={pickSearch}
+            onChange={(e) => setPickSearch(e.target.value)}
+            placeholder="Search picks…"
+            className="w-full rounded-md bg-neutral-800/60 border border-neutral-800 px-3 py-1.5 text-xs text-neutral-200 outline-none focus:border-emerald-500 placeholder:text-neutral-600"
+          />
+          {pickHistory.filter((b) => typeMatch(b, histFilter) && searchMatch(b, pickSearch)).length === 0 && (
             <p className="text-xs text-neutral-600">
               {pickHistory.length === 0
                 ? "No settled picks yet - they land here after each event."
@@ -139,17 +153,12 @@ export function FighterLibrary({
             </p>
           )}
           {pickHistory
-            .filter((b) => typeMatch(b, histFilter))
+            .filter((b) => typeMatch(b, histFilter) && searchMatch(b, pickSearch))
             .slice(0, 100)
             .map((b) => (
               <div key={b.id} className="border-b border-neutral-900 pb-1 last:border-0">
                 <div className="flex items-center justify-between gap-2 text-xs">
-                  <span className="truncate">
-                    {b.selection}{" "}
-                    <span className="text-neutral-500">
-                      {fmtOdds(b.odds)} · {Number(b.stake)}u
-                    </span>
-                  </span>
+                  <span className="truncate">{b.selection}</span>
                   <span
                     className={`shrink-0 ${
                       b.result === "win"
@@ -164,26 +173,36 @@ export function FighterLibrary({
                     {b.result === "pending" ? "live" : b.result}
                   </span>
                 </div>
-                <p className="text-[11px] text-neutral-600 truncate">
-                  {b.book ? `${bookLabel(b.book)} · ` : ""}
-                  {b.event_context ? `${b.event_context} · ` : ""}
-                  {fmtDate(b.event_date ?? b.placed_at)}
-                  {b.price_check === "verified" && (
-                    <span className="ml-1 uppercase tracking-wide text-amber-300"> market ✓</span>
-                  )}
-                  {b.clv !== null && (
-                    <span className="ml-1">
-                      · CLV{" "}
-                      <span className={Number(b.clv) >= 0 ? "text-emerald-400" : "text-red-400"}>
-                        {Number(b.clv) >= 0 ? "+" : ""}
-                        {Number(b.clv).toFixed(1)}
-                      </span>
-                    </span>
-                  )}
-                </p>
+                <div className="flex items-baseline gap-1 text-[11px] min-w-0">
+                  <span className="shrink-0 text-neutral-500">
+                    {fmtOdds(b.odds)} · {Number(b.stake)}u
+                    {b.clv !== null && (
+                      <>
+                        {" · CLV "}
+                        <span className={Number(b.clv) >= 0 ? "text-emerald-400" : "text-red-400"}>
+                          {Number(b.clv) >= 0 ? "+" : ""}
+                          {Number(b.clv).toFixed(1)}
+                        </span>
+                      </>
+                    )}
+                    {b.result !== "pending" && (
+                      <>
+                        {" · "}
+                        <span className={betProfit(b) >= 0 ? "text-emerald-400" : "text-red-400"}>
+                          {fmtUnits(betProfit(b))}
+                        </span>
+                      </>
+                    )}
+                  </span>
+                  <span className="truncate text-neutral-600">
+                    {b.book ? `${bookLabel(b.book)} · ` : ""}
+                    {b.event_context ? `${b.event_context} · ` : ""}
+                    {fmtDate(b.event_date ?? b.placed_at)}
+                  </span>
+                </div>
               </div>
             ))}
-          {pickHistory.filter((b) => typeMatch(b, histFilter)).length > 100 && (
+          {pickHistory.filter((b) => typeMatch(b, histFilter) && searchMatch(b, pickSearch)).length > 100 && (
             <p className="text-[11px] text-neutral-600">Showing the latest 100.</p>
           )}
         </div>

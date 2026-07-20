@@ -267,10 +267,19 @@ export function Leaderboard({
     return (
               <div key={b.id} className="px-1 py-0.5">
                 <div className="flex items-center justify-between gap-2 text-xs">
-                  <span className="truncate">
-                    {b.selection}{" "}
-                    <span className="text-emerald-400">
+                  <span className="flex items-baseline gap-1 min-w-0">
+                    <span className="truncate">{b.selection}</span>
+                    <span className="shrink-0 text-emerald-400">
                       {fmtOdds(b.odds)} · {Number(b.stake)}u
+                      {b.clv !== null && (
+                        <span className="text-neutral-500">
+                          {" · CLV "}
+                          <span className={Number(b.clv) >= 0 ? "text-emerald-400" : "text-red-400"}>
+                            {Number(b.clv) >= 0 ? "+" : ""}
+                            {Number(b.clv).toFixed(1)}%
+                          </span>
+                        </span>
+                      )}
                     </span>
                   </span>
                   <span className="flex items-center gap-1 shrink-0">
@@ -298,15 +307,6 @@ export function Leaderboard({
                   <p className="text-[11px] text-amber-500/80">
                     Above board when logged (best {fmtOdds(b.market_best)}
                     {b.market_book ? ` @ ${b.market_book}` : ""})
-                  </p>
-                )}
-                {b.clv !== null && (
-                  <p className="text-[11px] text-neutral-500">
-                    CLV{" "}
-                    <span className={Number(b.clv) >= 0 ? "text-emerald-400" : "text-red-400"}>
-                      {Number(b.clv) >= 0 ? "+" : ""}
-                      {Number(b.clv).toFixed(2)}
-                    </span>
                   </p>
                 )}
               </div>);

@@ -616,7 +616,7 @@ export function Profile({
                 <div className="flex flex-wrap gap-2">
                   {rank !== null && (
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-gradient-to-b from-amber-500/20 to-neutral-950 px-3 py-1 text-xs font-semibold text-amber-300 shadow">
-                      ★ #{rank} on the Leaderboard
+                      ★ #{rank}
                     </span>
                   )}
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-gradient-to-b from-emerald-500/15 to-neutral-950 px-3 py-1 text-xs font-semibold text-emerald-300 shadow">

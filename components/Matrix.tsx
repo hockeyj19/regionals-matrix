@@ -63,7 +63,7 @@ const ORG_BADGE: Record<string, { abbr: string; bg: string; fg: string }> = {
   Oktagon: { abbr: "OKT", bg: "bg-[#dcc9a6]", fg: "text-neutral-900" },
   CFFC: { abbr: "CFFC", bg: "bg-purple-600", fg: "text-white" },
   "Brave CF": { abbr: "BRAVE", bg: "bg-amber-600", fg: "text-black" },
-  "UAE Warriors": { abbr: "UAE", bg: "bg-yellow-500", fg: "text-white" },
+  "UAE Warriors": { abbr: "UAE", bg: "bg-yellow-500", fg: "text-black" },
   Rizin: { abbr: "RIZIN", bg: "bg-white", fg: "text-red-600" },
   ACA: { abbr: "ACA", bg: "bg-lime-500", fg: "text-white" },
   "ONE Championship": { abbr: "ONE", bg: "bg-white", fg: "text-black" },
