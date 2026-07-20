@@ -329,10 +329,20 @@ export function Leaderboard({
           >
             {rank !== null ? rank + 1 : "-"}
           </span>
-          <span className="flex-1 text-sm font-medium truncate">
+          <span className="hidden sm:block flex-1 text-sm font-medium truncate">
             {r.username}
             {r.username === username && <span className="text-neutral-600"> (you)</span>}
           </span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenProfile(r.username);
+            }}
+            className="sm:hidden flex-1 min-w-0 text-left text-sm font-medium truncate hover:text-emerald-400"
+          >
+            {r.username}
+            {r.username === username && <span className="text-neutral-600"> (you)</span>}
+          </button>
           <span className="hidden sm:inline text-xs text-neutral-500 shrink-0 w-14 text-right">
             {r.wins}-{r.losses}-{r.pushes}
           </span>
@@ -352,7 +362,7 @@ export function Leaderboard({
             {rroi.toFixed(1)}%
           </span>
           <span
-            className={`text-xs shrink-0 w-14 text-right ${
+            className={`hidden sm:inline text-xs shrink-0 w-14 text-right ${
               rclv === null ? "text-neutral-700" : rclv >= 0 ? "text-emerald-400" : "text-red-400"
             }`}
           >
@@ -364,7 +374,7 @@ export function Leaderboard({
               onOpenProfile(r.username);
             }}
             title="Open this user's profile"
-            className="shrink-0 rounded border border-neutral-800 px-1.5 py-0.5 text-[11px] text-neutral-600 hover:text-emerald-400 hover:border-neutral-700"
+            className="hidden sm:block shrink-0 rounded border border-neutral-800 px-1.5 py-0.5 text-[11px] text-neutral-600 hover:text-emerald-400 hover:border-neutral-700"
           >
             profile
           </button>
@@ -513,8 +523,8 @@ export function Leaderboard({
           <span className="hidden sm:inline shrink-0 w-14 text-right">Record</span>
           <span className="shrink-0 w-16 text-right">Profit</span>
           <span className="shrink-0 w-16 text-right">ROI</span>
-          <span className="shrink-0 w-14 text-right">CLV</span>
-          <span className="shrink-0 w-[52px]" />
+          <span className="hidden sm:inline shrink-0 w-14 text-right">CLV</span>
+          <span className="hidden sm:block shrink-0 w-[52px]" />
         </div>
       )}
       {ranked.map((r, i) => renderRow(r, i))}
