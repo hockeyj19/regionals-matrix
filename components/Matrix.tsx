@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import type {
@@ -18,7 +18,7 @@ import { GrowingTextarea } from "@/components/GrowingTextarea";
 import { NOTE_TEMPLATES } from "@/lib/noteTemplates";
 import { QuickBet } from "@/components/QuickBet";
 import { FightMatrix } from "@/components/FightMatrix";
-import { FighterLibrary } from "@/components/FighterLibrary";
+import { NotesHistoryPanel } from "@/components/NotesHistoryPanel";
 import { BetTracker } from "@/components/BetTracker";
 import { Profile } from "@/components/Profile";
 import { OddsBoard } from "@/components/OddsBoard";
@@ -117,6 +117,47 @@ function OrgBadge({ org, size = 44 }: { org: string; size?: number }) {
   );
 }
 
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="12" height="12" viewBox="0 0 24 24" fill="none"
+      className={`text-neutral-500 transition-transform ${open ? "rotate-180" : ""}`}
+    >
+      <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2"
+        strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// A top-level collapsible block for the Notes page. Starts closed; the header
+// stays visible either way so the three sections read as a menu.
+function Section({
+  title,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 overflow-hidden">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-neutral-900/60 text-left"
+      >
+        <span className="text-xs font-semibold text-emerald-500 uppercase tracking-wide">
+          {title}
+        </span>
+        <Chevron open={open} />
+      </button>
+      {open && <div className="px-4 pb-4 border-t border-neutral-800 pt-4 space-y-4">{children}</div>}
+    </div>
+  );
+}
+
 function fightHasMatrix(d?: MatrixData): boolean {
   if (!d) return false;
   return Object.values(d).some((m) =>
@@ -163,8 +204,16 @@ export function Matrix({ user }: { user: User }) {
   const [userData, setUserData] = useState<Record<string, UserData>>({});
   const [fighterNotes, setFighterNotes] = useState<Record<string, FighterNote>>({});
   const [view, setView] = useState<
-    "profile" | "events" | "odds" | "fighters" | "bets" | "leaderboard" | "admin"
+    "profile" | "events" | "odds" | "bets" | "leaderboard" | "admin"
   >("profile");
+  // Notes page: three independently-collapsible sections, all start closed.
+  const [openSection, setOpenSection] = useState<{
+    search: boolean;
+    events: boolean;
+    history: boolean;
+  }>({ search: false, events: false, history: false });
+  const [fighterSearchQ, setFighterSearchQ] = useState("");
+  const [pendingScrollFightId, setPendingScrollFightId] = useState<string | null>(null);
   const [profileUser, setProfileUser] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [showEventsInfo, setShowEventsInfo] = useState(false);
@@ -338,6 +387,50 @@ export function Matrix({ user }: { user: User }) {
     return fighterNotes[fighterId]?.notes ?? "";
   }
 
+  // Search Fighters: pulls only from the fighters already on the board (the
+  // current events/matchups scrape), not the whole all-time library. Picking
+  // a result opens straight to that fighter's note box on Upcoming Events.
+  const fnorm = (s: string) =>
+    s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const fsq = fnorm(fighterSearchQ.trim());
+  const fighterSearchResults =
+    fsq.length < 2
+      ? []
+      : fights
+          .flatMap((f) => {
+            const ev = events.find((e) => e.id === f.event_id);
+            if (!ev) return [];
+            const rows: { fight: FightRow; opponent: string; name: string }[] = [];
+            if (fnorm(f.fighter1_name).includes(fsq)) {
+              rows.push({ fight: f, name: f.fighter1_name, opponent: f.fighter2_name });
+            }
+            if (fnorm(f.fighter2_name).includes(fsq)) {
+              rows.push({ fight: f, name: f.fighter2_name, opponent: f.fighter1_name });
+            }
+            return rows;
+          })
+          .slice(0, 8);
+
+  function jumpToFighter(f: FightRow) {
+    const ev = events.find((e) => e.id === f.event_id);
+    if (!ev) return;
+    setOpenSection((prev) => ({ ...prev, events: true }));
+    setOpenEvents((prev) => ({ ...prev, [ev.id]: true }));
+    setOpenNotes((prev) => ({ ...prev, [f.id]: true }));
+    setPendingScrollFightId(f.id);
+  }
+
+  useEffect(() => {
+    if (!pendingScrollFightId) return;
+    const t = window.setTimeout(() => {
+      document
+        .getElementById(`fight-${pendingScrollFightId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      setPendingScrollFightId(null);
+    }, 80); // let the just-opened sections render before scrolling
+    return () => window.clearTimeout(t);
+  }, [pendingScrollFightId]);
+
   // remove a fighter from the notes library entirely (its single note/tags row)
   async function deleteFighter(fighterId: string) {
     setFighterNotes((prev) => {
@@ -492,16 +585,6 @@ export function Matrix({ user }: { user: User }) {
                 Odds
               </button>
               <button
-                onClick={() => setView("fighters")}
-                className={`rounded-lg border px-3 py-1 text-sm ${
-                  view === "fighters"
-                    ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
-                    : "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
-                }`}
-              >
-                Library
-              </button>
-              <button
                 onClick={() => setView("leaderboard")}
                 className={`rounded-lg border px-3 py-1 text-sm ${
                   view === "leaderboard"
@@ -538,14 +621,6 @@ export function Matrix({ user }: { user: User }) {
           target={profileUser}
           onViewUser={(u) => setProfileUser(u)}
         />
-      ) : view === "fighters" ? (
-        <FighterLibrary
-          notes={fighterNotes}
-          bets={bets}
-          onSaveNote={saveFighterNote}
-          onSaveTags={saveFighterTags}
-          onDeleteFighter={deleteFighter}
-        />
       ) : view === "admin" && isAdmin ? (
         <AdminPanel />
       ) : view === "leaderboard" ? (
@@ -570,6 +645,51 @@ export function Matrix({ user }: { user: User }) {
         />
       ) : (
       <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-4">
+        <Section
+          title="Search Fighters"
+          open={openSection.search}
+          onToggle={() => setOpenSection((prev) => ({ ...prev, search: !prev.search }))}
+        >
+          <input
+            value={fighterSearchQ}
+            onChange={(e) => setFighterSearchQ(e.target.value)}
+            placeholder="Search fighters on the current board…"
+            className="w-full rounded-lg bg-neutral-900 border border-neutral-700 px-3 py-2 text-sm outline-none focus:border-neutral-500"
+          />
+          {fighterSearchQ.trim().length >= 2 && (
+            <div className="space-y-1">
+              {fighterSearchResults.length === 0 ? (
+                <p className="text-xs text-neutral-600">No fighter on the current board matches.</p>
+              ) : (
+                fighterSearchResults.map(({ fight, name, opponent }, i) => {
+                  const ev = events.find((e) => e.id === fight.event_id);
+                  return (
+                    <button
+                      key={`${fight.id}-${i}`}
+                      onClick={() => jumpToFighter(fight)}
+                      className="w-full flex items-center justify-between gap-2 rounded-lg border border-neutral-800 px-3 py-2 text-left hover:border-emerald-700 hover:bg-neutral-900/60"
+                    >
+                      <span className="min-w-0">
+                        <span className="text-sm font-medium truncate">{name}</span>
+                        <span className="block text-[11px] text-neutral-500 truncate">
+                          vs {opponent}
+                          {ev ? ` · ${ev.org} — ${ev.event_name}` : ""}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-neutral-600 text-xs">Open →</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          )}
+        </Section>
+
+        <Section
+          title="Upcoming Events"
+          open={openSection.events}
+          onToggle={() => setOpenSection((prev) => ({ ...prev, events: !prev.events }))}
+        >
         <div className="flex items-center justify-between">
           <InfoButton open={showEventsInfo} onClick={() => setShowEventsInfo((v) => !v)} />
           <button
@@ -652,6 +772,7 @@ export function Matrix({ user }: { user: User }) {
                     return (
                       <div
                         key={f.id}
+                        id={`fight-${f.id}`}
                         onClick={() =>
                           setOpenNotes((prev) => ({ ...prev, [f.id]: !expanded }))
                         }
@@ -821,6 +942,20 @@ export function Matrix({ user }: { user: User }) {
             </div>
           );
         })}
+        </Section>
+
+        <Section
+          title="Notes History"
+          open={openSection.history}
+          onToggle={() => setOpenSection((prev) => ({ ...prev, history: !prev.history }))}
+        >
+          <NotesHistoryPanel
+            notes={fighterNotes}
+            onSaveNote={saveFighterNote}
+            onSaveTags={saveFighterTags}
+            onDeleteFighter={deleteFighter}
+          />
+        </Section>
       </div>
       )}
     </main>

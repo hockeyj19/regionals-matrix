@@ -7,6 +7,7 @@ import { TrashIcon } from "@/components/icons";
 import { QuickBet } from "@/components/QuickBet";
 import { ManualBet } from "@/components/ManualBet";
 import { BETS_README, InfoButton, ReadMePanel } from "@/components/ReadMe";
+import { PicksHistoryPanel } from "@/components/PicksHistoryPanel";
 
 export function BetTracker({
   bets,
@@ -558,6 +559,8 @@ export function BetTracker({
           </div>
         );
       })}
+
+      <PicksHistoryPanel bets={bets} />
     </div>
   );
 }
