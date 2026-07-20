@@ -351,9 +351,18 @@ export function Matrix({ user }: { user: User }) {
       { onConflict: "user_id,fighter_id" }
     );
 
-    // 2) version log. Clearing the box empties the note but keeps the history
-    // (remove a version with its trash button, or the fighter via delete).
-    if (value.trim() === "") return;
+    // 2) version log. Clearing the box is a full delete: the note empties in
+    // both tabs (one shared row) and its history is dropped too, so nothing you
+    // erased lingers anywhere.
+    if (value.trim() === "") {
+      await supabase
+        .from("user_fighter_note_history")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("fighter_id", fighterId);
+      setNoteHistory((prev) => prev.filter((h) => h.fighter_id !== fighterId));
+      return;
+    }
 
     const newest = noteHistory.find((h) => h.fighter_id === fighterId);
     if (newest && (newest.notes ?? "") === value) return; // already the latest version

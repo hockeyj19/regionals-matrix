@@ -33,9 +33,10 @@ export function GrowingTextarea({
     const cur = el.value.replace(/\s+$/, "");
     el.value = cur ? `${cur}\n\n${body}` : body;
     resize();
-    onBlur(el.value);
     el.focus();
     el.setSelectionRange(el.value.length, el.value.length);
+    // no save here: the note persists on the textarea's own blur, exactly like
+    // typing. inserting scaffolding you then erase leaves nothing behind.
   }
 
   return (
@@ -46,6 +47,7 @@ export function GrowingTextarea({
             <button
               key={tpl.label}
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => insertTemplate(tpl.body)}
               className="text-[10px] uppercase tracking-wide border border-neutral-700 text-neutral-500 rounded px-1.5 py-0.5 hover:bg-neutral-800 hover:text-neutral-300"
             >
