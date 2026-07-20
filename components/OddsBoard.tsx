@@ -66,7 +66,7 @@ const ORG_COLORS: Record<string, string> = {
   LFA: "text-sky-400",
   "Cage Warriors": "text-yellow-400",
   KSW: "text-orange-400",
-  Oktagon: "text-pink-400",
+  Oktagon: "text-[#dcc9a6]",
   CFFC: "text-purple-400",
   "Brave CF": "text-amber-400",
   "UAE Warriors": "text-teal-400",
