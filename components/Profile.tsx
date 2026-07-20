@@ -370,6 +370,7 @@ export function Profile({
       let l = 0;
       let p = 0;
       let u = 0;
+      let staked = 0;
       let clvSum = 0;
       let clvN = 0;
       bets.forEach((b) => {
@@ -377,12 +378,17 @@ export function Profile({
         else if (b.result === "loss") l += 1;
         else p += 1;
         u += betProfit(b);
+        staked += Number(b.stake) || 0;
         if (b.clv !== null && b.clv !== undefined) {
           clvSum += Number(b.clv);
           clvN += 1;
         }
       });
-      return { label, w, l, p, units: u, bets, avgClv: clvN > 0 ? clvSum / clvN : null };
+      return {
+        label, w, l, p, units: u, bets,
+        roi: staked > 0 ? (u / staked) * 100 : null,
+        avgClv: clvN > 0 ? clvSum / clvN : null,
+      };
     };
     return [
       bucket("Today", (t) => t >= dayStart),
@@ -699,6 +705,17 @@ export function Profile({
                           <p className="text-sm text-white">{pr.label}</p>
                           <p className="text-xs text-neutral-500">
                             {pr.w}-{pr.l}-{pr.p}
+                            {pr.roi !== null && (
+                              <span
+                                className={`ml-2 ${
+                                  pr.roi >= 0 ? "text-emerald-500/80" : "text-red-500/80"
+                                }`}
+                                title="Return on investment across settled bets in this window"
+                              >
+                                ROI {pr.roi >= 0 ? "+" : ""}
+                                {pr.roi.toFixed(0)}%
+                              </span>
+                            )}
                             {pr.avgClv !== null && (
                               <span
                                 className={`ml-2 ${

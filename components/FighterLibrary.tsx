@@ -196,7 +196,7 @@ export function FighterLibrary({
       >
         <div className="flex items-center gap-1.5">
           <span className="text-xs font-semibold text-emerald-500 uppercase tracking-wide">
-            Notes
+            Notes history
           </span>
           <Chevron open={notesOpen} />
         </div>

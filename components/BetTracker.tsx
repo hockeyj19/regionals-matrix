@@ -121,16 +121,6 @@ export function BetTracker({
           <p className="text-lg font-bold">{wins}-{losses}-{pushes}</p>
         </div>
         <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
-          <p className="text-[11px] text-neutral-500 uppercase tracking-wide">Avg stake</p>
-          <p className="text-lg font-bold">
-            {settled.length ? Math.round((staked / settled.length) * 100) / 100 : 0}u
-          </p>
-        </div>
-        <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
-          <p className="text-[11px] text-neutral-500 uppercase tracking-wide">Profit</p>
-          <p className={`text-lg font-bold ${profitTone}`}>{fmtUnits(profit)}</p>
-        </div>
-        <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
           <p className="text-[11px] text-neutral-500 uppercase tracking-wide">ROI</p>
           <p className={`text-lg font-bold ${profitTone}`}>
             {roi >= 0 ? "+" : ""}{roi.toFixed(1)}%
@@ -144,6 +134,16 @@ export function BetTracker({
             </p>
           </div>
         )}
+        <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
+          <p className="text-[11px] text-neutral-500 uppercase tracking-wide">Profit</p>
+          <p className={`text-lg font-bold ${profitTone}`}>{fmtUnits(profit)}</p>
+        </div>
+        <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
+          <p className="text-[11px] text-neutral-500 uppercase tracking-wide">Avg stake</p>
+          <p className="text-lg font-bold">
+            {settled.length ? Math.round((staked / settled.length) * 100) / 100 : 0}u
+          </p>
+        </div>
         {beatRate !== null && (
           <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
             <p className="text-[11px] text-neutral-500 uppercase tracking-wide">Beat close</p>
