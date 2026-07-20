@@ -225,6 +225,7 @@ export function Leaderboard({
     if (!c.users.includes(b.username)) c.users.push(b.username);
   }
   const consensusRows = Object.values(consMap)
+    .filter((c) => c.users.length >= 2) // consensus = 2+ distinct users on the same pick
     .map((c) => ({ ...c, avgOdds: percentToAmerican((c.probSum / c.n) * 100) }))
     .sort(
       (a, b) =>
@@ -332,7 +333,7 @@ export function Leaderboard({
             {r.username}
             {r.username === username && <span className="text-neutral-600"> (you)</span>}
           </span>
-          <span className="text-xs text-neutral-500 shrink-0">
+          <span className="hidden sm:inline text-xs text-neutral-500 shrink-0 w-14 text-right">
             {r.wins}-{r.losses}-{r.pushes}
           </span>
           <span
@@ -505,6 +506,17 @@ export function Leaderboard({
         </div>
       )}
 
+      {ranked.length > 0 && (
+        <div className="flex items-center gap-3 px-3 pb-1 text-[10px] uppercase tracking-wide text-neutral-600">
+          <span className="w-6" />
+          <span className="flex-1">User</span>
+          <span className="hidden sm:inline shrink-0 w-14 text-right">Record</span>
+          <span className="shrink-0 w-16 text-right">Profit</span>
+          <span className="shrink-0 w-16 text-right">ROI</span>
+          <span className="shrink-0 w-14 text-right">CLV</span>
+          <span className="shrink-0 w-[52px]" />
+        </div>
+      )}
       {ranked.map((r, i) => renderRow(r, i))}
 
       {!loading && selfSettled < MIN_BETS_TO_RANK && (
