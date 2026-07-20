@@ -4,22 +4,32 @@
 // as you like - the UI renders whatever is in this array.
 export const NOTE_TEMPLATES: { label: string; body: string }[] = [
   {
-    label: "Breakdown",
+    label: "Styles",
     body: [
       "Striking: ",
       "Grappling: ",
       "Cardio / pace: ",
-      "Durability: ",
-      "Path to victory: ",
-      "X-factor: ",
+      "Durability / heart: ",
+      "Range: ",
+      "Clinch: ",
+      "Stance: ",
     ].join("\n"),
   },
   {
-    label: "Quick read",
-    body: ["Style: ", "Matchup edge: ", "Fade if: "].join("\n"),
+    label: "Stats",
+    body: [
+      "Size / weight / height / reach: ",
+      "TKO / sub / dec: ",
+      "Strength of schedule: ",
+    ].join("\n"),
   },
   {
-    label: "Betting angle",
-    body: ["Value / number: ", "Lean: ", "Confidence: ", "Live dog?: "].join("\n"),
+    label: "Intangibles",
+    body: [
+      "Injuries: ",
+      "Short notice: ",
+      "Hometown / long travel: ",
+      "Camps / coaches / training partners / credentials: ",
+    ].join("\n"),
   },
 ];
