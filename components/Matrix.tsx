@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import type {
@@ -18,6 +18,13 @@ import { GrowingTextarea } from "@/components/GrowingTextarea";
 import { NOTE_TEMPLATES } from "@/lib/noteTemplates";
 import { QuickBet } from "@/components/QuickBet";
 import { FightMatrix } from "@/components/FightMatrix";
+import { fetchAllRows, boutMatch } from "@/lib/board";
+import {
+  boardPriceForMarket,
+  type BoardProp,
+  type BoardML,
+  type MatrixBoardPrice,
+} from "@/lib/matrixBoard";
 import { NotesHistoryPanel } from "@/components/NotesHistoryPanel";
 import { BetTracker } from "@/components/BetTracker";
 import { Profile } from "@/components/Profile";
@@ -228,6 +235,12 @@ export function Matrix({
   const [showEventsInfo, setShowEventsInfo] = useState(false);
   const [bets, setBets] = useState<BetRow[]>([]);
   const [matrixData, setMatrixData] = useState<Record<string, MatrixData>>({});
+  // live BetOnline board (moneyline) + prop rows, fetched once, used to show
+  // each matrix cell's CLV vs the board. Shape mirrors the Odds board.
+  const [boardRows, setBoardRows] = useState<
+    { fight_key: string; fighter1: string; fighter2: string; cur1: number | null; cur2: number | null }[]
+  >([]);
+  const [propRows, setPropRows] = useState<(BoardProp & { fight_key: string })[]>([]);
   const [openMatrix, setOpenMatrix] = useState<Record<string, boolean>>({});
   const [openBet, setOpenBet] = useState<Record<string, boolean>>({});
   const [openNotes, setOpenNotes] = useState<Record<string, boolean>>({});
@@ -262,6 +275,16 @@ export function Matrix({
     const { data: mx } = await supabase
       .from("user_fight_matrix")
       .select("fight_id, data");
+    // live BetOnline prices for the CLV chips (fail-soft: matrix works without them)
+    const [bol, bprops] = await Promise.all([
+      fetchAllRows<{ fight_key: string; fighter1: string; fighter2: string; cur1: number | null; cur2: number | null }>(
+        "bol_board",
+        "fight_key"
+      ).catch(() => []),
+      fetchAllRows<BoardProp & { fight_key: string }>("bol_current_props", "fight_key").catch(() => []),
+    ]);
+    setBoardRows(bol ?? []);
+    setPropRows(bprops ?? []);
     const { data: prof } = await supabase
       .from("profiles")
       .select("is_admin")
@@ -290,6 +313,45 @@ export function Matrix({
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // For each fight, a function marketKey -> board prices for its two sides.
+  // Matched to the board the same way the Odds board matches (surname-aware
+  // bout match), computed once per board/props/fights change.
+  const boardPriceLookup = useMemo(() => {
+    const byFight: Record<string, (marketKey: string) => MatrixBoardPrice> = {};
+    for (const f of fights) {
+      // find this fight's moneyline row + prop rows on the board
+      let ml: BoardML | null = null;
+      let mlFlip = false;
+      for (const row of boardRows) {
+        const parts = String(row.fight_key).split(" vs ");
+        if (parts.length !== 2) continue;
+        const [ra, rb] = parts;
+        if (boutMatch(ra, rb, f.fighter1_name, f.fighter2_name)) {
+          ml = { cur1: row.cur1, cur2: row.cur2 };
+          break;
+        }
+        if (boutMatch(rb, ra, f.fighter1_name, f.fighter2_name)) {
+          ml = { cur1: row.cur2, cur2: row.cur1 }; // board lists them reversed
+          mlFlip = true;
+          break;
+        }
+      }
+      void mlFlip;
+      const fightProps = propRows.filter((pr) => {
+        const parts = String(pr.fight_key).split(" vs ");
+        if (parts.length !== 2) return false;
+        const [ra, rb] = parts;
+        return (
+          boutMatch(ra, rb, f.fighter1_name, f.fighter2_name) ||
+          boutMatch(rb, ra, f.fighter1_name, f.fighter2_name)
+        );
+      });
+      byFight[f.id] = (marketKey: string) =>
+        boardPriceForMarket(marketKey, ml, fightProps, f.fighter1_name, f.fighter2_name);
+    }
+    return byFight;
+  }, [fights, boardRows, propRows]);
 
   // save a single field for a fight (debounced via onBlur)
   async function saveField(
@@ -953,6 +1015,7 @@ export function Matrix({
                             <FightMatrix
                               fight={f}
                               data={matrixData[f.id] ?? {}}
+                              boardPrice={boardPriceLookup[f.id]}
                               onSave={(market, cell, value) =>
                                 saveMatrixCell(f.id, market, cell, value)
                               }
