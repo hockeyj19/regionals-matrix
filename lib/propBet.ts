@@ -241,12 +241,97 @@ export function buildPropSections(propList: PropRow[], fightKey: string): PropSe
   return secs;
 }
 
-// A stable, unique key for one exact prop outcome - the same identity tuple
-// the stake-cap trigger and Consensus Bot use, so a Notes-matrix cell always
-// points at the one specific board row it was typed against, even across two
-// markets that share a fighter/round/method in different combinations.
-export function propRowKey(p: PropRow): string {
-  return [p.market, p.fighter ?? "", p.method ?? "", p.round ?? "", p.ou_side ?? "", p.ou_line ?? ""].join(
-    "|"
+// A stable, unique key for one exact prop outcome. Builds on the same
+// identity tuple the stake-cap trigger and Consensus Bot use, plus outcome:
+// several fight-level markets (Goes The Distance's Yes/No, How Will Fight
+// End, Decision Method of Victory, Split/Majority Decision) have fighter,
+// method, round, and ou_side/ou_line all null - outcome text is the ONLY
+// thing telling two of their rows apart, so it has to be part of the key or
+// those rows collide and silently overwrite each other's saved price.
+export function propRowKey(p: {
+  market: string;
+  fighter: string | null;
+  method: string | null;
+  round: number | null;
+  ou_side: string | null;
+  ou_line: number | null;
+  outcome?: string | null;
+}): string {
+  return [
+    p.market,
+    p.fighter ?? "",
+    p.method ?? "",
+    p.round ?? "",
+    p.ou_side ?? "",
+    p.ou_line ?? "",
+    p.outcome ?? "",
+  ].join("|");
+}
+
+// The four markets whose row list is fully predictable from just the two
+// fighter names and the round count - BetOnline reliably posts all of these
+// for every UFC fight sooner or later, so the Notes matrix can show their
+// full structure as soon as the fight exists, with dashes standing in for
+// prices that haven't posted yet. Distinct from markets like Total Rounds or
+// Point Spread, where the actual line is BetOnline's call and genuinely can't
+// be guessed ahead of time - those stay opportunistic, shown only once real
+// data exists.
+export const ALWAYS_SHOWN_MARKETS = new Set(["goes_the_distance", "method", "round", "method_round"]);
+
+export type TemplateRowSpec = { key: string; fallbackLabel: string };
+export type TemplateSection = { title: string; specs: TemplateRowSpec[] };
+
+export function buildAlwaysShownTemplate(
+  f1Name: string,
+  f2Name: string,
+  fiveRound: boolean
+): TemplateSection[] {
+  const rounds = fiveRound ? [1, 2, 3, 4, 5] : [1, 2, 3];
+  const methodLabel = (m: string) =>
+    m === "ko_tko" ? "KO/TKO" : m === "submission" ? "Submission" : "Decision";
+  const keyFor = (
+    market: string,
+    fighter: string | null,
+    method: string | null,
+    round: number | null,
+    outcome: string | null
+  ) => propRowKey({ market, fighter, method, round, ou_side: null, ou_line: null, outcome });
+
+  const gtd: TemplateRowSpec[] = [
+    { key: keyFor("goes_the_distance", null, null, null, "Yes"), fallbackLabel: "Yes" },
+    { key: keyFor("goes_the_distance", null, null, null, "No"), fallbackLabel: "No" },
+  ];
+
+  const movMethods = ["ko_tko", "submission", "decision"];
+  const mov: TemplateRowSpec[] = [f1Name, f2Name].flatMap((f) =>
+    movMethods.map((m) => ({
+      key: keyFor("method", f, m, null, null),
+      fallbackLabel: `${f} by ${methodLabel(m)}`,
+    }))
   );
+
+  const roundBetting: TemplateRowSpec[] = [f1Name, f2Name].flatMap((f) =>
+    rounds.map((r) => ({
+      key: keyFor("round", f, null, r, null),
+      fallbackLabel: `${f} in Round ${r}`,
+    }))
+  );
+
+  // decision can't happen before the final round, so BetOnline never posts
+  // it as a method+round combo - only KO/TKO and submission get one
+  const methodRound: TemplateRowSpec[] = [f1Name, f2Name].flatMap((f) =>
+    ["ko_tko", "submission"].flatMap((m) =>
+      rounds.map((r) => ({
+        key: keyFor("method_round", f, m, r, null),
+        fallbackLabel: `${f} in Round ${r} by ${methodLabel(m)}`,
+      }))
+    )
+  );
+
+  return [
+    { title: "Goes The Distance", specs: gtd },
+    { title: "Method of Victory", specs: mov },
+    { title: "Round Betting", specs: roundBetting },
+    { title: "Method + Round", specs: methodRound },
+  ];
 }
