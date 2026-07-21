@@ -35,7 +35,6 @@ export function BetTracker({
   // (independent) sort applied to Picks History below, both persistent
   // regardless of which scope button above is active
   const [marketFilter, setMarketFilter] = useState<"all" | "ml" | "prop">("all");
-  const [sortBy, setSortBy] = useState<"profit" | "roi" | "clv" | null>(null);
   const [removalFor, setRemovalFor] = useState<string | null>(null);
   const [removalReason, setRemovalReason] = useState("");
 
@@ -149,17 +148,6 @@ export function BetTracker({
               {label}
             </button>
           ))}
-        </div>
-        <div className="flex items-center gap-1.5">
-          <button onClick={() => setSortBy("profit")} className={sideBtn(sortBy === "profit")}>
-            Profit
-          </button>
-          <button onClick={() => setSortBy("roi")} className={sideBtn(sortBy === "roi")}>
-            ROI
-          </button>
-          <button onClick={() => setSortBy("clv")} className={sideBtn(sortBy === "clv")}>
-            CLV
-          </button>
         </div>
       </div>
       {showInfo && <ReadMePanel paragraphs={BETS_README} />}
@@ -607,7 +595,7 @@ export function BetTracker({
         );
       })}
 
-      <PicksHistoryPanel bets={scoped} sortBy={sortBy} />
+      <PicksHistoryPanel bets={scoped} />
     </div>
   );
 }

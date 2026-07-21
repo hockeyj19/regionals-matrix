@@ -32,15 +32,7 @@ function typeMatch(b: { bet_type: string | null }, f: string): boolean {
 
 // Every settled or live verified pick, searchable - the full record behind
 // the headline stats above it. Starts collapsed; lives at the bottom of Bets.
-export function PicksHistoryPanel({
-  bets,
-  sortBy = null,
-}: {
-  bets: BetRow[];
-  // set from the Bets page's Profit/ROI/CLV row above; overrides the default
-  // newest-first order with that metric, highest first
-  sortBy?: "profit" | "roi" | "clv" | null;
-}) {
+export function PicksHistoryPanel({ bets }: { bets: BetRow[] }) {
   const [pickOpen, setPickOpen] = useState(true);
   const [pickSearch, setPickSearch] = useState("");
   const [histFilter, setHistFilter] = useState<
@@ -55,16 +47,7 @@ export function PicksHistoryPanel({
         b.bet_type !== "other" &&
         !(b.event_start && new Date(b.event_start).getTime() > nowTs)
     )
-    .sort((a, b) => {
-      if (sortBy === "profit") return betProfit(b) - betProfit(a);
-      if (sortBy === "roi") {
-        const ra = Number(a.stake) ? betProfit(a) / Number(a.stake) : 0;
-        const rb = Number(b.stake) ? betProfit(b) / Number(b.stake) : 0;
-        return rb - ra;
-      }
-      if (sortBy === "clv") return (Number(b.clv) || -Infinity) - (Number(a.clv) || -Infinity);
-      return (b.placed_at ?? "").localeCompare(a.placed_at ?? "");
-    });
+    .sort((a, b) => (b.placed_at ?? "").localeCompare(a.placed_at ?? ""));
 
   return (
     <div

@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { fmtOdds, parseOddsInput, eventStartISO } from "@/lib/format";
 import type { EventRow, FightRow, NewBet } from "@/lib/types";
 import { VerifiedBetForm } from "@/components/VerifiedBetForm";
+import { buildPropSelection, propToBetShape, type PropRow } from "@/lib/propBet";
 
 /**
  * Line-movement chart for one fighter's BetOnline moneyline, drawn from the
@@ -37,6 +38,7 @@ export function LineHistoryModal({
   side,
   fighterName,
   notePrice,
+  prop,
   f,
   ev,
   odds,
@@ -44,45 +46,80 @@ export function LineHistoryModal({
   onClose,
 }: {
   fightKey: string;
-  side: 1 | 2;
+  side?: 1 | 2;
   fighterName: string;
   notePrice: string | null;
-  // present only when the caller can also offer a bet from here (the ML
-  // click on the odds board) - omit them and this stays chart-only, exactly
-  // as before, for any other future caller.
+  // when set, this is a PROP's movement/bet modal instead of a moneyline's -
+  // fightKey/side still locate the fight, but the chart and bet both key off
+  // this row's exact market identity instead of the ML side.
+  prop?: PropRow | null;
+  // present only when the caller can also offer a bet from here (any click
+  // on the odds board) - omit them and this stays chart-only, exactly as
+  // before, for any other future caller.
   f?: FightRow;
   ev?: EventRow;
   odds?: number | null;
   onAdd?: (bet: NewBet) => Promise<string | null>;
   onClose: () => void;
 }) {
+  const isProp = !!prop;
   const [pts, setPts] = useState<Pt[] | null>(null);
   const [tab, setTab] = useState<"moves" | "bet">("moves");
   const canBet = !!(onAdd && f && ev && odds !== null && odds !== undefined);
+  const label = isProp && prop && f ? buildPropSelection(prop, f.fighter1_name, f.fighter2_name) : fighterName;
 
   useEffect(() => {
     let alive = true;
-    supabase
-      .from("bol_line_history")
-      .select("*")
-      .eq("fight_key", fightKey)
-      .order("captured_at", { ascending: true })
-      .then(({ data }) => {
+
+    if (isProp && prop) {
+      // one exact market's price over time, from the bots' own prop ledger -
+      // every field of the identity tuple must match, nulls included
+      let q = supabase
+        .from("bol_prop_snapshots")
+        .select("captured_at, odds")
+        .eq("fight_key", prop.fight_key)
+        .eq("market", prop.market)
+        .order("captured_at", { ascending: true });
+      q = prop.fighter === null ? q.is("fighter", null) : q.eq("fighter", prop.fighter);
+      q = prop.method === null ? q.is("method", null) : q.eq("method", prop.method);
+      q = prop.round === null ? q.is("round", null) : q.eq("round", prop.round);
+      q = prop.ou_side === null ? q.is("ou_side", null) : q.eq("ou_side", prop.ou_side);
+      q = prop.ou_line === null ? q.is("ou_line", null) : q.eq("ou_line", prop.ou_line);
+      q.then(({ data }) => {
         if (!alive) return;
-        const col = side === 1 ? "fighter1_odds" : "fighter2_odds";
         const rows = data ?? [];
         const raw: Pt[] = rows
           .map((r) => ({
             t: new Date((r as { captured_at: string }).captured_at).getTime(),
-            v: (r as Record<string, number | null>)[col],
+            v: (r as { odds: number | null }).odds,
           }))
           .filter((p): p is Pt => typeof p.v === "number");
         setPts(raw);
       });
+    } else {
+      supabase
+        .from("bol_line_history")
+        .select("*")
+        .eq("fight_key", fightKey)
+        .order("captured_at", { ascending: true })
+        .then(({ data }) => {
+          if (!alive) return;
+          const col = side === 1 ? "fighter1_odds" : "fighter2_odds";
+          const rows = data ?? [];
+          const raw: Pt[] = rows
+            .map((r) => ({
+              t: new Date((r as { captured_at: string }).captured_at).getTime(),
+              v: (r as Record<string, number | null>)[col],
+            }))
+            .filter((p): p is Pt => typeof p.v === "number");
+          setPts(raw);
+        });
+    }
     return () => {
       alive = false;
     };
-  }, [fightKey, side]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fightKey, side, isProp, prop]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -101,7 +138,7 @@ export function LineHistoryModal({
       >
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h3 className="text-base font-bold">{fighterName}</h3>
+            <h3 className="text-base font-bold">{label}</h3>
             <p className="text-[11px] text-neutral-500">BetOnline</p>
           </div>
           <button
@@ -142,14 +179,25 @@ export function LineHistoryModal({
             {pts === null && <p className="text-sm text-neutral-500">Reading the ledger…</p>}
 
             {pts !== null && pts.length === 0 && (
-              <p className="text-sm text-neutral-500">No recorded price for this fighter yet.</p>
+              <p className="text-sm text-neutral-500">No recorded price history for this yet.</p>
             )}
 
             {pts !== null && pts.length > 0 && <Chart pts={pts} notePrice={notePrice} />}
           </>
         )}
 
-        {tab === "bet" && canBet && (
+        {tab === "bet" && canBet && isProp && prop && (
+          <VerifiedBetForm
+            label={label}
+            contextLine={`${ev!.org} — ${ev!.event_name} · BetOnline`}
+            odds={odds as number}
+            onAdd={onAdd!}
+            buildBet={(stake) => ({ ...propToBetShape(prop, f!, ev!), odds: odds as number, stake })}
+            onClose={onClose}
+          />
+        )}
+
+        {tab === "bet" && canBet && !isProp && (
           <VerifiedBetForm
             label={fighterName}
             contextLine={`${ev!.org} — ${ev!.event_name} · BetOnline`}

@@ -12,7 +12,7 @@ import {
 import { boutMatch, fetchAllRows, sameFighter } from "@/lib/board";
 import { fmtOdds, parseOddsInput, displayTypedOdds, getOddsMode, eventStartISO } from "@/lib/format";
 import { LineHistoryModal } from "@/components/LineHistoryModal";
-import { VerifiedBetForm } from "@/components/VerifiedBetForm";
+import { buildPropSelection, propToBetShape } from "@/lib/propBet";
 import type { EventRow, FightRow, NewBet, UserData } from "@/lib/types";
 
 /**
@@ -206,145 +206,6 @@ function PropCell({
     );
   }
   return <span className="text-[11px] tabular-nums text-right text-neutral-300">{fmtOdds(price)}</span>;
-}
-
-// A price on the props sheet carries everything needed to bet it directly -
-// this turns one PropRow into the same shape QuickBet builds, so a bet placed
-// here grades, caps, and groups identically to one placed anywhere else. Only
-// the wager identity + display text are built here; odds/stake are supplied
-// at confirm time (odds already known - it's the price that was tapped).
-function propTitleCase(mk: string): string {
-  return mk.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function propLastToken(name: string): string {
-  const norm = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-  const parts = norm.split(/\s+/).filter(Boolean);
-  return parts[parts.length - 1] ?? "";
-}
-
-function resolvePropFighterId(p: PropRow, f: FightRow): string | null {
-  if (!p.fighter) return f.fighter1_id ?? f.fighter2_id; // fight-level bout locator
-  if (sameFighter(p.fighter, f.fighter1_name)) return f.fighter1_id;
-  if (sameFighter(p.fighter, f.fighter2_name)) return f.fighter2_id;
-  // BetOnline often labels a prop row by surname alone (e.g. "Rakic"), which
-  // sameFighter's full-name rule can miss. Within one known bout that surname
-  // is unambiguous - a card never books the same surname twice - so fall back
-  // to a last-token compare instead of leaving it to the default guess.
-  const pLast = propLastToken(p.fighter);
-  const f1Last = propLastToken(f.fighter1_name);
-  const f2Last = propLastToken(f.fighter2_name);
-  if (pLast && pLast === f1Last && pLast !== f2Last) return f.fighter1_id;
-  if (pLast && pLast === f2Last && pLast !== f1Last) return f.fighter2_id;
-  return f.fighter1_id ?? f.fighter2_id;
-}
-
-function buildPropSelection(p: PropRow, f1Name: string, f2Name: string): string {
-  const methodLabel =
-    p.method === "ko_tko" ? "KO/TKO" : p.method === "submission" ? "Submission" : "Decision";
-  if (p.market === "method") return `${p.fighter ?? ""} by ${methodLabel}`.trim();
-  if (p.market === "round") return `${p.fighter ?? ""} in R${p.round}`.trim();
-  if (p.market === "method_round")
-    return `${p.fighter ?? ""} by ${methodLabel} in R${p.round}`.trim();
-  const title = propTitleCase(p.market);
-  if (p.market === "total" && p.ou_side)
-    return `${p.ou_side === "over" ? "Over" : "Under"} ${p.ou_line ?? ""} — ${f1Name} vs ${f2Name}`;
-  if (p.ou_side) {
-    const who = p.fighter ?? `${f1Name} vs ${f2Name}`;
-    return `${who} ${p.ou_side === "over" ? "Over" : "Under"}${
-      p.ou_line !== null ? ` ${p.ou_line}` : ""
-    } — ${title}`;
-  }
-  if (p.fighter) return `${p.fighter} — ${p.outcome ?? title}`;
-  return p.outcome ?? title;
-}
-
-// bet_type/prop_method/prop_round/ou_line follow the exact same convention
-// QuickBet writes: core totals carry over/under as bet_type itself; every
-// other market keeps its own market key as bet_type, with over/under (for
-// stat props that are themselves O/U) riding in prop_method instead.
-function propToBetShape(
-  p: PropRow,
-  f: FightRow,
-  ev: EventRow
-): Omit<NewBet, "odds" | "stake"> {
-  let bet_type: string = p.market;
-  let prop_method: string | null = null;
-  let prop_round: number | null = null;
-  let ou_line: number | null = null;
-
-  if (p.market === "method") {
-    prop_method = p.method;
-  } else if (p.market === "round") {
-    prop_round = p.round;
-  } else if (p.market === "method_round") {
-    prop_method = p.method;
-    prop_round = p.round;
-  } else if (p.market === "total" && p.ou_side) {
-    bet_type = p.ou_side; // "over" | "under"
-    ou_line = p.ou_line;
-  } else if (p.ou_side) {
-    prop_method = p.ou_side; // "over" | "under" - the market itself stays bet_type
-    ou_line = p.ou_line;
-  } else if (p.ou_line !== null) {
-    ou_line = p.ou_line; // a line without an O/U tag, e.g. Point Spread
-  }
-
-  return {
-    selection: buildPropSelection(p, f.fighter1_name, f.fighter2_name),
-    event_context: `${ev.org} — ${ev.event_name}`,
-    event_date: ev.event_date,
-    event_start: eventStartISO(ev.event_date, ev.event_time),
-    book: "BetOnline.ag",
-    price_check: null,
-    market_best: null,
-    market_book: null,
-    market_checked_at: null,
-    close_odds: null,
-    clv: null,
-    fighter_id: resolvePropFighterId(p, f),
-    bet_type,
-    prop_method,
-    prop_round,
-    ou_line,
-    event_source_url: ev.source_url,
-  };
-}
-
-function PropBetModal({
-  p,
-  f,
-  ev,
-  onAdd,
-  onClose,
-}: {
-  p: PropRow;
-  f: FightRow;
-  ev: EventRow;
-  onAdd: (bet: NewBet) => Promise<string | null>;
-  onClose: () => void;
-}) {
-  const label = buildPropSelection(p, f.fighter1_name, f.fighter2_name);
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
-      onClick={onClose}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-xs rounded-xl border border-neutral-800 bg-neutral-950 p-4"
-      >
-        <VerifiedBetForm
-          label={label}
-          contextLine={`${ev.org} — ${ev.event_name} · BetOnline`}
-          odds={p.odds}
-          onAdd={onAdd}
-          buildBet={(stake) => ({ ...propToBetShape(p, f, ev), odds: p.odds, stake })}
-          onClose={onClose}
-        />
-      </div>
-    </div>
-  );
 }
 
 // The full BetOnline prop sheet for one fight, rendered the way BetOnline
@@ -581,9 +442,6 @@ export function OddsBoard({
   const [fdBoard, setFdBoard] = useState<BoardRow[]>([]);
   const [activeBook, setActiveBook] = useState<Book>("betonline");
   const [props, setProps] = useState<PropRow[]>([]);
-  const [betPrompt, setBetPrompt] = useState<{ p: PropRow; f: FightRow; ev: EventRow } | null>(
-    null
-  );
   const [loaded, setLoaded] = useState(false);
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   const [openPropIds, setOpenPropIds] = useState<Set<string>>(new Set());
@@ -591,14 +449,29 @@ export function OddsBoard({
   const [chart, setChart] = useState<
     {
       fightKey: string;
-      side: 1 | 2;
+      side?: 1 | 2;
       name: string;
       notePrice: string | null;
       f: FightRow;
       ev: EventRow;
       odds: number | null;
+      prop?: PropRow | null;
     } | null
   >(null);
+
+  // props now open the same chart-first modal MLs do, just keyed to that
+  // exact prop's own movement history instead of the fighter's moneyline
+  function openPropChart(p: PropRow, f: FightRow, ev: EventRow) {
+    setChart({
+      fightKey: p.fight_key,
+      name: buildPropSelection(p, f.fighter1_name, f.fighter2_name),
+      notePrice: null,
+      f,
+      ev,
+      odds: p.odds,
+      prop: p,
+    });
+  }
 
   const load = useCallback(async () => {
     // fetchAllRows pages past Supabase's 1,000-row-per-request cap - a
@@ -990,7 +863,7 @@ export function OddsBoard({
                                         <button
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            setBetPrompt({ p: totalRow, f, ev });
+                                            openPropChart(totalRow, f, ev);
                                           }}
                                           title="Tap to bet this price"
                                           className="text-[11px] text-neutral-300 hover:text-emerald-300 hover:underline"
@@ -1013,19 +886,19 @@ export function OddsBoard({
                                   ? matchupPrice(fk, sp.name, "fighter_wins_inside_distance")
                                   : null
                               }
-                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
+                              onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
                             />
                             <PropCell
                               row={fk && sp && showProps ? methodPrice(fk, sp.name, "ko_tko") : null}
-                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
+                              onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
                             />
                             <PropCell
                               row={fk && sp && showProps ? methodPrice(fk, sp.name, "submission") : null}
-                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
+                              onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
                             />
                             <PropCell
                               row={fk && sp && showProps ? methodPrice(fk, sp.name, "decision") : null}
-                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
+                              onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
                             />
                             <PropCell
                               row={
@@ -1033,19 +906,19 @@ export function OddsBoard({
                                   ? matchupPrice(fk, sp.name, "win_inside_distance_goes_distance_no_action")
                                   : null
                               }
-                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
+                              onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
                             />
                             <PropCell
                               row={fk && sp && showProps ? roundWinPrice(fk, sp.name, 1) : null}
-                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
+                              onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
                             />
                             <PropCell
                               row={fk && sp && showProps ? roundWinPrice(fk, sp.name, 2) : null}
-                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
+                              onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
                             />
                             <PropCell
                               row={fk && sp && showProps ? roundWinPrice(fk, sp.name, 3) : null}
-                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
+                              onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
                             />
                             <PropCell
                               row={
@@ -1053,7 +926,7 @@ export function OddsBoard({
                                   ? matchupPrice(fk, sp.name, "most_significant_strikes_landed")
                                   : null
                               }
-                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
+                              onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
                             />
                             <PropCell
                               row={
@@ -1061,19 +934,19 @@ export function OddsBoard({
                                   ? matchupPrice(fk, sp.name, "most_takedowns_landed")
                                   : null
                               }
-                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
+                              onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
                             />
                             <PropCell
                               row={fk && sp && showProps ? scorecardRoundPrice(fk, sp.name, 1) : null}
-                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
+                              onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
                             />
                             <PropCell
                               row={fk && sp && showProps ? scorecardRoundPrice(fk, sp.name, 2) : null}
-                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
+                              onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
                             />
                             <PropCell
                               row={fk && sp && showProps ? scorecardRoundPrice(fk, sp.name, 3) : null}
-                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
+                              onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
                             />
                           </div>
                         );
@@ -1140,7 +1013,7 @@ export function OddsBoard({
                                 f1={f.fighter1_name}
                                 f2={f.fighter2_name}
                                 propList={props}
-                                onPick={onAdd ? (p) => setBetPrompt({ p, f, ev }) : undefined}
+                                onPick={onAdd ? (p) => openPropChart(p, f, ev) : undefined}
                               />
                             )}
                           </div>
@@ -1172,18 +1045,9 @@ export function OddsBoard({
           f={chart.f}
           ev={chart.ev}
           odds={chart.odds}
+          prop={chart.prop}
           onAdd={onAdd}
           onClose={() => setChart(null)}
-        />
-      )}
-
-      {betPrompt && onAdd && (
-        <PropBetModal
-          p={betPrompt.p}
-          f={betPrompt.f}
-          ev={betPrompt.ev}
-          onAdd={onAdd}
-          onClose={() => setBetPrompt(null)}
         />
       )}
     </div>
