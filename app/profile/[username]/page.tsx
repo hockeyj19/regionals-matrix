@@ -26,20 +26,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { username } = await params;
   const p = await getPublicProfile(username);
   if (!p) return { title: "Not found — Tape Notes" };
-  const bits = [recordLine(p), fmtUnits(p.units)];
-  if (p.roi !== null) bits.push(`${pct(p.roi)} ROI`);
-  if (p.clv !== null) bits.push(`${pct(p.clv)} CLV`);
-  const desc =
-    p.settled > 0
-      ? `${bits.join(" · ")} — verified picks, priced off the sharp board.`
-      : "Verified picks, priced off the sharp board.";
-  const title = `${p.username} — Tape Notes`;
-  return {
-    title,
-    description: desc,
-    openGraph: { title, description: desc, type: "profile" },
-    twitter: { card: "summary_large_image", title, description: desc },
-  };
+  // Deliberately no openGraph/twitter fields here: a profile link should act
+  // like a normal link - open straight to the page, not unfurl a preview card
+  // in Discord/Twitter/iMessage. `title` alone only affects the browser tab.
+  return { title: `${p.username} — Tape Notes` };
 }
 
 export default async function PublicProfilePage({ params }: Props) {
