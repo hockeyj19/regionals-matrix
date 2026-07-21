@@ -20,7 +20,7 @@ import {
   marketRank,
 } from "@/lib/propBet";
 export { marketRank } from "@/lib/propBet"; // QuickBet.tsx imports this from here
-import { noteKeyForBoardRow } from "@/lib/manualProps";
+import { noteForBoardRow } from "@/lib/manualProps";
 import type { EventRow, FightRow, NewBet, UserData, MatrixData } from "@/lib/types";
 
 /**
@@ -392,31 +392,6 @@ export function OddsBoard({
     } | null
   >(null);
 
-  // this fight's tape-note price/line for a real live board row, or null if
-  // the user hasn't typed one (or the row's fighter label doesn't resolve).
-  const notePriceFor = useCallback(
-    (f: FightRow, row: PropRow): string | null => {
-      const key = noteKeyForBoardRow(row, f.fighter1_name, f.fighter2_name);
-      if (!key) return null;
-      return matrixData?.[f.id]?.[key] ?? null;
-    },
-    [matrixData]
-  );
-
-  // props now open the same chart-first modal MLs do, just keyed to that
-  // exact prop's own movement history instead of the fighter's moneyline
-  function openPropChart(p: PropRow, f: FightRow, ev: EventRow) {
-    setChart({
-      fightKey: p.fight_key,
-      name: buildPropSelection(p, f.fighter1_name, f.fighter2_name),
-      notePrice: notePriceFor(f, p),
-      f,
-      ev,
-      odds: p.odds,
-      prop: p,
-    });
-  }
-
   const load = useCallback(async () => {
     // fetchAllRows pages past Supabase's 1,000-row-per-request cap - a
     // bare select("*") TRUNCATES SILENTLY once a view outgrows it, which
@@ -485,6 +460,34 @@ export function OddsBoard({
     },
     [activeBoard]
   );
+
+  // this fight's tape-note price/line for a real live board row, or null if
+  // the user hasn't typed one (or the row's fighter/market doesn't resolve
+  // to one of the templated markets). Defined here, after matchFight/props/
+  // matrixData are all in scope, so its dependency array is always valid.
+  const notePriceFor = useCallback(
+    (f: FightRow, row: PropRow): string | null => {
+      const m = matchFight(f);
+      const ml = m ? { cur1: m.a.cur, cur2: m.b.cur } : null;
+      const fightProps = props.filter((p) => p.fight_key === row.fight_key);
+      return noteForBoardRow(f, row, matrixData?.[f.id], ml, fightProps);
+    },
+    [matchFight, props, matrixData]
+  );
+
+  // props now open the same chart-first modal MLs do, just keyed to that
+  // exact prop's own movement history instead of the fighter's moneyline
+  function openPropChart(p: PropRow, f: FightRow, ev: EventRow) {
+    setChart({
+      fightKey: p.fight_key,
+      name: buildPropSelection(p, f.fighter1_name, f.fighter2_name),
+      notePrice: notePriceFor(f, p),
+      f,
+      ev,
+      odds: p.odds,
+      prop: p,
+    });
+  }
 
   const methodPrice = useCallback(
     (fightKey: string, name: string, method: string): PropRow | null => {
