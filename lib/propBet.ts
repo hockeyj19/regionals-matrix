@@ -268,18 +268,32 @@ export function propRowKey(p: {
   ].join("|");
 }
 
-// The four markets whose row list is fully predictable from just the two
-// fighter names and the round count - BetOnline reliably posts all of these
-// for every UFC fight sooner or later, so the Notes matrix can show their
-// full structure as soon as the fight exists, with dashes standing in for
-// prices that haven't posted yet. Distinct from markets like Total Rounds or
-// Point Spread, where the actual line is BetOnline's call and genuinely can't
-// be guessed ahead of time - those stay opportunistic, shown only once real
-// data exists.
-export const ALWAYS_SHOWN_MARKETS = new Set(["goes_the_distance", "method", "round", "method_round"]);
+// Markets whose row list is fully predictable ahead of time - from just the
+// two fighter names, the round count, and (for a few) a small fixed set of
+// BetOnline's own sub-outcome labels, confirmed against real posted rows
+// rather than guessed. Distinct from markets like Total Rounds or Point
+// Spread, where the actual number is BetOnline's own risk call and genuinely
+// can't be known in advance - those stay opportunistic, shown only once real
+// data exists. "core" ones template for every org; the rest are UFC-only,
+// matching the full-sheet-is-UFC-only rule.
+export const ALWAYS_SHOWN_MARKETS = new Set([
+  "goes_the_distance",
+  "method",
+  "round",
+  "method_round",
+  "decision_method_of_victory",
+  "double_chance",
+  "fight_goes_to_split_or_majority_decision",
+  "fighter_wins_inside_distance",
+  "how_will_fight_end",
+  "most_significant_strikes_landed",
+  "most_takedowns_landed",
+  "fight_to_start",
+  "scorecard_winner_or_finish",
+]);
 
 export type TemplateRowSpec = { key: string; fallbackLabel: string };
-export type TemplateSection = { title: string; specs: TemplateRowSpec[] };
+export type TemplateSection = { title: string; ufcOnly: boolean; specs: TemplateRowSpec[] };
 
 export function buildAlwaysShownTemplate(
   f1Name: string,
@@ -328,10 +342,115 @@ export function buildAlwaysShownTemplate(
     )
   );
 
+  // BetOnline's own two decision sub-methods - outcome text carries the
+  // whole label, confirmed verbatim against a real posted row
+  const decisionMov: TemplateRowSpec[] = [f1Name, f2Name].flatMap((f) => [
+    {
+      key: keyFor("decision_method_of_victory", f, null, null, `${f} Wins by Unanimous Decision`),
+      fallbackLabel: `${f} Wins by Unanimous Decision`,
+    },
+    {
+      key: keyFor(
+        "decision_method_of_victory",
+        f,
+        null,
+        null,
+        `${f} Wins by Split or Majority Decision`
+      ),
+      fallbackLabel: `${f} Wins by Split or Majority Decision`,
+    },
+  ]);
+
+  // double chance carries the combo in BOTH `method` and matching outcome
+  // text - propRowKey folds outcome in unconditionally, so the template has
+  // to set the same outcome BetOnline actually posts or a live row would
+  // never match it
+  const doubleChance: TemplateRowSpec[] = [f1Name, f2Name].flatMap((f) => [
+    {
+      key: keyFor("double_chance", f, "tko_ko_dq_or_decision", null, `${f} by TKO/KO, DQ or Decision`),
+      fallbackLabel: `${f} by TKO/KO, DQ or Decision`,
+    },
+    {
+      key: keyFor("double_chance", f, "submission_or_decision", null, `${f} by Submission or Decision`),
+      fallbackLabel: `${f} by Submission or Decision`,
+    },
+  ]);
+
+  const splitOrMajority: TemplateRowSpec[] = [
+    { key: keyFor("fight_goes_to_split_or_majority_decision", null, null, null, "Yes"), fallbackLabel: "Yes" },
+    { key: keyFor("fight_goes_to_split_or_majority_decision", null, null, null, "No"), fallbackLabel: "No" },
+  ];
+
+  // two fighter rows plus one fight-level "goes to decision" row - BetOnline
+  // uses the fighter's own name as the outcome text on their two rows
+  const winsInsideDistance: TemplateRowSpec[] = [
+    { key: keyFor("fighter_wins_inside_distance", f1Name, null, null, f1Name), fallbackLabel: f1Name },
+    { key: keyFor("fighter_wins_inside_distance", f2Name, null, null, f2Name), fallbackLabel: f2Name },
+    {
+      key: keyFor("fighter_wins_inside_distance", null, null, null, "Goes to Decision"),
+      fallbackLabel: "Goes to Decision",
+    },
+  ];
+
+  // three fixed fight-level outcomes, confirmed verbatim
+  const howWillEnd: TemplateRowSpec[] = [
+    "Either Fighter by KO/TKO or DQ",
+    "Goes the Distance",
+    "Either Fighter by Submission",
+  ].map((outcome) => ({
+    key: keyFor("how_will_fight_end", null, null, null, outcome),
+    fallbackLabel: outcome,
+  }));
+
+  const mostSigStrikes: TemplateRowSpec[] = [f1Name, f2Name].map((f) => ({
+    key: keyFor("most_significant_strikes_landed", f, null, null, f),
+    fallbackLabel: f,
+  }));
+
+  const mostTakedowns: TemplateRowSpec[] = [f1Name, f2Name].map((f) => ({
+    key: keyFor("most_takedowns_landed", f, null, null, f),
+    fallbackLabel: f,
+  }));
+
+  // "will the fight still be going by round N" - never asked about round 1
+  // (it always starts), one section per round, Yes/No each - mirrors how
+  // buildPropSections would group these once they're live
+  const fightToStart: TemplateSection[] = rounds
+    .filter((r) => r > 1)
+    .map((r) => ({
+      title: `Round ${r} Fight to Start`,
+      ufcOnly: true,
+      specs: [
+        { key: keyFor("fight_to_start", null, null, r, "Yes"), fallbackLabel: "Yes" },
+        { key: keyFor("fight_to_start", null, null, r, "No"), fallbackLabel: "No" },
+      ],
+    }));
+
+  // "who's ahead on the cards (or already finished) after round N" - one
+  // section per round, one row per fighter - same round-scoped grouping
+  // buildPropSections already applies to non-core round-scoped markets
+  const scorecard: TemplateSection[] = rounds.map((r) => ({
+    title: `Round ${r} Scorecard Winner or Finish`,
+    ufcOnly: true,
+    specs: [f1Name, f2Name].map((f) => ({
+      key: keyFor("scorecard_winner_or_finish", f, null, r, f),
+      fallbackLabel: f,
+    })),
+  }));
+
   return [
-    { title: "Goes The Distance", specs: gtd },
-    { title: "Method of Victory", specs: mov },
-    { title: "Round Betting", specs: roundBetting },
-    { title: "Method + Round", specs: methodRound },
+    { title: "Goes The Distance", ufcOnly: false, specs: gtd },
+    { title: "Method of Victory", ufcOnly: false, specs: mov },
+    { title: "Round Betting", ufcOnly: true, specs: roundBetting },
+    { title: "Method + Round", ufcOnly: true, specs: methodRound },
+    { title: "Decision Method of Victory", ufcOnly: true, specs: decisionMov },
+    { title: "Double Chance", ufcOnly: true, specs: doubleChance },
+    { title: "Fight Goes to Split or Majority Decision", ufcOnly: true, specs: splitOrMajority },
+    { title: "Fighter Wins Inside Distance", ufcOnly: true, specs: winsInsideDistance },
+    { title: "How Will Fight End", ufcOnly: true, specs: howWillEnd },
+    { title: "Most Significant Strikes Landed", ufcOnly: true, specs: mostSigStrikes },
+    { title: "Most Takedowns Landed", ufcOnly: true, specs: mostTakedowns },
+    ...fightToStart,
+    ...scorecard,
   ];
 }
