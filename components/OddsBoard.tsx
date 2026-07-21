@@ -20,7 +20,8 @@ import {
   marketRank,
 } from "@/lib/propBet";
 export { marketRank } from "@/lib/propBet"; // QuickBet.tsx imports this from here
-import type { EventRow, FightRow, NewBet, UserData } from "@/lib/types";
+import { noteKeyForBoardRow } from "@/lib/manualProps";
+import type { EventRow, FightRow, NewBet, UserData, MatrixData } from "@/lib/types";
 
 /**
  * The Odds board: moneylines laid over the app's own fight cards, with a book
@@ -155,17 +156,27 @@ function StaticPrice({ price, tone }: { price: number | null; tone: "pos" | "neg
   );
 }
 
+// One prop price in the fixed odds rail. Colors the same way the ML column
+// does - green when the board pays better than the user's own tape-note
+// price for this exact outcome, red when it pays worse - via the optional
+// noteFor lookup, which each call site wires to this fight's matrix data.
 function PropCell({
   row,
   onPick,
+  noteFor,
 }: {
   row: PropRow | null;
   onPick?: (p: PropRow) => void;
+  noteFor?: (row: PropRow) => string | null;
 }) {
   const price = row?.odds ?? null;
   if (price === null) {
     return <span className="text-[11px] tabular-nums text-right text-neutral-700">—</span>;
   }
+  const note = row && noteFor ? noteFor(row) : null;
+  const tone = valueTone(note, price);
+  const color =
+    tone === "pos" ? "text-emerald-400" : tone === "neg" ? "text-red-400" : "text-neutral-300";
   if (onPick && row) {
     return (
       <button
@@ -174,32 +185,36 @@ function PropCell({
           onPick(row);
         }}
         title="Tap to bet this price"
-        className="text-[11px] tabular-nums text-right text-neutral-300 hover:text-emerald-300 hover:underline"
+        className={`text-[11px] tabular-nums text-right hover:underline ${color}`}
       >
         {fmtOdds(price)}
       </button>
     );
   }
-  return <span className="text-[11px] tabular-nums text-right text-neutral-300">{fmtOdds(price)}</span>;
+  return <span className={`text-[11px] tabular-nums text-right ${color}`}>{fmtOdds(price)}</span>;
 }
 
 // The full BetOnline prop sheet for one fight, rendered the way BetOnline
 // itself lays it out: a header bar per market group, outcome rows with price
 // chips, favorites first. Section list is built from whatever the bots
 // captured, so new markets appear without code changes. Each price carries
-// its implied % (hidden in percent display mode, where it's redundant).
+// its implied % (hidden in percent display mode, where it's redundant), and
+// colors against the user's own tape-note price the same way the fixed
+// columns do, via the optional noteFor lookup.
 function PropsPanel({
   fightKey,
   f1,
   f2,
   propList,
   onPick,
+  noteFor,
 }: {
   fightKey: string;
   f1: string;
   f2: string;
   propList: PropRow[];
   onPick?: (p: PropRow) => void;
+  noteFor?: (row: PropRow) => string | null;
 }) {
   const showPct = getOddsMode() !== "percent";
   const secs = buildPropSections(propList, fightKey);
@@ -218,36 +233,48 @@ function PropsPanel({
             {sec.title}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-0.5 px-2 py-1.5">
-            {sec.rows.map((p, i) => (
-              <div key={i} className="flex items-center justify-between gap-2 py-0.5">
-                <span className="text-[11px] text-neutral-300 truncate">
-                  {propRowLabel(p)}
-                </span>
-                <span className="flex items-center gap-1 shrink-0">
-                  {showPct && (
-                    <span className="text-[9px] text-neutral-600">
-                      {(impliedProb(p.odds) * 100).toFixed(1)}%
-                    </span>
-                  )}
-                  {onPick ? (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onPick(p);
-                      }}
-                      title="Tap to bet this price"
-                      className="rounded border border-neutral-700 bg-neutral-900 hover:border-emerald-600 hover:bg-emerald-600/10 hover:text-emerald-300 px-2 py-0.5 text-[11px] tabular-nums text-neutral-100 min-w-[3.2rem] text-center"
-                    >
-                      {fmtOdds(p.odds)}
-                    </button>
-                  ) : (
-                    <span className="rounded border border-neutral-700 bg-neutral-900 px-2 py-0.5 text-[11px] tabular-nums text-neutral-100 min-w-[3.2rem] text-center">
-                      {fmtOdds(p.odds)}
-                    </span>
-                  )}
-                </span>
-              </div>
-            ))}
+            {sec.rows.map((p, i) => {
+              const note = noteFor ? noteFor(p) : null;
+              const tone = valueTone(note, p.odds);
+              const priceColor =
+                tone === "pos"
+                  ? "text-emerald-300 border-emerald-700"
+                  : tone === "neg"
+                  ? "text-red-300 border-red-700"
+                  : "text-neutral-100 border-neutral-700";
+              return (
+                <div key={i} className="flex items-center justify-between gap-2 py-0.5">
+                  <span className="text-[11px] text-neutral-300 truncate">
+                    {propRowLabel(p)}
+                  </span>
+                  <span className="flex items-center gap-1 shrink-0">
+                    {showPct && (
+                      <span className="text-[9px] text-neutral-600">
+                        {(impliedProb(p.odds) * 100).toFixed(1)}%
+                      </span>
+                    )}
+                    {onPick ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onPick(p);
+                        }}
+                        title="Tap to bet this price"
+                        className={`rounded border bg-neutral-900 hover:border-emerald-600 hover:bg-emerald-600/10 px-2 py-0.5 text-[11px] tabular-nums min-w-[3.2rem] text-center ${priceColor}`}
+                      >
+                        {fmtOdds(p.odds)}
+                      </button>
+                    ) : (
+                      <span
+                        className={`rounded border bg-neutral-900 px-2 py-0.5 text-[11px] tabular-nums min-w-[3.2rem] text-center ${priceColor}`}
+                      >
+                        {fmtOdds(p.odds)}
+                      </span>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
       ))}
@@ -330,11 +357,16 @@ export function OddsBoard({
   events,
   fights,
   userData,
+  matrixData,
   onAdd,
 }: {
   events: EventRow[];
   fights: FightRow[];
   userData: Record<string, UserData>;
+  // this fight's tape-note prices/lines, keyed the same way NotesPriceMatrix
+  // stores them - lets prop cells and the movement chart's "Notes" stat show
+  // what was actually typed, the same way the ML column already does
+  matrixData?: Record<string, MatrixData>;
   // tap a prop price to place a verified bet at it - omit this prop and the
   // board stays read-only (prices render as plain text, exactly as before)
   onAdd?: (bet: NewBet) => Promise<string | null>;
@@ -347,7 +379,7 @@ export function OddsBoard({
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   const [openPropIds, setOpenPropIds] = useState<Set<string>>(new Set());
   const [initialized, setInitialized] = useState(false);
-  const [chart, setChart] = useState<
+  const [chart, setChart] = useState
     {
       fightKey: string;
       side?: 1 | 2;
@@ -360,13 +392,24 @@ export function OddsBoard({
     } | null
   >(null);
 
+  // this fight's tape-note price/line for a real live board row, or null if
+  // the user hasn't typed one (or the row's fighter label doesn't resolve).
+  const notePriceFor = useCallback(
+    (f: FightRow, row: PropRow): string | null => {
+      const key = noteKeyForBoardRow(row, f.fighter1_name, f.fighter2_name);
+      if (!key) return null;
+      return matrixData?.[f.id]?.[key] ?? null;
+    },
+    [matrixData]
+  );
+
   // props now open the same chart-first modal MLs do, just keyed to that
   // exact prop's own movement history instead of the fighter's moneyline
   function openPropChart(p: PropRow, f: FightRow, ev: EventRow) {
     setChart({
       fightKey: p.fight_key,
       name: buildPropSelection(p, f.fighter1_name, f.fighter2_name),
-      notePrice: null,
+      notePrice: notePriceFor(f, p),
       f,
       ev,
       odds: p.odds,
@@ -756,6 +799,14 @@ export function OddsBoard({
                                           outcome: null,
                                         }
                                       : null;
+                                  const totalNote = totalRow ? notePriceFor(f, totalRow) : null;
+                                  const totalTone = totalRow ? valueTone(totalNote, totalRow.odds) : null;
+                                  const totalColor =
+                                    totalTone === "pos"
+                                      ? "text-emerald-400"
+                                      : totalTone === "neg"
+                                      ? "text-red-400"
+                                      : "text-neutral-300";
                                   return (
                                     <div key={t.line}>
                                       {totalSide === "over" ? "O" : "U"}
@@ -767,12 +818,12 @@ export function OddsBoard({
                                             openPropChart(totalRow, f, ev);
                                           }}
                                           title="Tap to bet this price"
-                                          className="text-[11px] text-neutral-300 hover:text-emerald-300 hover:underline"
+                                          className={`text-[11px] hover:underline ${totalColor}`}
                                         >
                                           {fmtOdds(o as number)}
                                         </button>
                                       ) : (
-                                        <span className="text-[11px] text-neutral-300">
+                                        <span className={`text-[11px] ${totalColor}`}>
                                           {o === null ? "—" : fmtOdds(o)}
                                         </span>
                                       )}
@@ -788,18 +839,22 @@ export function OddsBoard({
                                   : null
                               }
                               onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
+                              noteFor={(row) => notePriceFor(f, row)}
                             />
                             <PropCell
                               row={fk && sp && showProps ? methodPrice(fk, sp.name, "ko_tko") : null}
                               onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
+                              noteFor={(row) => notePriceFor(f, row)}
                             />
                             <PropCell
                               row={fk && sp && showProps ? methodPrice(fk, sp.name, "submission") : null}
                               onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
+                              noteFor={(row) => notePriceFor(f, row)}
                             />
                             <PropCell
                               row={fk && sp && showProps ? methodPrice(fk, sp.name, "decision") : null}
                               onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
+                              noteFor={(row) => notePriceFor(f, row)}
                             />
                             <PropCell
                               row={
@@ -808,18 +863,22 @@ export function OddsBoard({
                                   : null
                               }
                               onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
+                              noteFor={(row) => notePriceFor(f, row)}
                             />
                             <PropCell
                               row={fk && sp && showProps ? roundWinPrice(fk, sp.name, 1) : null}
                               onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
+                              noteFor={(row) => notePriceFor(f, row)}
                             />
                             <PropCell
                               row={fk && sp && showProps ? roundWinPrice(fk, sp.name, 2) : null}
                               onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
+                              noteFor={(row) => notePriceFor(f, row)}
                             />
                             <PropCell
                               row={fk && sp && showProps ? roundWinPrice(fk, sp.name, 3) : null}
                               onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
+                              noteFor={(row) => notePriceFor(f, row)}
                             />
                             <PropCell
                               row={
@@ -828,6 +887,7 @@ export function OddsBoard({
                                   : null
                               }
                               onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
+                              noteFor={(row) => notePriceFor(f, row)}
                             />
                             <PropCell
                               row={
@@ -836,18 +896,22 @@ export function OddsBoard({
                                   : null
                               }
                               onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
+                              noteFor={(row) => notePriceFor(f, row)}
                             />
                             <PropCell
                               row={fk && sp && showProps ? scorecardRoundPrice(fk, sp.name, 1) : null}
                               onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
+                              noteFor={(row) => notePriceFor(f, row)}
                             />
                             <PropCell
                               row={fk && sp && showProps ? scorecardRoundPrice(fk, sp.name, 2) : null}
                               onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
+                              noteFor={(row) => notePriceFor(f, row)}
                             />
                             <PropCell
                               row={fk && sp && showProps ? scorecardRoundPrice(fk, sp.name, 3) : null}
                               onPick={onAdd ? (row) => openPropChart(row, f, ev) : undefined}
+                              noteFor={(row) => notePriceFor(f, row)}
                             />
                           </div>
                         );
@@ -915,6 +979,7 @@ export function OddsBoard({
                                 f2={f.fighter2_name}
                                 propList={props}
                                 onPick={onAdd ? (p) => openPropChart(p, f, ev) : undefined}
+                                noteFor={(row) => notePriceFor(f, row)}
                               />
                             )}
                           </div>
