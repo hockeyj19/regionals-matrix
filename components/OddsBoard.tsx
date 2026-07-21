@@ -10,9 +10,9 @@ import {
   type ReactNode,
 } from "react";
 import { boutMatch, fetchAllRows, sameFighter } from "@/lib/board";
-import { fmtOdds, parseOddsInput, displayTypedOdds, getOddsMode } from "@/lib/format";
+import { fmtOdds, parseOddsInput, displayTypedOdds, getOddsMode, eventStartISO } from "@/lib/format";
 import { LineHistoryModal } from "@/components/LineHistoryModal";
-import type { EventRow, FightRow, UserData } from "@/lib/types";
+import type { EventRow, FightRow, NewBet, UserData } from "@/lib/types";
 
 /**
  * The Odds board: moneylines laid over the app's own fight cards, with a book
@@ -191,6 +191,199 @@ function PropCell({ price }: { price: number | null }) {
   );
 }
 
+// A price on the props sheet carries everything needed to bet it directly -
+// this turns one PropRow into the same shape QuickBet builds, so a bet placed
+// here grades, caps, and groups identically to one placed anywhere else. Only
+// the wager identity + display text are built here; odds/stake are supplied
+// at confirm time (odds already known - it's the price that was tapped).
+function propTitleCase(mk: string): string {
+  return mk.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function propLastToken(name: string): string {
+  const norm = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  const parts = norm.split(/\s+/).filter(Boolean);
+  return parts[parts.length - 1] ?? "";
+}
+
+function resolvePropFighterId(p: PropRow, f: FightRow): string | null {
+  if (!p.fighter) return f.fighter1_id ?? f.fighter2_id; // fight-level bout locator
+  if (sameFighter(p.fighter, f.fighter1_name)) return f.fighter1_id;
+  if (sameFighter(p.fighter, f.fighter2_name)) return f.fighter2_id;
+  // BetOnline often labels a prop row by surname alone (e.g. "Rakic"), which
+  // sameFighter's full-name rule can miss. Within one known bout that surname
+  // is unambiguous - a card never books the same surname twice - so fall back
+  // to a last-token compare instead of leaving it to the default guess.
+  const pLast = propLastToken(p.fighter);
+  const f1Last = propLastToken(f.fighter1_name);
+  const f2Last = propLastToken(f.fighter2_name);
+  if (pLast && pLast === f1Last && pLast !== f2Last) return f.fighter1_id;
+  if (pLast && pLast === f2Last && pLast !== f1Last) return f.fighter2_id;
+  return f.fighter1_id ?? f.fighter2_id;
+}
+
+function buildPropSelection(p: PropRow, f1Name: string, f2Name: string): string {
+  const methodLabel =
+    p.method === "ko_tko" ? "KO/TKO" : p.method === "submission" ? "Submission" : "Decision";
+  if (p.market === "method") return `${p.fighter ?? ""} by ${methodLabel}`.trim();
+  if (p.market === "round") return `${p.fighter ?? ""} in R${p.round}`.trim();
+  if (p.market === "method_round")
+    return `${p.fighter ?? ""} by ${methodLabel} in R${p.round}`.trim();
+  const title = propTitleCase(p.market);
+  if (p.market === "total" && p.ou_side)
+    return `${p.ou_side === "over" ? "Over" : "Under"} ${p.ou_line ?? ""} — ${f1Name} vs ${f2Name}`;
+  if (p.ou_side) {
+    const who = p.fighter ?? `${f1Name} vs ${f2Name}`;
+    return `${who} ${p.ou_side === "over" ? "Over" : "Under"}${
+      p.ou_line !== null ? ` ${p.ou_line}` : ""
+    } — ${title}`;
+  }
+  if (p.fighter) return `${p.fighter} — ${p.outcome ?? title}`;
+  return p.outcome ?? title;
+}
+
+// bet_type/prop_method/prop_round/ou_line follow the exact same convention
+// QuickBet writes: core totals carry over/under as bet_type itself; every
+// other market keeps its own market key as bet_type, with over/under (for
+// stat props that are themselves O/U) riding in prop_method instead.
+function propToBetShape(
+  p: PropRow,
+  f: FightRow,
+  ev: EventRow
+): Omit<NewBet, "odds" | "stake"> {
+  let bet_type: string = p.market;
+  let prop_method: string | null = null;
+  let prop_round: number | null = null;
+  let ou_line: number | null = null;
+
+  if (p.market === "method") {
+    prop_method = p.method;
+  } else if (p.market === "round") {
+    prop_round = p.round;
+  } else if (p.market === "method_round") {
+    prop_method = p.method;
+    prop_round = p.round;
+  } else if (p.market === "total" && p.ou_side) {
+    bet_type = p.ou_side; // "over" | "under"
+    ou_line = p.ou_line;
+  } else if (p.ou_side) {
+    prop_method = p.ou_side; // "over" | "under" - the market itself stays bet_type
+    ou_line = p.ou_line;
+  } else if (p.ou_line !== null) {
+    ou_line = p.ou_line; // a line without an O/U tag, e.g. Point Spread
+  }
+
+  return {
+    selection: buildPropSelection(p, f.fighter1_name, f.fighter2_name),
+    event_context: `${ev.org} — ${ev.event_name}`,
+    event_date: ev.event_date,
+    event_start: eventStartISO(ev.event_date, ev.event_time),
+    book: "BetOnline.ag",
+    price_check: null,
+    market_best: null,
+    market_book: null,
+    market_checked_at: null,
+    close_odds: null,
+    clv: null,
+    fighter_id: resolvePropFighterId(p, f),
+    bet_type,
+    prop_method,
+    prop_round,
+    ou_line,
+    event_source_url: ev.source_url,
+  };
+}
+
+function PropBetModal({
+  p,
+  f,
+  ev,
+  onAdd,
+  onClose,
+}: {
+  p: PropRow;
+  f: FightRow;
+  ev: EventRow;
+  onAdd: (bet: NewBet) => Promise<string | null>;
+  onClose: () => void;
+}) {
+  const [stake, setStake] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const label = buildPropSelection(p, f.fighter1_name, f.fighter2_name);
+
+  async function submit() {
+    const s = parseFloat(stake);
+    if (isNaN(s) || s <= 0) {
+      setError("Enter units, e.g. 0.5");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const shape = propToBetShape(p, f, ev);
+    const failure = await onAdd({ ...shape, odds: p.odds, stake: s });
+    setBusy(false);
+    if (failure) {
+      setError(failure);
+      return;
+    }
+    onClose();
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-xs rounded-xl border border-neutral-800 bg-neutral-950 p-4 space-y-3"
+      >
+        <div>
+          <p className="text-sm font-semibold text-neutral-100">{label}</p>
+          <p className="text-xs text-neutral-500">
+            {ev.org} — {ev.event_name} · BetOnline{" "}
+            <span className="text-emerald-400 font-medium">{fmtOdds(p.odds)}</span>
+          </p>
+        </div>
+        <div>
+          <label className="text-[11px] uppercase tracking-wide text-neutral-500">
+            Units
+          </label>
+          <input
+            autoFocus
+            type="number"
+            step="0.1"
+            min="0"
+            inputMode="decimal"
+            value={stake}
+            onChange={(e) => setStake(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+            placeholder="e.g. 0.5"
+            className="mt-1 w-full rounded-lg bg-neutral-900 border border-neutral-700 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+          />
+        </div>
+        {error && <p className="text-xs text-red-400">{error}</p>}
+        <div className="flex gap-2">
+          <button
+            onClick={onClose}
+            className="flex-1 rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-900"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={busy}
+            className="flex-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 px-3 py-2 text-sm font-medium"
+          >
+            {busy ? "Placing…" : "Place bet"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // The full BetOnline prop sheet for one fight, rendered the way BetOnline
 // itself lays it out: a header bar per market group, outcome rows with price
 // chips, favorites first. Section list is built from whatever the bots
@@ -201,11 +394,13 @@ function PropsPanel({
   f1,
   f2,
   propList,
+  onPick,
 }: {
   fightKey: string;
   f1: string;
   f2: string;
   propList: PropRow[];
+  onPick?: (p: PropRow) => void;
 }) {
   const rows = propList.filter((p) => p.fight_key === fightKey);
   const showPct = getOddsMode() !== "percent";
@@ -309,9 +504,22 @@ function PropsPanel({
                       {(impliedProb(p.odds) * 100).toFixed(1)}%
                     </span>
                   )}
-                  <span className="rounded border border-neutral-700 bg-neutral-900 px-2 py-0.5 text-[11px] tabular-nums text-neutral-100 min-w-[3.2rem] text-center">
-                    {fmtOdds(p.odds)}
-                  </span>
+                  {onPick ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onPick(p);
+                      }}
+                      title="Tap to bet this price"
+                      className="rounded border border-neutral-700 bg-neutral-900 hover:border-emerald-600 hover:bg-emerald-600/10 hover:text-emerald-300 px-2 py-0.5 text-[11px] tabular-nums text-neutral-100 min-w-[3.2rem] text-center"
+                    >
+                      {fmtOdds(p.odds)}
+                    </button>
+                  ) : (
+                    <span className="rounded border border-neutral-700 bg-neutral-900 px-2 py-0.5 text-[11px] tabular-nums text-neutral-100 min-w-[3.2rem] text-center">
+                      {fmtOdds(p.odds)}
+                    </span>
+                  )}
                 </span>
               </div>
             ))}
@@ -397,15 +605,22 @@ export function OddsBoard({
   events,
   fights,
   userData,
+  onAdd,
 }: {
   events: EventRow[];
   fights: FightRow[];
   userData: Record<string, UserData>;
+  // tap a prop price to place a verified bet at it - omit this prop and the
+  // board stays read-only (prices render as plain text, exactly as before)
+  onAdd?: (bet: NewBet) => Promise<string | null>;
 }) {
   const [board, setBoard] = useState<BoardRow[]>([]);
   const [fdBoard, setFdBoard] = useState<BoardRow[]>([]);
   const [activeBook, setActiveBook] = useState<Book>("betonline");
   const [props, setProps] = useState<PropRow[]>([]);
+  const [betPrompt, setBetPrompt] = useState<{ p: PropRow; f: FightRow; ev: EventRow } | null>(
+    null
+  );
   const [loaded, setLoaded] = useState(false);
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   const [openPropIds, setOpenPropIds] = useState<Set<string>>(new Set());
@@ -911,6 +1126,7 @@ export function OddsBoard({
                                 f1={f.fighter1_name}
                                 f2={f.fighter2_name}
                                 propList={props}
+                                onPick={onAdd ? (p) => setBetPrompt({ p, f, ev }) : undefined}
                               />
                             )}
                           </div>
@@ -940,6 +1156,16 @@ export function OddsBoard({
           fighterName={chart.name}
           notePrice={chart.notePrice}
           onClose={() => setChart(null)}
+        />
+      )}
+
+      {betPrompt && onAdd && (
+        <PropBetModal
+          p={betPrompt.p}
+          f={betPrompt.f}
+          ev={betPrompt.ev}
+          onAdd={onAdd}
+          onClose={() => setBetPrompt(null)}
         />
       )}
     </div>

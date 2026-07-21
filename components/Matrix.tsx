@@ -656,7 +656,7 @@ export function Matrix({
       </header>
 
       {view === "odds" ? (
-        <OddsBoard events={events} fights={fights} userData={userData} />
+        <OddsBoard events={events} fights={fights} userData={userData} onAdd={addBet} />
       ) : view === "profile" ? (
         <Profile
           user={user}
