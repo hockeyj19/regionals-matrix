@@ -219,7 +219,7 @@ export function Matrix({
   const [fights, setFights] = useState<FightRow[]>([]);
   const [userData, setUserData] = useState<Record<string, UserData>>({});
   const [fighterNotes, setFighterNotes] = useState<Record<string, FighterNote>>({});
-  const [view, setView] = useState<
+  const [view, setView] = useState
     "profile" | "events" | "odds" | "bets" | "leaderboard" | "admin"
   >("profile");
   // Notes page: three independently-collapsible sections, all start closed.
@@ -237,7 +237,7 @@ export function Matrix({
   const [matrixData, setMatrixData] = useState<Record<string, MatrixData>>({});
   // live BetOnline board (moneyline) + prop rows, fetched once, used to show
   // each matrix cell's CLV vs the board. Shape mirrors the Odds board.
-  const [boardRows, setBoardRows] = useState<
+  const [boardRows, setBoardRows] = useState
     { fight_key: string; fighter1: string; fighter2: string; cur1: number | null; cur2: number | null }[]
   >([]);
   const [propRows, setPropRows] = useState<PropRow[]>([]);
@@ -718,7 +718,7 @@ export function Matrix({
       </header>
 
       {view === "odds" ? (
-        <OddsBoard events={events} fights={fights} userData={userData} onAdd={addBet} />
+        <OddsBoard events={events} fights={fights} userData={userData} matrixData={matrixData} onAdd={addBet} />
       ) : view === "profile" ? (
         <Profile
           user={user}
