@@ -198,7 +198,16 @@ function AccountMenu({ email }: { email: string | undefined }) {
   );
 }
 
-export function Matrix({ user }: { user: User }) {
+export function Matrix({
+  user,
+  initialProfileUser = null,
+}: {
+  user: User;
+  // arriving from a shared /profile/<username> link (redirected here with
+  // ?profile=<username>) - opens straight to that person's profile instead
+  // of the visitor's own, with the tab bar live from the first frame.
+  initialProfileUser?: string | null;
+}) {
   const [events, setEvents] = useState<EventRow[]>([]);
   const [fights, setFights] = useState<FightRow[]>([]);
   const [userData, setUserData] = useState<Record<string, UserData>>({});
@@ -214,7 +223,7 @@ export function Matrix({ user }: { user: User }) {
   }>({ search: false, events: false, history: false });
   const [fighterSearchQ, setFighterSearchQ] = useState("");
   const [pendingScrollFightId, setPendingScrollFightId] = useState<string | null>(null);
-  const [profileUser, setProfileUser] = useState<string | null>(null);
+  const [profileUser, setProfileUser] = useState<string | null>(initialProfileUser);
   const [isAdmin, setIsAdmin] = useState(false);
   const [showEventsInfo, setShowEventsInfo] = useState(false);
   const [bets, setBets] = useState<BetRow[]>([]);

@@ -14,14 +14,29 @@ const SITE_URL =
     ? window.location.origin
     : "https://tape-notes.vercel.app";
 
+// A shared profile link (tapenotes.vercel.app/profile/<username>) 307-redirects
+// here with ?profile=<username> attached (see app/profile/[username]/page.tsx).
+// Read synchronously on the very first render - not in an effect - so there's
+// no race against the async session check below: by the time we know whether
+// the visitor is signed in, we already know where they're trying to go.
+function readProfileParam(): string | null {
+  if (typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.search).get("profile");
+}
+
 export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [initialProfileUser] = useState<string | null>(readProfileParam);
 
   // auth form state
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  // Arriving via a shared profile link means this visitor almost certainly
+  // doesn't have an account yet - greet them with sign-up, not sign-in.
+  const [mode, setMode] = useState<"signin" | "signup">(
+    initialProfileUser ? "signup" : "signin"
+  );
   const [message, setMessage] = useState("");
 
   // password reset state
@@ -40,6 +55,15 @@ export default function Home() {
       setUser(session?.user ?? null);
     });
     return () => sub.subscription.unsubscribe();
+  }, []);
+
+  // cosmetic only: once the target's captured above, drop ?profile=... from
+  // the visible URL so it doesn't linger there as the person moves around
+  useEffect(() => {
+    if (initialProfileUser) {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleForgotPassword() {
@@ -120,7 +144,11 @@ export default function Home() {
             Tape Notes <span className="text-emerald-400 text-sm align-middle">beta</span>
           </h1>
           <p className="text-center text-neutral-400 text-sm">
-            {mode === "signin" ? "Sign in to your account" : "Create an account"}
+            {initialProfileUser
+              ? `Sign up to see ${initialProfileUser}'s full profile`
+              : mode === "signin"
+              ? "Sign in to your account"
+              : "Create an account"}
           </p>
           <input
             type="email"
@@ -165,5 +193,5 @@ export default function Home() {
     );
   }
 
-  return <Matrix user={user} />;
+  return <Matrix user={user} initialProfileUser={initialProfileUser} />;
 }
