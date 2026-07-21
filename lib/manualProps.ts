@@ -219,10 +219,13 @@ export function fmtLineDiff(n: number): string {
 
 // ---------------------------------------------------------------------------
 // Always-on core markets below. Each builds a synthetic PropRow for every
-// outcome the market can have, and reuses the SAME propRowKey()/propRowLabel()
-// the live board itself uses - so a template row and a live-posted row for
-// the same outcome are always the exact same storage cell, with no separate
-// key scheme to drift out of sync.
+// outcome the market can have, using propRowKey()/propRowLabel() for the
+// STORAGE key and label (unchanged - existing typed data still lands on the
+// exact same cells). The LIVE BOARD LOOKUP, however, goes through isFighter()
+// instead of an exact-string key match: BetOnline's scraped fighter label
+// isn't guaranteed byte-identical to the fight card's stored name, and a raw
+// key comparison silently drops the match (and the CLV chip) the moment it
+// isn't. This was the bug behind CLV never appearing on these five markets.
 // ---------------------------------------------------------------------------
 
 function blankProp(over: Partial<PropRow>): PropRow {
@@ -240,9 +243,17 @@ function blankProp(over: Partial<PropRow>): PropRow {
   };
 }
 
-function toPresetRow(synthetic: PropRow, liveProps: PropRow[]): PresetPriceRow {
+function toPresetRow(synthetic: PropRow, liveProps: PropRow[], otherName: string | null): PresetPriceRow {
   const key = propRowKey(synthetic);
-  const live = liveProps.find((p) => propRowKey(p) === key);
+  const live = liveProps.find((p) => {
+    if (p.market !== synthetic.market) return false;
+    if ((p.method ?? null) !== synthetic.method) return false;
+    if ((p.round ?? null) !== synthetic.round) return false;
+    if ((p.ou_side ?? null) !== synthetic.ou_side) return false;
+    if ((p.ou_line ?? null) !== synthetic.ou_line) return false;
+    if (synthetic.fighter === null) return p.fighter === null;
+    return isFighter(p.fighter, synthetic.fighter, otherName ?? "");
+  });
   return { key, label: propRowLabel(synthetic), board: live ? live.odds : null };
 }
 
@@ -256,9 +267,13 @@ export function buildMethodOfVictoryRows(
   f2Name: string
 ): PresetPriceRow[] {
   const rows: PresetPriceRow[] = [];
-  for (const name of [f1Name, f2Name]) {
+  const pairs: readonly [string, string][] = [
+    [f1Name, f2Name],
+    [f2Name, f1Name],
+  ];
+  for (const [name, other] of pairs) {
     for (const m of METHODS) {
-      rows.push(toPresetRow(blankProp({ market: "method", fighter: name, method: m }), props));
+      rows.push(toPresetRow(blankProp({ market: "method", fighter: name, method: m }), props, other));
     }
   }
   return rows;
@@ -273,9 +288,13 @@ export function buildRoundBettingRows(
 ): PresetPriceRow[] {
   const maxRound = fiveRound ? 5 : 3;
   const rows: PresetPriceRow[] = [];
-  for (const name of [f1Name, f2Name]) {
+  const pairs: readonly [string, string][] = [
+    [f1Name, f2Name],
+    [f2Name, f1Name],
+  ];
+  for (const [name, other] of pairs) {
     for (let r = 1; r <= maxRound; r++) {
-      rows.push(toPresetRow(blankProp({ market: "round", fighter: name, round: r }), props));
+      rows.push(toPresetRow(blankProp({ market: "round", fighter: name, round: r }), props, other));
     }
   }
   return rows;
@@ -290,11 +309,19 @@ export function buildMethodRoundRows(
 ): PresetPriceRow[] {
   const maxRound = fiveRound ? 5 : 3;
   const rows: PresetPriceRow[] = [];
-  for (const name of [f1Name, f2Name]) {
+  const pairs: readonly [string, string][] = [
+    [f1Name, f2Name],
+    [f2Name, f1Name],
+  ];
+  for (const [name, other] of pairs) {
     for (let r = 1; r <= maxRound; r++) {
       for (const m of METHOD_ROUND_METHODS) {
         rows.push(
-          toPresetRow(blankProp({ market: "method_round", fighter: name, method: m, round: r }), props)
+          toPresetRow(
+            blankProp({ market: "method_round", fighter: name, method: m, round: r }),
+            props,
+            other
+          )
         );
       }
     }
@@ -310,5 +337,9 @@ export function buildMostMatchupRows(
   f2Name: string,
   market: "most_significant_strikes_landed" | "most_takedowns_landed"
 ): PresetPriceRow[] {
-  return [f1Name, f2Name].map((name) => toPresetRow(blankProp({ market, fighter: name }), props));
+  const pairs: readonly [string, string][] = [
+    [f1Name, f2Name],
+    [f2Name, f1Name],
+  ];
+  return pairs.map(([name, other]) => toPresetRow(blankProp({ market, fighter: name }), props, other));
 }
