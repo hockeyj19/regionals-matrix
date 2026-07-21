@@ -342,44 +342,98 @@ export function buildMostMatchupRows(
 }
 
 // ---------------------------------------------------------------------------
-// The reverse direction: given a REAL live board row (from OddsBoard), find
-// the exact key the Notes matrix stored the user's price/line under for that
-// same outcome - so the Odds page can color a prop price and populate a
-// chart's "Notes" stat from what was actually typed. Each case mirrors that
-// market's own key scheme above exactly. Total Sig Strikes is deliberately
-// excluded: its stored value is a LINE, not a price, so running it through
-// odds-based coloring would misread a line number as American odds.
+// The reverse direction, done right: given a REAL live board row (from the
+// Odds page), return the user's own stored tape-note price for that same
+// outcome. The earlier version rebuilt a key from BetOnline's raw row fields,
+// which don't match the blank synthetic rows the Notes board saved under -
+// so the two paths produced different keys and the lookup always missed.
+//
+// This version instead REBUILDS THE SAME ROWS THE NOTES BOARD BUILDS (via the
+// exact builder functions above), then matches the board row to one of them
+// by market/fighter/method/round/side/line - never by reconstructing a key
+// from foreign fields. Save path and lookup path now share one source of
+// truth, so they cannot drift apart. Total Sig Strikes is deliberately
+// excluded: its stored value is a LINE, not a price.
 // ---------------------------------------------------------------------------
-export function noteKeyForBoardRow(row: PropRow, f1Name: string, f2Name: string): string | null {
-  const canon = (raw: string | null): string | null => {
-    if (raw === null) return null;
-    if (isFighter(raw, f1Name, f2Name)) return f1Name;
-    if (isFighter(raw, f2Name, f1Name)) return f2Name;
+export function noteForBoardRow(
+  fight: FightRow,
+  row: PropRow,
+  fightData: Record<string, string> | undefined,
+  ml: { cur1: number | null; cur2: number | null } | null,
+  allProps: PropRow[]
+): string | null {
+  if (!fightData) return null;
+  const f1 = fight.fighter1_name;
+  const f2 = fight.fighter2_name;
+  const fiveRound = isFiveRound(fight);
+
+  // which fighter (by the card's own name) does this board row belong to?
+  const whichFighter = (): string | null => {
+    if (row.fighter === null) return null;
+    if (isFighter(row.fighter, f1, f2)) return f1;
+    if (isFighter(row.fighter, f2, f1)) return f2;
     return null;
   };
+
+  let candidates: PresetPriceRow[] = [];
   switch (row.market) {
     case "total":
-      if (row.ou_side === null || row.ou_line === null) return null;
-      return `total|${row.ou_side}|${row.ou_line}`;
-    case "point_spread": {
-      const name = canon(row.fighter);
-      if (name === null || row.ou_line === null) return null;
-      return `point_spread|${name}|${Math.abs(row.ou_line)}`;
-    }
+      candidates = buildTotalRoundsRows(allProps, fiveRound);
+      break;
+    case "point_spread":
+      candidates = buildPointSpreadRows(allProps, f1, f2, fiveRound, ml?.cur1 ?? null, ml?.cur2 ?? null);
+      break;
     case "total_takedowns": {
-      const name = canon(row.fighter);
-      if (name === null || row.ou_side === null || row.ou_line === null) return null;
-      return `total_takedowns|${name}|${row.ou_side}|${row.ou_line}`;
+      const groups = buildTotalTakedownsRows(allProps, f1, f2);
+      candidates = groups.flatMap((g) => g.rows);
+      break;
     }
     case "method":
+      candidates = buildMethodOfVictoryRows(allProps, f1, f2);
+      break;
     case "round":
+      candidates = buildRoundBettingRows(allProps, f1, f2, fiveRound);
+      break;
     case "method_round":
+      candidates = buildMethodRoundRows(allProps, f1, f2, fiveRound);
+      break;
     case "most_significant_strikes_landed":
-    case "most_takedowns_landed": {
-      const name = canon(row.fighter);
-      return propRowKey({ ...row, fighter: name });
-    }
+    case "most_takedowns_landed":
+      candidates = buildMostMatchupRows(allProps, f1, f2, row.market);
+      break;
     default:
-      return null; // not one of the templated/priced markets - nothing to color
+      return null; // not a templated/priced market - nothing to color
   }
+
+  // find the candidate whose OWN key we'd have built for this exact board row
+  const name = whichFighter();
+  const target = (() => {
+    switch (row.market) {
+      case "total":
+        if (row.ou_side === null || row.ou_line === null) return null;
+        return `total|${row.ou_side}|${row.ou_line}`;
+      case "point_spread":
+        if (name === null || row.ou_line === null) return null;
+        return `point_spread|${name}|${Math.abs(row.ou_line)}`;
+      case "total_takedowns":
+        if (name === null || row.ou_side === null || row.ou_line === null) return null;
+        return `total_takedowns|${name}|${row.ou_side}|${row.ou_line}`;
+      case "method":
+      case "round":
+      case "method_round":
+      case "most_significant_strikes_landed":
+      case "most_takedowns_landed":
+        if (name === null) return null;
+        return propRowKey({ ...blankProp({}), market: row.market, fighter: name, method: row.method, round: row.round });
+      default:
+        return null;
+    }
+  })();
+  if (target === null) return null;
+
+  // confirm the target key is one the builder actually produced (guards
+  // against a board row that has no matching template row), then read it
+  const matched = candidates.find((c) => c.key === target);
+  if (!matched) return null;
+  return fightData[matched.key] ?? null;
 }
