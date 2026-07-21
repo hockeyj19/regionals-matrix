@@ -235,9 +235,7 @@ export function Matrix({
   const [matrixData, setMatrixData] = useState<Record<string, MatrixData>>({});
   // live BetOnline board (moneyline) + prop rows, fetched once, used to show
   // each matrix cell's CLV vs the board. Shape mirrors the Odds board.
-  const [boardRows, setBoardRows] = useState
-    { fight_key: string; fighter1: string; fighter2: string; cur1: number | null; cur2: number | null }[]
-  >([]);
+ const [boardRows, setBoardRows] = useState<{ fight_key: string; fighter1: string; fighter2: string; cur1: number | null; cur2: number | null }[]>([]);
   const [propRows, setPropRows] = useState<PropRow[]>([]);
   const [openMatrix, setOpenMatrix] = useState<Record<string, boolean>>({});
   const [openBet, setOpenBet] = useState<Record<string, boolean>>({});
