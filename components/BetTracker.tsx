@@ -52,6 +52,10 @@ export function BetTracker({
   const [fighterSearch, setFighterSearch] = useState("");
   const [selEventId2, setSelEventId2] = useState("");
   const [selFightId2, setSelFightId2] = useState("");
+  const [manualEntryMode, setManualEntryMode] = useState<"board" | "type">("board");
+  const [manualEventName, setManualEventName] = useState("");
+  const [manualEventDate, setManualEventDate] = useState("");
+  const [manualMatchup, setManualMatchup] = useState("");
   const [showInfo, setShowInfo] = useState(false);
 
   const selEvent = events.find((ev) => ev.id === selEventId) ?? null;
@@ -291,46 +295,95 @@ export function BetTracker({
         <p className="text-[11px] text-neutral-600">
           Pick the fight, then log it at your own book and number - you grade this one.
         </p>
-        <div className="flex flex-wrap gap-2">
-          <select
-            value={selEventId2}
-            onChange={(e) => {
-              setSelEventId2(e.target.value);
-              setSelFightId2("");
-            }}
-            className="flex-1 min-w-0 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm outline-none focus:border-emerald-500"
+        <div className="flex gap-1">
+          <button
+            onClick={() => setManualEntryMode("board")}
+            className={sideBtn(manualEntryMode === "board")}
           >
-            <option value="">Pick an event</option>
-            {events.map((ev) => (
-              <option key={ev.id} value={ev.id}>
-                {ev.org} — {ev.event_name}
-              </option>
-            ))}
-          </select>
-          <select
-            value={selFightId2}
-            onChange={(e) => setSelFightId2(e.target.value)}
-            disabled={!selEventId2}
-            className="flex-1 min-w-0 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm outline-none focus:border-emerald-500 disabled:opacity-50"
+            From the board
+          </button>
+          <button
+            onClick={() => setManualEntryMode("type")}
+            className={sideBtn(manualEntryMode === "type")}
           >
-            <option value="">Pick a fight</option>
-            {fights
-              .filter((f) => f.event_id === selEventId2)
-              .map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.fighter1_name} vs {f.fighter2_name}
+            Type it in
+          </button>
+        </div>
+        {manualEntryMode === "board" ? (
+          <div className="flex flex-wrap gap-2">
+            <select
+              value={selEventId2}
+              onChange={(e) => {
+                setSelEventId2(e.target.value);
+                setSelFightId2("");
+              }}
+              className="flex-1 min-w-0 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm outline-none focus:border-emerald-500"
+            >
+              <option value="">Pick an event</option>
+              {events.map((ev) => (
+                <option key={ev.id} value={ev.id}>
+                  {ev.org} — {ev.event_name}
                 </option>
               ))}
-          </select>
-        </div>
-        {selEvent2 && selFight2 && (
+            </select>
+            <select
+              value={selFightId2}
+              onChange={(e) => setSelFightId2(e.target.value)}
+              disabled={!selEventId2}
+              className="flex-1 min-w-0 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm outline-none focus:border-emerald-500 disabled:opacity-50"
+            >
+              <option value="">Pick a fight</option>
+              {fights
+                .filter((f) => f.event_id === selEventId2)
+                .map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.fighter1_name} vs {f.fighter2_name}
+                  </option>
+                ))}
+            </select>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            <input
+              value={manualEventName}
+              onChange={(e) => setManualEventName(e.target.value)}
+              placeholder="Event name, e.g. &quot;Local Smoker 42&quot;"
+              className="flex-1 min-w-0 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm outline-none focus:border-emerald-500"
+            />
+            <input
+              value={manualMatchup}
+              onChange={(e) => setManualMatchup(e.target.value)}
+              placeholder="Matchup, e.g. &quot;Fighter A vs Fighter B&quot;"
+              className="flex-1 min-w-0 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm outline-none focus:border-emerald-500"
+            />
+            <input
+              type="date"
+              value={manualEventDate}
+              onChange={(e) => setManualEventDate(e.target.value)}
+              title="Event date (optional)"
+              className="rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm outline-none focus:border-emerald-500"
+            />
+          </div>
+        )}
+        {manualEntryMode === "board" && selEvent2 && selFight2 && (
           <ManualBet
             key={selFight2.id}
-            fight={selFight2}
+            placeholderName={selFight2.fighter1_name}
             eventLabel={`${selEvent2.org} — ${selEvent2.event_name}`}
             eventDate={selEvent2.event_date}
             eventTime={selEvent2.event_time}
             eventSourceUrl={selEvent2.source_url}
+            onAdd={onAdd}
+          />
+        )}
+        {manualEntryMode === "type" && manualEventName.trim() && (
+          <ManualBet
+            key={`${manualEventName}|${manualMatchup}`}
+            placeholderName={manualMatchup.trim() || undefined}
+            eventLabel={manualEventName.trim()}
+            eventDate={manualEventDate || null}
+            eventTime={null}
+            eventSourceUrl={null}
             onAdd={onAdd}
           />
         )}

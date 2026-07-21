@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { FightRow, NewBet } from "@/lib/types";
+import type { NewBet } from "@/lib/types";
 import { SHARP_BOOKS, SOFT_BOOKS, bookLabel, eventStartISO, parseBetInputs } from "@/lib/format";
 
 /**
@@ -13,20 +13,22 @@ import { SHARP_BOOKS, SOFT_BOOKS, bookLabel, eventStartISO, parseBetInputs } fro
  * living in the selection text you type.
  */
 
-// unverified bets can be logged at any book — the soft books plus BetOnline
+// unverified bets can be logged at any book — the soft books plus the sharp ones
 const BOOK_OPTIONS = [...SOFT_BOOKS, ...SHARP_BOOKS];
 
 const MAX_SELECTION = 160;
 
 export function ManualBet({
-  fight,
+  placeholderName,
   eventLabel,
   eventDate,
   eventTime,
   eventSourceUrl,
   onAdd,
 }: {
-  fight: FightRow;
+  // just the placeholder-hint name - a real board fight and a manually
+  // typed matchup both work, since nothing here is checked against the board
+  placeholderName?: string;
   eventLabel: string;
   eventDate: string | null;
   eventTime: string | null;
@@ -98,7 +100,7 @@ export function ManualBet({
           if (e.key === "Enter") submit();
         }}
         maxLength={MAX_SELECTION}
-        placeholder={`Write the bet — e.g. "${fight.fighter1_name} by KO in R2"`}
+        placeholder={`Write the bet — e.g. "${placeholderName ?? "Fighter A"} by KO in R2"`}
         title="Any market, any wording — you grade this one"
         className="w-full rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1.5 text-xs outline-none focus:border-emerald-500"
       />
