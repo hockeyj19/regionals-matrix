@@ -1,5 +1,5 @@
 import type { FightRow } from "@/lib/types";
-import type { PropRow } from "@/lib/propBet";
+import { propRowKey, propRowLabel, type PropRow } from "@/lib/propBet";
 
 // Fighter-name matching identical in spirit to the board's own matching:
 // full name first, surname-only fallback (unambiguous within one bout).
@@ -215,4 +215,100 @@ export function lineDiff(typed: string | undefined, boardLine: number | null): n
 
 export function fmtLineDiff(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+// ---------------------------------------------------------------------------
+// Always-on core markets below. Each builds a synthetic PropRow for every
+// outcome the market can have, and reuses the SAME propRowKey()/propRowLabel()
+// the live board itself uses - so a template row and a live-posted row for
+// the same outcome are always the exact same storage cell, with no separate
+// key scheme to drift out of sync.
+// ---------------------------------------------------------------------------
+
+function blankProp(over: Partial<PropRow>): PropRow {
+  return {
+    fight_key: "",
+    market: "",
+    fighter: null,
+    method: null,
+    round: null,
+    ou_side: null,
+    ou_line: null,
+    odds: 0,
+    outcome: null,
+    ...over,
+  };
+}
+
+function toPresetRow(synthetic: PropRow, liveProps: PropRow[]): PresetPriceRow {
+  const key = propRowKey(synthetic);
+  const live = liveProps.find((p) => propRowKey(p) === key);
+  return { key, label: propRowLabel(synthetic), board: live ? live.odds : null };
+}
+
+const METHODS = ["ko_tko", "submission", "decision"] as const;
+const METHOD_ROUND_METHODS = ["ko_tko", "submission"] as const; // decision can't land "in round N"
+
+// Method of Victory: per fighter x 3 methods.
+export function buildMethodOfVictoryRows(
+  props: PropRow[],
+  f1Name: string,
+  f2Name: string
+): PresetPriceRow[] {
+  const rows: PresetPriceRow[] = [];
+  for (const name of [f1Name, f2Name]) {
+    for (const m of METHODS) {
+      rows.push(toPresetRow(blankProp({ market: "method", fighter: name, method: m }), props));
+    }
+  }
+  return rows;
+}
+
+// Round Betting: per fighter x round (3 rounds standard, 5 on main/title).
+export function buildRoundBettingRows(
+  props: PropRow[],
+  f1Name: string,
+  f2Name: string,
+  fiveRound: boolean
+): PresetPriceRow[] {
+  const maxRound = fiveRound ? 5 : 3;
+  const rows: PresetPriceRow[] = [];
+  for (const name of [f1Name, f2Name]) {
+    for (let r = 1; r <= maxRound; r++) {
+      rows.push(toPresetRow(blankProp({ market: "round", fighter: name, round: r }), props));
+    }
+  }
+  return rows;
+}
+
+// Method + Round: per fighter x round x {KO/TKO, Submission}.
+export function buildMethodRoundRows(
+  props: PropRow[],
+  f1Name: string,
+  f2Name: string,
+  fiveRound: boolean
+): PresetPriceRow[] {
+  const maxRound = fiveRound ? 5 : 3;
+  const rows: PresetPriceRow[] = [];
+  for (const name of [f1Name, f2Name]) {
+    for (let r = 1; r <= maxRound; r++) {
+      for (const m of METHOD_ROUND_METHODS) {
+        rows.push(
+          toPresetRow(blankProp({ market: "method_round", fighter: name, method: m, round: r }), props)
+        );
+      }
+    }
+  }
+  return rows;
+}
+
+// Most Significant Strikes Landed / Most Takedowns Landed: a straight
+// head-to-head matchup, one row per fighter.
+export function buildMostMatchupRows(
+  props: PropRow[],
+  f1Name: string,
+  f2Name: string,
+  market: "most_significant_strikes_landed" | "most_takedowns_landed"
+): PresetPriceRow[] {
+  return [f1Name, f2Name].map((name) => toPresetRow(blankProp({ market, fighter: name }), props));
 }
