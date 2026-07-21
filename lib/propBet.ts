@@ -241,216 +241,39 @@ export function buildPropSections(propList: PropRow[], fightKey: string): PropSe
   return secs;
 }
 
-// A stable, unique key for one exact prop outcome. Builds on the same
-// identity tuple the stake-cap trigger and Consensus Bot use, plus outcome:
-// several fight-level markets (Goes The Distance's Yes/No, How Will Fight
-// End, Decision Method of Victory, Split/Majority Decision) have fighter,
-// method, round, and ou_side/ou_line all null - outcome text is the ONLY
-// thing telling two of their rows apart, so it has to be part of the key or
-// those rows collide and silently overwrite each other's saved price.
-export function propRowKey(p: {
-  market: string;
-  fighter: string | null;
-  method: string | null;
-  round: number | null;
-  ou_side: string | null;
-  ou_line: number | null;
-  outcome?: string | null;
-}): string {
-  return [
+// A stable, unique key for one exact prop outcome - the same identity tuple
+// the stake-cap trigger and Consensus Bot use, so a Notes-matrix cell always
+// points at the one specific board row it was typed against, even across two
+// markets that share a fighter/round/method in different combinations.
+//
+// Outcome-list markets (Goes The Distance, How Will Fight End, Double Chance,
+// Fight To Start, Win Inside Distance/Goes Distance/No Action, and similar)
+// carry no fighter/method/round/ou_side/ou_line at all - every outcome would
+// otherwise collapse onto the same key. A slugified outcome is appended only
+// in that all-empty case, so every market that already disambiguates via the
+// other fields keeps its exact existing key untouched.
+export function propRowKey(p: PropRow): string {
+  const base: (string | number)[] = [
     p.market,
     p.fighter ?? "",
     p.method ?? "",
     p.round ?? "",
     p.ou_side ?? "",
     p.ou_line ?? "",
-    p.outcome ?? "",
-  ].join("|");
+  ];
+  const allEmpty = base.slice(1).every((v) => v === "");
+  if (allEmpty && p.outcome) {
+    return [...base, slugOutcome(p.outcome)].join("|");
+  }
+  return base.join("|");
 }
 
-// Markets whose row list is fully predictable ahead of time - from just the
-// two fighter names, the round count, and (for a few) a small fixed set of
-// BetOnline's own sub-outcome labels, confirmed against real posted rows
-// rather than guessed. Distinct from markets like Total Rounds or Point
-// Spread, where the actual number is BetOnline's own risk call and genuinely
-// can't be known in advance - those stay opportunistic, shown only once real
-// data exists. "core" ones template for every org; the rest are UFC-only,
-// matching the full-sheet-is-UFC-only rule.
-export const ALWAYS_SHOWN_MARKETS = new Set([
-  "goes_the_distance",
-  "method",
-  "round",
-  "method_round",
-  "decision_method_of_victory",
-  "double_chance",
-  "fight_goes_to_split_or_majority_decision",
-  "fighter_wins_inside_distance",
-  "how_will_fight_end",
-  "most_significant_strikes_landed",
-  "most_takedowns_landed",
-  "fight_to_start",
-  "scorecard_winner_or_finish",
-]);
-
-export type TemplateRowSpec = { key: string; fallbackLabel: string };
-export type TemplateSection = { title: string; ufcOnly: boolean; specs: TemplateRowSpec[] };
-
-export function buildAlwaysShownTemplate(
-  f1Name: string,
-  f2Name: string,
-  fiveRound: boolean
-): TemplateSection[] {
-  const rounds = fiveRound ? [1, 2, 3, 4, 5] : [1, 2, 3];
-  const methodLabel = (m: string) =>
-    m === "ko_tko" ? "KO/TKO" : m === "submission" ? "Submission" : "Decision";
-  const keyFor = (
-    market: string,
-    fighter: string | null,
-    method: string | null,
-    round: number | null,
-    outcome: string | null
-  ) => propRowKey({ market, fighter, method, round, ou_side: null, ou_line: null, outcome });
-
-  const gtd: TemplateRowSpec[] = [
-    { key: keyFor("goes_the_distance", null, null, null, "Yes"), fallbackLabel: "Yes" },
-    { key: keyFor("goes_the_distance", null, null, null, "No"), fallbackLabel: "No" },
-  ];
-
-  const movMethods = ["ko_tko", "submission", "decision"];
-  const mov: TemplateRowSpec[] = [f1Name, f2Name].flatMap((f) =>
-    movMethods.map((m) => ({
-      key: keyFor("method", f, m, null, null),
-      fallbackLabel: `${f} by ${methodLabel(m)}`,
-    }))
-  );
-
-  const roundBetting: TemplateRowSpec[] = [f1Name, f2Name].flatMap((f) =>
-    rounds.map((r) => ({
-      key: keyFor("round", f, null, r, null),
-      fallbackLabel: `${f} in Round ${r}`,
-    }))
-  );
-
-  // decision can't happen before the final round, so BetOnline never posts
-  // it as a method+round combo - only KO/TKO and submission get one
-  const methodRound: TemplateRowSpec[] = [f1Name, f2Name].flatMap((f) =>
-    ["ko_tko", "submission"].flatMap((m) =>
-      rounds.map((r) => ({
-        key: keyFor("method_round", f, m, r, null),
-        fallbackLabel: `${f} in Round ${r} by ${methodLabel(m)}`,
-      }))
-    )
-  );
-
-  // BetOnline's own two decision sub-methods - outcome text carries the
-  // whole label, confirmed verbatim against a real posted row
-  const decisionMov: TemplateRowSpec[] = [f1Name, f2Name].flatMap((f) => [
-    {
-      key: keyFor("decision_method_of_victory", f, null, null, `${f} Wins by Unanimous Decision`),
-      fallbackLabel: `${f} Wins by Unanimous Decision`,
-    },
-    {
-      key: keyFor(
-        "decision_method_of_victory",
-        f,
-        null,
-        null,
-        `${f} Wins by Split or Majority Decision`
-      ),
-      fallbackLabel: `${f} Wins by Split or Majority Decision`,
-    },
-  ]);
-
-  // double chance carries the combo in BOTH `method` and matching outcome
-  // text - propRowKey folds outcome in unconditionally, so the template has
-  // to set the same outcome BetOnline actually posts or a live row would
-  // never match it
-  const doubleChance: TemplateRowSpec[] = [f1Name, f2Name].flatMap((f) => [
-    {
-      key: keyFor("double_chance", f, "tko_ko_dq_or_decision", null, `${f} by TKO/KO, DQ or Decision`),
-      fallbackLabel: `${f} by TKO/KO, DQ or Decision`,
-    },
-    {
-      key: keyFor("double_chance", f, "submission_or_decision", null, `${f} by Submission or Decision`),
-      fallbackLabel: `${f} by Submission or Decision`,
-    },
-  ]);
-
-  const splitOrMajority: TemplateRowSpec[] = [
-    { key: keyFor("fight_goes_to_split_or_majority_decision", null, null, null, "Yes"), fallbackLabel: "Yes" },
-    { key: keyFor("fight_goes_to_split_or_majority_decision", null, null, null, "No"), fallbackLabel: "No" },
-  ];
-
-  // two fighter rows plus one fight-level "goes to decision" row - BetOnline
-  // uses the fighter's own name as the outcome text on their two rows
-  const winsInsideDistance: TemplateRowSpec[] = [
-    { key: keyFor("fighter_wins_inside_distance", f1Name, null, null, f1Name), fallbackLabel: f1Name },
-    { key: keyFor("fighter_wins_inside_distance", f2Name, null, null, f2Name), fallbackLabel: f2Name },
-    {
-      key: keyFor("fighter_wins_inside_distance", null, null, null, "Goes to Decision"),
-      fallbackLabel: "Goes to Decision",
-    },
-  ];
-
-  // three fixed fight-level outcomes, confirmed verbatim
-  const howWillEnd: TemplateRowSpec[] = [
-    "Either Fighter by KO/TKO or DQ",
-    "Goes the Distance",
-    "Either Fighter by Submission",
-  ].map((outcome) => ({
-    key: keyFor("how_will_fight_end", null, null, null, outcome),
-    fallbackLabel: outcome,
-  }));
-
-  const mostSigStrikes: TemplateRowSpec[] = [f1Name, f2Name].map((f) => ({
-    key: keyFor("most_significant_strikes_landed", f, null, null, f),
-    fallbackLabel: f,
-  }));
-
-  const mostTakedowns: TemplateRowSpec[] = [f1Name, f2Name].map((f) => ({
-    key: keyFor("most_takedowns_landed", f, null, null, f),
-    fallbackLabel: f,
-  }));
-
-  // "will the fight still be going by round N" - never asked about round 1
-  // (it always starts), one section per round, Yes/No each - mirrors how
-  // buildPropSections would group these once they're live
-  const fightToStart: TemplateSection[] = rounds
-    .filter((r) => r > 1)
-    .map((r) => ({
-      title: `Round ${r} Fight to Start`,
-      ufcOnly: true,
-      specs: [
-        { key: keyFor("fight_to_start", null, null, r, "Yes"), fallbackLabel: "Yes" },
-        { key: keyFor("fight_to_start", null, null, r, "No"), fallbackLabel: "No" },
-      ],
-    }));
-
-  // "who's ahead on the cards (or already finished) after round N" - one
-  // section per round, one row per fighter - same round-scoped grouping
-  // buildPropSections already applies to non-core round-scoped markets
-  const scorecard: TemplateSection[] = rounds.map((r) => ({
-    title: `Round ${r} Scorecard Winner or Finish`,
-    ufcOnly: true,
-    specs: [f1Name, f2Name].map((f) => ({
-      key: keyFor("scorecard_winner_or_finish", f, null, r, f),
-      fallbackLabel: f,
-    })),
-  }));
-
-  return [
-    { title: "Goes The Distance", ufcOnly: false, specs: gtd },
-    { title: "Method of Victory", ufcOnly: false, specs: mov },
-    { title: "Round Betting", ufcOnly: true, specs: roundBetting },
-    { title: "Method + Round", ufcOnly: true, specs: methodRound },
-    { title: "Decision Method of Victory", ufcOnly: true, specs: decisionMov },
-    { title: "Double Chance", ufcOnly: true, specs: doubleChance },
-    { title: "Fight Goes to Split or Majority Decision", ufcOnly: true, specs: splitOrMajority },
-    { title: "Fighter Wins Inside Distance", ufcOnly: true, specs: winsInsideDistance },
-    { title: "How Will Fight End", ufcOnly: true, specs: howWillEnd },
-    { title: "Most Significant Strikes Landed", ufcOnly: true, specs: mostSigStrikes },
-    { title: "Most Takedowns Landed", ufcOnly: true, specs: mostTakedowns },
-    ...fightToStart,
-    ...scorecard,
-  ];
+function slugOutcome(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
