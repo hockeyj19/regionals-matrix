@@ -33,6 +33,10 @@ function fmtDateTime(ms: number): string {
   });
 }
 
+function fallbackPts(odds: number | null | undefined): Pt[] {
+  return typeof odds === "number" ? [{ t: Date.now(), v: odds }] : [];
+}
+
 export function LineHistoryModal({
   fightKey,
   side,
@@ -94,7 +98,7 @@ export function LineHistoryModal({
             v: (r as { odds: number | null }).odds,
           }))
           .filter((p): p is Pt => typeof p.v === "number");
-        setPts(raw);
+        setPts(raw.length > 0 ? raw : fallbackPts(odds));
       });
     } else {
       supabase
@@ -112,7 +116,7 @@ export function LineHistoryModal({
               v: (r as Record<string, number | null>)[col],
             }))
             .filter((p): p is Pt => typeof p.v === "number");
-          setPts(raw);
+          setPts(raw.length > 0 ? raw : fallbackPts(odds));
         });
     }
     return () => {
