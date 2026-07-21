@@ -251,11 +251,11 @@ function Chart({ pts, notePrice }: { pts: Pt[]; notePrice: string | null }) {
   const noteOdds = parseOddsInput(notePrice);
   const noteDiff = noteOdds === null ? null : (impliedProb(noteOdds) - impliedCur) * 100;
 
-  // layout
+  // layout - padR is wider than padL to leave room for the implied-% axis
   const W = 460;
   const H = 180;
   const padL = 40;
-  const padR = 12;
+  const padR = 34;
   const padT = 12;
   const padB = 22;
   const t0 = pts[0].t;
@@ -267,12 +267,31 @@ function Chart({ pts, notePrice }: { pts: Pt[]; notePrice: string | null }) {
   const x = (t: number) => padL + ((t - t0) / tSpan) * (W - padL - padR);
   const y = (v: number) => padT + (1 - (v - vMin) / vSpan) * (H - padT - padB);
 
-  // step-after path (value holds until the next change, then jumps)
-  let d = `M ${x(pts[0].t).toFixed(1)},${y(pts[0].v).toFixed(1)}`;
-  for (let i = 1; i < pts.length; i++) {
-    d += ` H ${x(pts[i].t).toFixed(1)} V ${y(pts[i].v).toFixed(1)}`;
+  // smooth curve through every recorded price (Catmull-Rom -> cubic Bezier) -
+  // a continuous read of the market instead of a raw step plot. The crosshair
+  // below still snaps to the true step-held value, never the curve itself:
+  // the smoothing is a visual treatment, not a claim about what the price did
+  // between two recorded points.
+  function smoothPath(): string {
+    const P: [number, number][] = pts.map((p) => [x(p.t), y(p.v)]);
+    if (P.length === 1) {
+      return `M ${P[0][0].toFixed(1)},${P[0][1].toFixed(1)} H ${(W - padR).toFixed(1)}`;
+    }
+    const ext = [P[0], ...P, P[P.length - 1]];
+    let dd = `M ${P[0][0].toFixed(1)},${P[0][1].toFixed(1)}`;
+    for (let i = 1; i < ext.length - 2; i++) {
+      const p0 = ext[i - 1], p1 = ext[i], p2 = ext[i + 1], p3 = ext[i + 2];
+      const c1x = p1[0] + (p2[0] - p0[0]) / 6;
+      const c1y = p1[1] + (p2[1] - p0[1]) / 6;
+      const c2x = p2[0] - (p3[0] - p1[0]) / 6;
+      const c2y = p2[1] - (p3[1] - p1[1]) / 6;
+      dd += ` C ${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
+    }
+    dd += ` H ${(W - padR).toFixed(1)}`;
+    return dd;
   }
-  d += ` H ${(W - padR).toFixed(1)}`;
+  const linePath = smoothPath();
+  const areaPath = `${linePath} L ${(W - padR).toFixed(1)},${(H - padB).toFixed(1)} L ${padL.toFixed(1)},${(H - padB).toFixed(1)} Z`;
 
   const GREEN = "#34d399";
 
@@ -328,7 +347,13 @@ function Chart({ pts, notePrice }: { pts: Pt[]; notePrice: string | null }) {
           onPointerUp={() => setHover(null)}
           onPointerLeave={() => setHover(null)}
         >
-          {/* horizontal reference lines */}
+          <defs>
+            <linearGradient id="clvFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor={GREEN} stopOpacity="0.28" />
+              <stop offset="1" stopColor={GREEN} stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          {/* horizontal reference lines: odds on the left, implied % on the right */}
           {grids.map((gv, i) => (
             <g key={i}>
               <line
@@ -343,12 +368,17 @@ function Chart({ pts, notePrice }: { pts: Pt[]; notePrice: string | null }) {
               <text x={4} y={y(gv) + 3} fill="#737373" fontSize="9">
                 {fmtOdds(Math.round(gv / 5) * 5)}
               </text>
+              <text x={W - 4} y={y(gv) + 3} fill={GREEN} fontSize="9" textAnchor="end" opacity="0.85">
+                {(impliedProb(gv) * 100).toFixed(0)}%
+              </text>
             </g>
           ))}
+          {/* soft fill under the curve */}
+          <path d={areaPath} fill="url(#clvFill)" stroke="none" />
           {/* the movement line - always green */}
-          <path d={d} fill="none" stroke={GREEN} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+          <path d={linePath} fill="none" stroke={GREEN} strokeWidth="2.5" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
           {/* endpoint dot */}
-          <circle cx={W - padR} cy={y(cur)} r="2.5" fill={GREEN} />
+          <circle cx={W - padR} cy={y(cur)} r="3" fill={GREEN} />
           {/* scrub guide */}
           {hover && (
             <>
