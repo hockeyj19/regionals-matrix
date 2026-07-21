@@ -17,14 +17,14 @@ import { GridIcon, DollarIcon, UserIcon } from "@/components/icons";
 import { GrowingTextarea } from "@/components/GrowingTextarea";
 import { NOTE_TEMPLATES } from "@/lib/noteTemplates";
 import { QuickBet } from "@/components/QuickBet";
-import { FightMatrix } from "@/components/FightMatrix";
 import { fetchAllRows, boutMatch } from "@/lib/board";
 import {
   boardPriceForMarket,
-  type BoardProp,
   type BoardML,
   type MatrixBoardPrice,
 } from "@/lib/matrixBoard";
+import { type PropRow } from "@/lib/propBet";
+import { NotesPriceMatrix } from "@/components/NotesPriceMatrix";
 import { NotesHistoryPanel } from "@/components/NotesHistoryPanel";
 import { BetTracker } from "@/components/BetTracker";
 import { Profile } from "@/components/Profile";
@@ -240,7 +240,7 @@ export function Matrix({
   const [boardRows, setBoardRows] = useState<
     { fight_key: string; fighter1: string; fighter2: string; cur1: number | null; cur2: number | null }[]
   >([]);
-  const [propRows, setPropRows] = useState<(BoardProp & { fight_key: string })[]>([]);
+  const [propRows, setPropRows] = useState<PropRow[]>([]);
   const [openMatrix, setOpenMatrix] = useState<Record<string, boolean>>({});
   const [openBet, setOpenBet] = useState<Record<string, boolean>>({});
   const [openNotes, setOpenNotes] = useState<Record<string, boolean>>({});
@@ -281,7 +281,7 @@ export function Matrix({
         "bol_board",
         "fight_key"
       ).catch(() => []),
-      fetchAllRows<BoardProp & { fight_key: string }>("bol_current_props", "fight_key").catch(() => []),
+      fetchAllRows<PropRow>("bol_current_props", "fight_key").catch(() => []),
     ]);
     setBoardRows(bol ?? []);
     setPropRows(bprops ?? []);
@@ -317,12 +317,13 @@ export function Matrix({
   // For each fight, a function marketKey -> board prices for its two sides.
   // Matched to the board the same way the Odds board matches (surname-aware
   // bout match), computed once per board/props/fights change.
-  const boardPriceLookup = useMemo(() => {
+  const { boardPriceLookup, mlByFight, propsByFight } = useMemo(() => {
     const byFight: Record<string, (marketKey: string) => MatrixBoardPrice> = {};
+    const mlMap: Record<string, BoardML | null> = {};
+    const propsMap: Record<string, PropRow[]> = {};
     for (const f of fights) {
       // find this fight's moneyline row + prop rows on the board
       let ml: BoardML | null = null;
-      let mlFlip = false;
       for (const row of boardRows) {
         const parts = String(row.fight_key).split(" vs ");
         if (parts.length !== 2) continue;
@@ -333,11 +334,9 @@ export function Matrix({
         }
         if (boutMatch(rb, ra, f.fighter1_name, f.fighter2_name)) {
           ml = { cur1: row.cur2, cur2: row.cur1 }; // board lists them reversed
-          mlFlip = true;
           break;
         }
       }
-      void mlFlip;
       const fightProps = propRows.filter((pr) => {
         const parts = String(pr.fight_key).split(" vs ");
         if (parts.length !== 2) return false;
@@ -349,8 +348,10 @@ export function Matrix({
       });
       byFight[f.id] = (marketKey: string) =>
         boardPriceForMarket(marketKey, ml, fightProps, f.fighter1_name, f.fighter2_name);
+      mlMap[f.id] = ml;
+      propsMap[f.id] = fightProps;
     }
-    return byFight;
+    return { boardPriceLookup: byFight, mlByFight: mlMap, propsByFight: propsMap };
   }, [fights, boardRows, propRows]);
 
   // save a single field for a fight (debounced via onBlur)
@@ -622,12 +623,11 @@ export function Matrix({
   }
 
   // save one cell of a fight's handicapping matrix (via ref + ordered queue)
-  function saveMatrixCell(fightId: string, market: string, cell: string, value: string) {
+  // one typed price for one exact board row (rowKey from propRowKey, or a
+  // synthetic moneyline key) - flat, unlike the old per-market {f1o,f2o} cells
+  function saveMatrixCell(fightId: string, rowKey: string, value: string) {
     const current = matrixRef.current[fightId] ?? {};
-    const updated: MatrixData = {
-      ...current,
-      [market]: { ...(current[market] ?? {}), [cell]: value },
-    };
+    const updated: MatrixData = { ...current, [rowKey]: value };
     matrixRef.current = { ...matrixRef.current, [fightId]: updated };
     setMatrixData((prev) => ({ ...prev, [fightId]: updated }));
     matrixSaveChain.current = matrixSaveChain.current.then(() =>
@@ -1012,13 +1012,13 @@ export function Matrix({
                         )}
                         {expanded && openMatrix[f.id] && (
                           <div onClick={(e) => e.stopPropagation()}>
-                            <FightMatrix
+                            <NotesPriceMatrix
                               fight={f}
+                              event={ev}
+                              ml={mlByFight[f.id] ?? null}
+                              props={propsByFight[f.id] ?? []}
                               data={matrixData[f.id] ?? {}}
-                              boardPrice={boardPriceLookup[f.id]}
-                              onSave={(market, cell, value) =>
-                                saveMatrixCell(f.id, market, cell, value)
-                              }
+                              onSave={(rowKey, value) => saveMatrixCell(f.id, rowKey, value)}
                             />
                           </div>
                         )}

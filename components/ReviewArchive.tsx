@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { MatrixData, ReviewRow } from "@/lib/types";
+import type { LegacyMatrixData, ReviewRow } from "@/lib/types";
 import { MATRIX_MARKETS, displayTypedOdds } from "@/lib/format";
 
 export function ReviewArchive({ rows }: { rows: ReviewRow[] }) {
@@ -116,7 +116,7 @@ export function ReviewArchive({ rows }: { rows: ReviewRow[] }) {
   );
 }
 
-function ReviewMatrix({ f1, f2, data }: { f1: string; f2: string; data: MatrixData }) {
+function ReviewMatrix({ f1, f2, data }: { f1: string; f2: string; data: LegacyMatrixData }) {
   const cell = "text-xs text-neutral-300 text-center px-1 py-0.5";
   return (
     <div className="rounded-md border border-neutral-800 overflow-x-auto">
@@ -131,7 +131,7 @@ function ReviewMatrix({ f1, f2, data }: { f1: string; f2: string; data: MatrixDa
         <div className="divide-y divide-neutral-800/70">
           {MATRIX_MARKETS.map(([key, label]) => {
             const row = data[key] ?? {};
-            const any = ["f1o", "f1v", "f2v", "f2o"].some((k) => (row[k] ?? "").trim() !== "");
+            const any = (["f1o", "f1v", "f2v", "f2o"] as const).some((k) => (row[k] ?? "").trim() !== "");
             if (!any) return null;
             return (
               <div

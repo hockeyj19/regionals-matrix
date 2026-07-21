@@ -77,8 +77,17 @@ export type BetRow = NewBet & {
   published_at: string | null; // owner made the pick public before event start
 };
 
-// per-market cells for one fight: { win_tko: { f1o, f1v, f2v, f2o }, ... }
-export type MatrixData = Record<string, Record<string, string>>;
+// Notes price matrix: one typed price per exact board row, keyed by that
+// row's own identity (propRowKey from lib/propBet.ts, or a synthetic
+// moneyline key) - flat by design, since most BetOnline outcomes (Round
+// Betting, Method + Round, etc.) are independent single-price rows, not
+// left/right fighter pairs.
+export type MatrixData = Record<string, string>;
+
+// The old per-market {f1o,f1v,f2v,f2o} shape. Kept only so ReviewArchive.tsx
+// can still display already-completed fights that were noted before this
+// change - new fights save under MatrixData above, not this.
+export type LegacyMatrixData = Record<string, { f1o?: string; f1v?: string; f2v?: string; f2o?: string }>;
 
 export type ReviewRow = {
   id: string;
@@ -91,7 +100,7 @@ export type ReviewRow = {
   weight_class: string | null;
   price1: string | null;
   price2: string | null;
-  matrix: MatrixData | null;
+  matrix: LegacyMatrixData | null; // pre-existing archives only; see LegacyMatrixData
   winner_name: string | null;
   f1_result: string | null;
   method: string | null;

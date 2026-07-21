@@ -12,7 +12,14 @@ import {
 import { boutMatch, fetchAllRows, sameFighter } from "@/lib/board";
 import { fmtOdds, parseOddsInput, displayTypedOdds, getOddsMode, eventStartISO } from "@/lib/format";
 import { LineHistoryModal } from "@/components/LineHistoryModal";
-import { buildPropSelection, propToBetShape } from "@/lib/propBet";
+import {
+  buildPropSelection,
+  propToBetShape,
+  buildPropSections,
+  propRowLabel,
+  marketRank,
+} from "@/lib/propBet";
+export { marketRank } from "@/lib/propBet"; // QuickBet.tsx imports this from here
 import type { EventRow, FightRow, NewBet, UserData } from "@/lib/types";
 
 /**
@@ -81,39 +88,7 @@ function orgColor(org: string): string {
 }
 
 
-const CORE_MARKETS = new Set(["method", "round", "method_round", "total"]);
-
-// BetOnline's own running order on their fight page - both the props panel
-// and the bet slip present markets in this sequence, so the board reads the
-// way the book does. Anything new BetOnline ships lands after these.
-const MARKET_ORDER: string[] = [
-  // BetOnline leads with the fight-titled specials block, and carries the
-  // game total up with the main lines - so both sit at the top here.
-  "specials",
-  "total",
-  "goes_the_distance",
-  "method",
-  "round",
-  "method_round",
-  "win_inside_distance_goes_distance_no_action",
-  "point_spread",
-  "fighter_wins_inside_distance",
-  "how_will_fight_end",
-  "double_chance",
-  "fight_goes_to_split_or_majority_decision",
-  "decision_method_of_victory",
-  "most_significant_strikes_landed",
-  "most_takedowns_landed",
-  "total_significant_strikes",
-  "total_takedowns",
-  "scorecard_winner_or_finish",
-  "fight_to_start",
-];
-
-export function marketRank(mk: string): number {
-  const i = MARKET_ORDER.indexOf(mk);
-  return i === -1 ? MARKET_ORDER.length : i;
-}
+// marketRank re-exported below for QuickBet.tsx's existing import path
 
 function impliedProb(o: number): number {
   return o < 0 ? -o / (-o + 100) : 100 / (o + 100);
@@ -226,82 +201,8 @@ function PropsPanel({
   propList: PropRow[];
   onPick?: (p: PropRow) => void;
 }) {
-  const rows = propList.filter((p) => p.fight_key === fightKey);
   const showPct = getOddsMode() !== "percent";
-  const titleCase = (mk: string) =>
-    mk.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-  const fallbackLabel = (p: PropRow) => {
-    const bits: string[] = [];
-    if (p.fighter) bits.push(p.fighter);
-    if (p.ou_side) bits.push(`${p.ou_side === "over" ? "Over" : "Under"} ${p.ou_line ?? ""}`);
-    if (p.method)
-      bits.push(
-        p.method === "ko_tko" ? "KO/TKO" : p.method === "submission" ? "Submission" : "Decision"
-      );
-    if (p.round !== null) bits.push(`R${p.round}`);
-    return bits.join(" ") || "—";
-  };
-  // BetOnline serves bare "Over"/"Under" outcome text with the line living in
-  // ou_line - always rebuild O/U labels from the data so the number shows.
-  // Matchup rows that carry a point (Point Spread's +/-5.5) get it appended.
-  const rowLabel = (p: PropRow) => {
-    // a zero line is a placeholder from a stale capture, never a real total
-    const ln = p.ou_line !== null && p.ou_line !== 0 ? p.ou_line : null;
-    if (p.ou_side) return `${p.ou_side === "over" ? "Over" : "Under"}${ln !== null ? ` ${ln}` : ""}`;
-    const base = p.outcome ?? fallbackLabel(p);
-    if (ln !== null && !String(base).includes(String(ln)))
-      return `${base} ${ln > 0 ? "+" : ""}${ln}`;
-    return base;
-  };
-  type Sec = { title: string; rs: PropRow[] };
-  const secs: Sec[] = [];
-  // BetOnline's own within-group order: Over before Under and Yes before No
-  // (whatever the price), everything else favorites-first.
-  const yesNoRank = (p: PropRow) => {
-    const o = (p.outcome ?? "").trim().toLowerCase();
-    return o === "yes" ? 0 : o === "no" ? 1 : -1;
-  };
-  const rowSort = (a: PropRow, b: PropRow) => {
-    if (a.ou_side && b.ou_side) {
-      const la = a.ou_line ?? 0;
-      const lb = b.ou_line ?? 0;
-      if (la !== lb) return la - lb;
-      return a.ou_side === "over" ? -1 : 1;
-    }
-    const ra = yesNoRank(a);
-    const rb = yesNoRank(b);
-    if (ra >= 0 && rb >= 0 && ra !== rb) return ra - rb;
-    return impliedProb(b.odds) - impliedProb(a.odds);
-  };
-  const add = (title: string, rs: PropRow[]) => {
-    if (rs.length) secs.push({ title, rs: rs.slice().sort(rowSort) });
-  };
-  const CORE_TITLES: Record<string, string> = {
-    method: "Method of Victory",
-    round: "Round Betting",
-    method_round: "Method + Round",
-    total: "Total Rounds",
-  };
-  // every market present, walked in BetOnline's order
-  const present = [...new Set(rows.map((p) => p.market))].sort(
-    (a, b) => marketRank(a) - marketRank(b) || a.localeCompare(b)
-  );
-  for (const mk of present) {
-    const mrows = rows.filter((p) => p.market === mk);
-    const t = CORE_TITLES[mk] ?? titleCase(mk);
-    if (CORE_MARKETS.has(mk)) {
-      add(t, mrows);
-    } else if (mrows.some((p) => p.ou_side)) {
-      for (const f of [...new Set(mrows.map((p) => p.fighter ?? ""))])
-        add(f ? `${f} ${t}` : t, mrows.filter((p) => (p.fighter ?? "") === f));
-    } else {
-      const rds = [...new Set(mrows.filter((p) => p.round !== null).map((p) => p.round as number))].sort(
-        (a, b) => a - b
-      );
-      if (rds.length) for (const r of rds) add(`Round ${r} ${t}`, mrows.filter((p) => p.round === r));
-      else add(t, mrows);
-    }
-  }
+  const secs = buildPropSections(propList, fightKey);
   if (secs.length === 0) {
     return (
       <p className="mt-2 text-[10px] text-neutral-600">
@@ -317,10 +218,10 @@ function PropsPanel({
             {sec.title}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-0.5 px-2 py-1.5">
-            {sec.rs.map((p, i) => (
+            {sec.rows.map((p, i) => (
               <div key={i} className="flex items-center justify-between gap-2 py-0.5">
                 <span className="text-[11px] text-neutral-300 truncate">
-                  {rowLabel(p)}
+                  {propRowLabel(p)}
                 </span>
                 <span className="flex items-center gap-1 shrink-0">
                   {showPct && (
