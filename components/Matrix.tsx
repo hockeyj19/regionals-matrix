@@ -219,9 +219,7 @@ export function Matrix({
   const [fights, setFights] = useState<FightRow[]>([]);
   const [userData, setUserData] = useState<Record<string, UserData>>({});
   const [fighterNotes, setFighterNotes] = useState<Record<string, FighterNote>>({});
-  const [view, setView] = useState
-    "profile" | "events" | "odds" | "bets" | "leaderboard" | "admin"
-  >("profile");
+  const [view, setView] = useState<"profile" | "events" | "odds" | "bets" | "leaderboard" | "admin">("profile");
   // Notes page: three independently-collapsible sections, all start closed.
   const [openSection, setOpenSection] = useState<{
     search: boolean;
