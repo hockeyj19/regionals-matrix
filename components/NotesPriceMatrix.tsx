@@ -11,7 +11,11 @@ import {
 } from "@/lib/propBet";
 import { cellClv, type BoardML } from "@/lib/matrixBoard";
 import {
+  buildMethodOfVictoryRows,
+  buildMethodRoundRows,
+  buildMostMatchupRows,
   buildPointSpreadRows,
+  buildRoundBettingRows,
   buildSigStrikesRows,
   buildTotalRoundsRows,
   buildTotalTakedownsRows,
@@ -22,20 +26,24 @@ import {
   type PresetPriceRow,
 } from "@/lib/manualProps";
 
-// Non-UFC cards only get the headline four live sections - the full sheet
-// (Round Betting, Method + Round, and the rest) is UFC-only for now. Total
-// Rounds is handled as its own always-on manual block below, not through
-// this list, so it isn't named here anymore.
-const CORE_ONLY_TITLES = new Set(["Moneyline", "Goes The Distance", "Method of Victory"]);
+// Moneyline is synthesized separately below. Goes The Distance and the rest
+// of the outcome-list exotics stay live-only for now - see the note in
+// manualProps.ts about the propRowKey collision on those markets.
+const CORE_ONLY_TITLES = new Set(["Moneyline", "Goes The Distance"]);
 
-// These four markets are rendered entirely by the manual preset blocks below
+// These markets are rendered entirely by the always-on template blocks below
 // instead of straight off the live feed, and Specials never renders at all -
-// so all five are stripped out of the live board data before section-building.
+// so all nine are stripped out of the live board data before section-building.
 const FULLY_MANUAL_MARKETS = new Set([
   "total",
   "point_spread",
   "total_significant_strikes",
   "total_takedowns",
+  "method",
+  "round",
+  "method_round",
+  "most_significant_strikes_landed",
+  "most_takedowns_landed",
   "specials",
 ]);
 
@@ -83,10 +91,9 @@ function MatrixRow({
   );
 }
 
-// A preset row that isn't tied to a live PropRow - Total Rounds / Point
-// Spread / Total Takedowns lines that are always available regardless of
-// what BetOnline has posted, priced manually with a CLV chip against the
-// board when a matching line is live.
+// A preset/template row that isn't tied to a live PropRow directly - always
+// available, priced manually with a CLV chip against the board when a
+// matching outcome is live.
 function PresetRow({
   row,
   data,
@@ -153,6 +160,30 @@ function SectionHeader({ title }: { title: string }) {
   );
 }
 
+function PresetSection({
+  title,
+  rows,
+  data,
+  onSave,
+}: {
+  title: string;
+  rows: PresetPriceRow[];
+  data: Record<string, string>;
+  onSave: (rowKey: string, value: string) => void;
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <div>
+      <SectionHeader title={title} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 px-2 py-2">
+        {rows.map((row) => (
+          <PresetRow key={row.key} row={row} data={data} onSave={onSave} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function NotesPriceMatrix({
   fight,
   event,
@@ -173,9 +204,12 @@ export function NotesPriceMatrix({
   const isUFC = event.org === "UFC";
   const fiveRound = isFiveRound(fight);
   const propFightKey = props[0]?.fight_key ?? "";
+  const f1 = fight.fighter1_name;
+  const f2 = fight.fighter2_name;
 
-  // strip the fully-manual markets out of the live feed before building the
-  // ordinary board-driven sections, so nothing renders twice
+  // strip the markets now handled by always-on templates out of the live
+  // feed before building the remaining board-driven sections, so nothing
+  // renders twice
   const liveOnlyProps = props.filter((p) => !FULLY_MANUAL_MARKETS.has(p.market));
   let sections: PropSection[] = propFightKey ? buildPropSections(liveOnlyProps, propFightKey) : [];
 
@@ -187,7 +221,7 @@ export function NotesPriceMatrix({
     mlRows.push({
       fight_key: fight.id,
       market: "moneyline",
-      fighter: fight.fighter1_name,
+      fighter: f1,
       method: null,
       round: null,
       ou_side: null,
@@ -200,7 +234,7 @@ export function NotesPriceMatrix({
     mlRows.push({
       fight_key: fight.id,
       market: "moneyline",
-      fighter: fight.fighter2_name,
+      fighter: f2,
       method: null,
       round: null,
       ou_side: null,
@@ -213,27 +247,24 @@ export function NotesPriceMatrix({
 
   if (!isUFC) sections = sections.filter((sec) => CORE_ONLY_TITLES.has(sec.title));
 
-  // Total Rounds: fight-level, always on, any org.
+  // Always-on templates. Method of Victory matches the old non-UFC
+  // allowance; Round Betting / Method+Round / Most SS / Most TDs stay
+  // UFC-only, same gate the rest of the exotic sheet already used.
+  const methodOfVictoryRows = buildMethodOfVictoryRows(props, f1, f2);
+  const roundBettingRows = isUFC ? buildRoundBettingRows(props, f1, f2, fiveRound) : [];
+  const methodRoundRows = isUFC ? buildMethodRoundRows(props, f1, f2, fiveRound) : [];
+  const mostSigStrikesRows = isUFC
+    ? buildMostMatchupRows(props, f1, f2, "most_significant_strikes_landed")
+    : [];
+  const mostTakedownsRows = isUFC
+    ? buildMostMatchupRows(props, f1, f2, "most_takedowns_landed")
+    : [];
   const totalRoundsRows = buildTotalRoundsRows(props, fiveRound);
-
-  // Point Spread / Sig Strikes / Takedowns: UFC only, matching the same
-  // non-core gate the rest of the sheet uses.
   const pointSpreadRows = isUFC
-    ? buildPointSpreadRows(
-        props,
-        fight.fighter1_name,
-        fight.fighter2_name,
-        fiveRound,
-        ml?.cur1 ?? null,
-        ml?.cur2 ?? null
-      )
+    ? buildPointSpreadRows(props, f1, f2, fiveRound, ml?.cur1 ?? null, ml?.cur2 ?? null)
     : [];
-  const sigStrikesGroups = isUFC
-    ? buildSigStrikesRows(props, fight.fighter1_name, fight.fighter2_name)
-    : [];
-  const takedownGroups = isUFC
-    ? buildTotalTakedownsRows(props, fight.fighter1_name, fight.fighter2_name)
-    : [];
+  const sigStrikesGroups = isUFC ? buildSigStrikesRows(props, f1, f2) : [];
+  const takedownGroups = isUFC ? buildTotalTakedownsRows(props, f1, f2) : [];
 
   return (
     <div className="rounded-md border border-neutral-800 bg-neutral-900/60 overflow-hidden">
@@ -248,25 +279,18 @@ export function NotesPriceMatrix({
         </div>
       ))}
 
-      <div>
-        <SectionHeader title="Total Rounds" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 px-2 py-2">
-          {totalRoundsRows.map((row) => (
-            <PresetRow key={row.key} row={row} data={data} onSave={onSave} />
-          ))}
-        </div>
-      </div>
-
-      {pointSpreadRows.length > 0 && (
-        <div>
-          <SectionHeader title="Point Spread" />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 px-2 py-2">
-            {pointSpreadRows.map((row) => (
-              <PresetRow key={row.key} row={row} data={data} onSave={onSave} />
-            ))}
-          </div>
-        </div>
-      )}
+      <PresetSection title="Method of Victory" rows={methodOfVictoryRows} data={data} onSave={onSave} />
+      <PresetSection title="Round Betting" rows={roundBettingRows} data={data} onSave={onSave} />
+      <PresetSection title="Method + Round" rows={methodRoundRows} data={data} onSave={onSave} />
+      <PresetSection title="Total Rounds" rows={totalRoundsRows} data={data} onSave={onSave} />
+      <PresetSection title="Point Spread" rows={pointSpreadRows} data={data} onSave={onSave} />
+      <PresetSection
+        title="Most Significant Strikes Landed"
+        rows={mostSigStrikesRows}
+        data={data}
+        onSave={onSave}
+      />
+      <PresetSection title="Most Takedowns Landed" rows={mostTakedownsRows} data={data} onSave={onSave} />
 
       {sigStrikesGroups.map(({ name, row }) => (
         <div key={row.key}>
@@ -278,14 +302,7 @@ export function NotesPriceMatrix({
       ))}
 
       {takedownGroups.map(({ name, rows }) => (
-        <div key={name}>
-          <SectionHeader title={`${name} Total Takedowns`} />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 px-2 py-2">
-            {rows.map((row) => (
-              <PresetRow key={row.key} row={row} data={data} onSave={onSave} />
-            ))}
-          </div>
-        </div>
+        <PresetSection key={name} title={`${name} Total Takedowns`} rows={rows} data={data} onSave={onSave} />
       ))}
     </div>
   );
