@@ -379,7 +379,7 @@ export function OddsBoard({
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   const [openPropIds, setOpenPropIds] = useState<Set<string>>(new Set());
   const [initialized, setInitialized] = useState(false);
-  const [chart, setChart] = useState
+  const [chart, setChart] = useState<
     {
       fightKey: string;
       side?: 1 | 2;
