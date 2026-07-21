@@ -4,26 +4,40 @@ import type { EventRow, FightRow } from "@/lib/types";
 import { matrixCell } from "@/lib/format";
 import {
   buildPropSections,
-  buildAlwaysShownTemplate,
-  ALWAYS_SHOWN_MARKETS,
   propRowLabel,
   propRowKey,
   type PropRow,
+  type PropSection,
 } from "@/lib/propBet";
 import { cellClv, type BoardML } from "@/lib/matrixBoard";
+import {
+  buildPointSpreadRows,
+  buildSigStrikesRows,
+  buildTotalRoundsRows,
+  buildTotalTakedownsRows,
+  fmtLineDiff,
+  isFiveRound,
+  lineDiff,
+  type PresetDiffRow,
+  type PresetPriceRow,
+} from "@/lib/manualProps";
 
-// A single row's identity + what's currently known about its price. Both the
-// always-shown template rows (no live data yet) and the opportunistic,
-// live-data-only rows (Total Rounds, Point Spread, etc.) render through this
-// same shape, so one row component handles both.
-type Row = { key: string; label: string; odds: number | null };
+// Non-UFC cards only get the headline four live sections - the full sheet
+// (Round Betting, Method + Round, and the rest) is UFC-only for now. Total
+// Rounds is handled as its own always-on manual block below, not through
+// this list, so it isn't named here anymore.
+const CORE_ONLY_TITLES = new Set(["Moneyline", "Goes The Distance", "Method of Victory"]);
 
-// Non-UFC cards only get the four core categories - three of them (Moneyline,
-// Goes The Distance, Method of Victory) still show their full template even
-// with no live price yet, since their structure never depends on org. Total
-// Rounds is core too, but its line is BetOnline's call, so it stays
-// opportunistic for every org, UFC included.
-const CORE_SECTION_TITLES = new Set(["Moneyline", "Total Rounds", "Goes The Distance", "Method of Victory"]);
+// These four markets are rendered entirely by the manual preset blocks below
+// instead of straight off the live feed, and Specials never renders at all -
+// so all five are stripped out of the live board data before section-building.
+const FULLY_MANUAL_MARKETS = new Set([
+  "total",
+  "point_spread",
+  "total_significant_strikes",
+  "total_takedowns",
+  "specials",
+]);
 
 function ClvChip({ typed, board }: { typed: string | undefined; board: number | null }) {
   const clv = cellClv(typed, board);
@@ -36,7 +50,7 @@ function ClvChip({ typed, board }: { typed: string | undefined; board: number | 
       className={`block text-[9px] leading-tight text-center font-medium ${
         up ? "text-emerald-400" : "text-red-400"
       }`}
-      title="Your price vs BetOnline’s live price"
+      title="Your price vs BetOnline's live price"
     >
       {up ? "+" : ""}
       {clv.toFixed(1)}%
@@ -45,11 +59,40 @@ function ClvChip({ typed, board }: { typed: string | undefined; board: number | 
 }
 
 function MatrixRow({
+  p,
+  data,
+  onSave,
+}: {
+  p: PropRow;
+  data: Record<string, string>;
+  onSave: (rowKey: string, value: string) => void;
+}) {
+  const key = propRowKey(p);
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-[11px] text-neutral-300 truncate flex-1">{propRowLabel(p)}</span>
+      <div className="w-14 shrink-0">
+        <input
+          defaultValue={data[key] ?? ""}
+          onBlur={(e) => onSave(key, e.target.value)}
+          className={matrixCell}
+        />
+        <ClvChip typed={data[key]} board={p.odds} />
+      </div>
+    </div>
+  );
+}
+
+// A preset row that isn't tied to a live PropRow - Total Rounds / Point
+// Spread / Total Takedowns lines that are always available regardless of
+// what BetOnline has posted, priced manually with a CLV chip against the
+// board when a matching line is live.
+function PresetRow({
   row,
   data,
   onSave,
 }: {
-  row: Row;
+  row: PresetPriceRow;
   data: Record<string, string>;
   onSave: (rowKey: string, value: string) => void;
 }) {
@@ -62,8 +105,50 @@ function MatrixRow({
           onBlur={(e) => onSave(row.key, e.target.value)}
           className={matrixCell}
         />
-        <ClvChip typed={data[row.key]} board={row.odds} />
+        <ClvChip typed={data[row.key]} board={row.board} />
       </div>
+    </div>
+  );
+}
+
+// Total Sig Strikes: no price at all, just the user's own line vs BetOnline's,
+// shown as a plain strike-count difference.
+function DiffRow({
+  row,
+  data,
+  onSave,
+}: {
+  row: PresetDiffRow;
+  data: Record<string, string>;
+  onSave: (rowKey: string, value: string) => void;
+}) {
+  const diff = lineDiff(data[row.key], row.boardLine);
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-[11px] text-neutral-300 truncate flex-1">{row.label}</span>
+      <div className="w-14 shrink-0">
+        <input
+          defaultValue={data[row.key] ?? ""}
+          onBlur={(e) => onSave(row.key, e.target.value)}
+          placeholder="line"
+          inputMode="decimal"
+          className={matrixCell}
+        />
+        <span
+          className="block text-[9px] leading-tight text-center font-medium text-neutral-400"
+          title="Difference from BetOnline's own line, in strikes"
+        >
+          {diff === null ? "—" : `Δ ${fmtLineDiff(diff)}`}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function SectionHeader({ title }: { title: string }) {
+  return (
+    <div className="bg-neutral-900/80 px-2 py-1 text-[11px] font-bold text-neutral-100 border-b border-neutral-800">
+      {title}
     </div>
   );
 }
@@ -78,66 +163,126 @@ export function NotesPriceMatrix({
 }: {
   fight: FightRow;
   event: EventRow;
+  // this fight's live moneyline (from bol_board), or null if it's not posted
   ml: BoardML | null;
+  // this fight's live prop rows (from bol_current_props), already matched
   props: PropRow[];
   data: Record<string, string>;
   onSave: (rowKey: string, value: string) => void;
 }) {
   const isUFC = event.org === "UFC";
-  const fiveRound = fight.is_main_event || /champ|title/i.test(fight.weight_class ?? "");
+  const fiveRound = isFiveRound(fight);
   const propFightKey = props[0]?.fight_key ?? "";
 
-  // fast lookup: has BetOnline actually posted a price for this exact row yet?
-  const liveByKey = new Map<string, PropRow>();
-  for (const p of props) liveByKey.set(propRowKey(p), p);
+  // strip the fully-manual markets out of the live feed before building the
+  // ordinary board-driven sections, so nothing renders twice
+  const liveOnlyProps = props.filter((p) => !FULLY_MANUAL_MARKETS.has(p.market));
+  let sections: PropSection[] = propFightKey ? buildPropSections(liveOnlyProps, propFightKey) : [];
 
-  type Section = { title: string; rows: Row[] };
-  const sections: Section[] = [];
-
-  // Moneyline - always templated, all orgs (structure never depends on data)
-  const mlRows: Row[] = [];
-  const mlKey1 = propRowKey({ market: "moneyline", fighter: fight.fighter1_name, method: null, round: null, ou_side: null, ou_line: null, outcome: null });
-  const mlKey2 = propRowKey({ market: "moneyline", fighter: fight.fighter2_name, method: null, round: null, ou_side: null, ou_line: null, outcome: null });
-  mlRows.push({ key: mlKey1, label: fight.fighter1_name, odds: ml?.cur1 ?? null });
-  mlRows.push({ key: mlKey2, label: fight.fighter2_name, odds: ml?.cur2 ?? null });
-  sections.push({ title: "Moneyline", rows: mlRows });
-
-  // Goes The Distance / Method of Victory (all orgs) + Round Betting /
-  // Method + Round (UFC only) - full structure from just the two names and
-  // round count, live price merged in wherever BetOnline has posted it
-  for (const tmpl of buildAlwaysShownTemplate(fight.fighter1_name, fight.fighter2_name, fiveRound)) {
-    if (!isUFC && (tmpl.title === "Round Betting" || tmpl.title === "Method + Round")) continue;
-    const rows: Row[] = tmpl.specs.map((spec) => {
-      const live = liveByKey.get(spec.key);
-      return { key: spec.key, label: live ? propRowLabel(live) : spec.fallbackLabel, odds: live ? live.odds : null };
+  // moneyline isn't in the props feed at all (separate table) - synthesize
+  // its own section from the board row and put it first, matching how a
+  // sportsbook's own page always leads with the moneyline.
+  const mlRows: PropRow[] = [];
+  if (ml?.cur1 !== null && ml?.cur1 !== undefined) {
+    mlRows.push({
+      fight_key: fight.id,
+      market: "moneyline",
+      fighter: fight.fighter1_name,
+      method: null,
+      round: null,
+      ou_side: null,
+      ou_line: null,
+      odds: ml.cur1,
+      outcome: null,
     });
-    sections.push({ title: tmpl.title, rows });
   }
+  if (ml?.cur2 !== null && ml?.cur2 !== undefined) {
+    mlRows.push({
+      fight_key: fight.id,
+      market: "moneyline",
+      fighter: fight.fighter2_name,
+      method: null,
+      round: null,
+      ou_side: null,
+      ou_line: null,
+      odds: ml.cur2,
+      outcome: null,
+    });
+  }
+  if (mlRows.length) sections = [{ title: "Moneyline", rows: mlRows }, ...sections];
 
-  // everything else - opportunistic, shown only once BetOnline actually
-  // posts it. The always-shown markets are excluded here so they don't
-  // render twice (once as template, once again from live grouping).
-  if (propFightKey) {
-    for (const sec of buildPropSections(props, propFightKey)) {
-      if (ALWAYS_SHOWN_MARKETS.has(sec.rows[0]?.market)) continue;
-      if (!isUFC && !CORE_SECTION_TITLES.has(sec.title)) continue;
-      sections.push({
-        title: sec.title,
-        rows: sec.rows.map((p) => ({ key: propRowKey(p), label: propRowLabel(p), odds: p.odds })),
-      });
-    }
-  }
+  if (!isUFC) sections = sections.filter((sec) => CORE_ONLY_TITLES.has(sec.title));
+
+  // Total Rounds: fight-level, always on, any org.
+  const totalRoundsRows = buildTotalRoundsRows(props, fiveRound);
+
+  // Point Spread / Sig Strikes / Takedowns: UFC only, matching the same
+  // non-core gate the rest of the sheet uses.
+  const pointSpreadRows = isUFC
+    ? buildPointSpreadRows(
+        props,
+        fight.fighter1_name,
+        fight.fighter2_name,
+        fiveRound,
+        ml?.cur1 ?? null,
+        ml?.cur2 ?? null
+      )
+    : [];
+  const sigStrikesGroups = isUFC
+    ? buildSigStrikesRows(props, fight.fighter1_name, fight.fighter2_name)
+    : [];
+  const takedownGroups = isUFC
+    ? buildTotalTakedownsRows(props, fight.fighter1_name, fight.fighter2_name)
+    : [];
 
   return (
     <div className="rounded-md border border-neutral-800 bg-neutral-900/60 overflow-hidden">
       {sections.map((sec) => (
         <div key={sec.title}>
-          <div className="bg-neutral-900/80 px-2 py-1 text-[11px] font-bold text-neutral-100 border-b border-neutral-800">
-            {sec.title}
-          </div>
+          <SectionHeader title={sec.title} />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 px-2 py-2">
-            {sec.rows.map((row) => (
-              <MatrixRow key={row.key} row={row} data={data} onSave={onSave} />
+            {sec.rows.map((p, i) => (
+              <MatrixRow key={i} p={p} data={data} onSave={onSave} />
+            ))}
+          </div>
+        </div>
+      ))}
+
+      <div>
+        <SectionHeader title="Total Rounds" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 px-2 py-2">
+          {totalRoundsRows.map((row) => (
+            <PresetRow key={row.key} row={row} data={data} onSave={onSave} />
+          ))}
+        </div>
+      </div>
+
+      {pointSpreadRows.length > 0 && (
+        <div>
+          <SectionHeader title="Point Spread" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 px-2 py-2">
+            {pointSpreadRows.map((row) => (
+              <PresetRow key={row.key} row={row} data={data} onSave={onSave} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {sigStrikesGroups.map(({ name, row }) => (
+        <div key={row.key}>
+          <SectionHeader title={`${name} Total Sig Strikes`} />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 px-2 py-2">
+            <DiffRow row={row} data={data} onSave={onSave} />
+          </div>
+        </div>
+      ))}
+
+      {takedownGroups.map(({ name, rows }) => (
+        <div key={name}>
+          <SectionHeader title={`${name} Total Takedowns`} />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 px-2 py-2">
+            {rows.map((row) => (
+              <PresetRow key={row.key} row={row} data={data} onSave={onSave} />
             ))}
           </div>
         </div>
