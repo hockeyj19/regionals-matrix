@@ -2,7 +2,9 @@
 
 import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { fmtOdds, parseOddsInput } from "@/lib/format";
+import { fmtOdds, parseOddsInput, eventStartISO } from "@/lib/format";
+import type { EventRow, FightRow, NewBet } from "@/lib/types";
+import { VerifiedBetForm } from "@/components/VerifiedBetForm";
 
 /**
  * Line-movement chart for one fighter's BetOnline moneyline, drawn from the
@@ -35,15 +37,28 @@ export function LineHistoryModal({
   side,
   fighterName,
   notePrice,
+  f,
+  ev,
+  odds,
+  onAdd,
   onClose,
 }: {
   fightKey: string;
   side: 1 | 2;
   fighterName: string;
   notePrice: string | null;
+  // present only when the caller can also offer a bet from here (the ML
+  // click on the odds board) - omit them and this stays chart-only, exactly
+  // as before, for any other future caller.
+  f?: FightRow;
+  ev?: EventRow;
+  odds?: number | null;
+  onAdd?: (bet: NewBet) => Promise<string | null>;
   onClose: () => void;
 }) {
   const [pts, setPts] = useState<Pt[] | null>(null);
+  const [tab, setTab] = useState<"moves" | "bet">("moves");
+  const canBet = !!(onAdd && f && ev && odds !== null && odds !== undefined);
 
   useEffect(() => {
     let alive = true;
@@ -97,13 +112,73 @@ export function LineHistoryModal({
           </button>
         </div>
 
-        {pts === null && <p className="text-sm text-neutral-500">Reading the ledger…</p>}
-
-        {pts !== null && pts.length === 0 && (
-          <p className="text-sm text-neutral-500">No recorded price for this fighter yet.</p>
+        {canBet && (
+          <div className="flex gap-1">
+            <button
+              onClick={() => setTab("moves")}
+              className={`rounded-md border px-2 py-1 text-xs ${
+                tab === "moves"
+                  ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
+                  : "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
+              }`}
+            >
+              Line Moves
+            </button>
+            <button
+              onClick={() => setTab("bet")}
+              className={`rounded-md border px-2 py-1 text-xs ${
+                tab === "bet"
+                  ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
+                  : "border-neutral-700 text-neutral-400 hover:bg-neutral-900"
+              }`}
+            >
+              Verified Bet
+            </button>
+          </div>
         )}
 
-        {pts !== null && pts.length > 0 && <Chart pts={pts} notePrice={notePrice} />}
+        {tab === "moves" && (
+          <>
+            {pts === null && <p className="text-sm text-neutral-500">Reading the ledger…</p>}
+
+            {pts !== null && pts.length === 0 && (
+              <p className="text-sm text-neutral-500">No recorded price for this fighter yet.</p>
+            )}
+
+            {pts !== null && pts.length > 0 && <Chart pts={pts} notePrice={notePrice} />}
+          </>
+        )}
+
+        {tab === "bet" && canBet && (
+          <VerifiedBetForm
+            label={fighterName}
+            contextLine={`${ev!.org} — ${ev!.event_name} · BetOnline`}
+            odds={odds as number}
+            onAdd={onAdd!}
+            buildBet={(stake) => ({
+              selection: fighterName,
+              event_context: `${ev!.org} — ${ev!.event_name}`,
+              event_date: ev!.event_date,
+              event_start: eventStartISO(ev!.event_date, ev!.event_time),
+              book: "BetOnline.ag",
+              price_check: null,
+              market_best: null,
+              market_book: null,
+              market_checked_at: null,
+              close_odds: null,
+              clv: null,
+              fighter_id: side === 1 ? f!.fighter1_id : f!.fighter2_id,
+              bet_type: "moneyline",
+              prop_method: null,
+              prop_round: null,
+              ou_line: null,
+              event_source_url: ev!.source_url,
+              odds: odds as number,
+              stake,
+            })}
+            onClose={onClose}
+          />
+        )}
       </div>
     </div>
   );

@@ -12,6 +12,7 @@ import {
 import { boutMatch, fetchAllRows, sameFighter } from "@/lib/board";
 import { fmtOdds, parseOddsInput, displayTypedOdds, getOddsMode, eventStartISO } from "@/lib/format";
 import { LineHistoryModal } from "@/components/LineHistoryModal";
+import { VerifiedBetForm } from "@/components/VerifiedBetForm";
 import type { EventRow, FightRow, NewBet, UserData } from "@/lib/types";
 
 /**
@@ -323,29 +324,7 @@ function PropBetModal({
   onAdd: (bet: NewBet) => Promise<string | null>;
   onClose: () => void;
 }) {
-  const [stake, setStake] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const label = buildPropSelection(p, f.fighter1_name, f.fighter2_name);
-
-  async function submit() {
-    const s = parseFloat(stake);
-    if (isNaN(s) || s <= 0) {
-      setError("Enter units, e.g. 0.5");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    const shape = propToBetShape(p, f, ev);
-    const failure = await onAdd({ ...shape, odds: p.odds, stake: s });
-    setBusy(false);
-    if (failure) {
-      setError(failure);
-      return;
-    }
-    onClose();
-  }
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
@@ -353,50 +332,16 @@ function PropBetModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-xs rounded-xl border border-neutral-800 bg-neutral-950 p-4 space-y-3"
+        className="w-full max-w-xs rounded-xl border border-neutral-800 bg-neutral-950 p-4"
       >
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-400 mb-1">
-            BetOnline Verified
-          </p>
-          <p className="text-sm font-semibold text-neutral-100">{label}</p>
-          <p className="text-xs text-neutral-500">
-            {ev.org} — {ev.event_name} · BetOnline{" "}
-            <span className="text-emerald-400 font-medium">{fmtOdds(p.odds)}</span>
-          </p>
-        </div>
-        <div>
-          <label className="text-[11px] uppercase tracking-wide text-neutral-500">
-            Units
-          </label>
-          <input
-            autoFocus
-            type="number"
-            step="0.1"
-            min="0"
-            inputMode="decimal"
-            value={stake}
-            onChange={(e) => setStake(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && submit()}
-            className="mt-1 w-full rounded-lg bg-neutral-900 border border-neutral-700 px-3 py-2 text-sm outline-none focus:border-emerald-500 [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-          />
-        </div>
-        {error && <p className="text-xs text-red-400">{error}</p>}
-        <div className="flex gap-2">
-          <button
-            onClick={onClose}
-            className="flex-1 rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-900"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={submit}
-            disabled={busy}
-            className="flex-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 px-3 py-2 text-sm font-medium"
-          >
-            {busy ? "Placing…" : "Place bet"}
-          </button>
-        </div>
+        <VerifiedBetForm
+          label={label}
+          contextLine={`${ev.org} — ${ev.event_name} · BetOnline`}
+          odds={p.odds}
+          onAdd={onAdd}
+          buildBet={(stake) => ({ ...propToBetShape(p, f, ev), odds: p.odds, stake })}
+          onClose={onClose}
+        />
       </div>
     </div>
   );
@@ -644,7 +589,15 @@ export function OddsBoard({
   const [openPropIds, setOpenPropIds] = useState<Set<string>>(new Set());
   const [initialized, setInitialized] = useState(false);
   const [chart, setChart] = useState<
-    { fightKey: string; side: 1 | 2; name: string; notePrice: string | null } | null
+    {
+      fightKey: string;
+      side: 1 | 2;
+      name: string;
+      notePrice: string | null;
+      f: FightRow;
+      ev: EventRow;
+      odds: number | null;
+    } | null
   >(null);
 
   const load = useCallback(async () => {
@@ -996,6 +949,9 @@ export function OddsBoard({
                                       side: sp.side,
                                       name,
                                       notePrice: myPrice,
+                                      f,
+                                      ev,
+                                      odds: sp.cur,
                                     })
                                   }
                                 />
@@ -1012,13 +968,40 @@ export function OddsBoard({
                               ) : (
                                 totals.map((t) => {
                                   const o = totalSide === "over" ? t.over : t.under;
+                                  const totalRow: PropRow | null =
+                                    o !== null && fk
+                                      ? {
+                                          fight_key: fk,
+                                          market: "total",
+                                          fighter: null,
+                                          method: null,
+                                          round: null,
+                                          ou_side: totalSide,
+                                          ou_line: t.line,
+                                          odds: o,
+                                          outcome: null,
+                                        }
+                                      : null;
                                   return (
                                     <div key={t.line}>
                                       {totalSide === "over" ? "O" : "U"}
                                       {t.line}{" "}
-                                      <span className="text-[11px] text-neutral-300">
-                                        {o === null ? "—" : fmtOdds(o)}
-                                      </span>
+                                      {totalRow && onAdd ? (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setBetPrompt({ p: totalRow, f, ev });
+                                          }}
+                                          title="Tap to bet this price"
+                                          className="text-[11px] text-neutral-300 hover:text-emerald-300 hover:underline"
+                                        >
+                                          {fmtOdds(o as number)}
+                                        </button>
+                                      ) : (
+                                        <span className="text-[11px] text-neutral-300">
+                                          {o === null ? "—" : fmtOdds(o)}
+                                        </span>
+                                      )}
                                     </div>
                                   );
                                 })
@@ -1186,6 +1169,10 @@ export function OddsBoard({
           side={chart.side}
           fighterName={chart.name}
           notePrice={chart.notePrice}
+          f={chart.f}
+          ev={chart.ev}
+          odds={chart.odds}
+          onAdd={onAdd}
           onClose={() => setChart(null)}
         />
       )}
