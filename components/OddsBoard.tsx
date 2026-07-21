@@ -340,6 +340,9 @@ function PropBetModal({
         className="w-full max-w-xs rounded-xl border border-neutral-800 bg-neutral-950 p-4 space-y-3"
       >
         <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-400 mb-1">
+            BetOnline Verified
+          </p>
           <p className="text-sm font-semibold text-neutral-100">{label}</p>
           <p className="text-xs text-neutral-500">
             {ev.org} — {ev.event_name} · BetOnline{" "}
@@ -359,8 +362,7 @@ function PropBetModal({
             value={stake}
             onChange={(e) => setStake(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && submit()}
-            placeholder="e.g. 0.5"
-            className="mt-1 w-full rounded-lg bg-neutral-900 border border-neutral-700 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+            className="mt-1 w-full rounded-lg bg-neutral-900 border border-neutral-700 px-3 py-2 text-sm outline-none focus:border-emerald-500 [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
           />
         </div>
         {error && <p className="text-xs text-red-400">{error}</p>}
