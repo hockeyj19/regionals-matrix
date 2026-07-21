@@ -179,16 +179,32 @@ function StaticPrice({ price, tone }: { price: number | null; tone: "pos" | "neg
   );
 }
 
-function PropCell({ price }: { price: number | null }) {
-  return (
-    <span
-      className={`text-[11px] tabular-nums text-right ${
-        price === null ? "text-neutral-700" : "text-neutral-300"
-      }`}
-    >
-      {price === null ? "—" : fmtOdds(price)}
-    </span>
-  );
+function PropCell({
+  row,
+  onPick,
+}: {
+  row: PropRow | null;
+  onPick?: (p: PropRow) => void;
+}) {
+  const price = row?.odds ?? null;
+  if (price === null) {
+    return <span className="text-[11px] tabular-nums text-right text-neutral-700">—</span>;
+  }
+  if (onPick && row) {
+    return (
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onPick(row);
+        }}
+        title="Tap to bet this price"
+        className="text-[11px] tabular-nums text-right text-neutral-300 hover:text-emerald-300 hover:underline"
+      >
+        {fmtOdds(price)}
+      </button>
+    );
+  }
+  return <span className="text-[11px] tabular-nums text-right text-neutral-300">{fmtOdds(price)}</span>;
 }
 
 // A price on the props sheet carries everything needed to bet it directly -
@@ -701,7 +717,7 @@ export function OddsBoard({
   );
 
   const methodPrice = useCallback(
-    (fightKey: string, name: string, method: string): number | null => {
+    (fightKey: string, name: string, method: string): PropRow | null => {
       const r = props.find(
         (pp) =>
           pp.fight_key === fightKey &&
@@ -710,14 +726,14 @@ export function OddsBoard({
           sameFighter(pp.fighter, name) &&
           pp.method === method
       );
-      return r ? r.odds : null;
+      return r ?? null;
     },
     [props]
   );
 
   // fighter wins in round N (market="round"), for the R1-R3 columns
   const roundWinPrice = useCallback(
-    (fightKey: string, name: string, rnd: number): number | null => {
+    (fightKey: string, name: string, rnd: number): PropRow | null => {
       const r = props.find(
         (pp) =>
           pp.fight_key === fightKey &&
@@ -726,7 +742,7 @@ export function OddsBoard({
           sameFighter(pp.fighter, name) &&
           pp.round === rnd
       );
-      return r ? r.odds : null;
+      return r ?? null;
     },
     [props]
   );
@@ -734,7 +750,7 @@ export function OddsBoard({
   // fighter wins round N on the scorecard or by finish
   // (market="scorecard_winner_or_finish"), for the ML R1-R3 columns
   const scorecardRoundPrice = useCallback(
-    (fightKey: string, name: string, rnd: number): number | null => {
+    (fightKey: string, name: string, rnd: number): PropRow | null => {
       const r = props.find(
         (pp) =>
           pp.fight_key === fightKey &&
@@ -743,7 +759,7 @@ export function OddsBoard({
           sameFighter(pp.fighter, name) &&
           pp.round === rnd
       );
-      return r ? r.odds : null;
+      return r ?? null;
     },
     [props]
   );
@@ -751,7 +767,7 @@ export function OddsBoard({
   // a fighter's price in a head-to-head stat matchup (the SS / TD columns) -
   // what the SS and TD rail columns show
   const matchupPrice = useCallback(
-    (fightKey: string, name: string, market: string): number | null => {
+    (fightKey: string, name: string, market: string): PropRow | null => {
       const r = props.find(
         (pp) =>
           pp.fight_key === fightKey &&
@@ -760,7 +776,7 @@ export function OddsBoard({
           !!pp.fighter &&
           sameFighter(pp.fighter, name)
       );
-      return r ? r.odds : null;
+      return r ?? null;
     },
     [props]
   );
@@ -1009,59 +1025,72 @@ export function OddsBoard({
                               )}
                             </div>
                             <PropCell
-                              price={
+                              row={
                                 fk && sp && showProps
                                   ? matchupPrice(fk, sp.name, "fighter_wins_inside_distance")
                                   : null
                               }
+                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
                             />
                             <PropCell
-                              price={fk && sp && showProps ? methodPrice(fk, sp.name, "ko_tko") : null}
+                              row={fk && sp && showProps ? methodPrice(fk, sp.name, "ko_tko") : null}
+                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
                             />
                             <PropCell
-                              price={fk && sp && showProps ? methodPrice(fk, sp.name, "submission") : null}
+                              row={fk && sp && showProps ? methodPrice(fk, sp.name, "submission") : null}
+                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
                             />
                             <PropCell
-                              price={fk && sp && showProps ? methodPrice(fk, sp.name, "decision") : null}
+                              row={fk && sp && showProps ? methodPrice(fk, sp.name, "decision") : null}
+                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
                             />
                             <PropCell
-                              price={
+                              row={
                                 fk && sp && showProps
                                   ? matchupPrice(fk, sp.name, "win_inside_distance_goes_distance_no_action")
                                   : null
                               }
+                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
                             />
                             <PropCell
-                              price={fk && sp && showProps ? roundWinPrice(fk, sp.name, 1) : null}
+                              row={fk && sp && showProps ? roundWinPrice(fk, sp.name, 1) : null}
+                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
                             />
                             <PropCell
-                              price={fk && sp && showProps ? roundWinPrice(fk, sp.name, 2) : null}
+                              row={fk && sp && showProps ? roundWinPrice(fk, sp.name, 2) : null}
+                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
                             />
                             <PropCell
-                              price={fk && sp && showProps ? roundWinPrice(fk, sp.name, 3) : null}
+                              row={fk && sp && showProps ? roundWinPrice(fk, sp.name, 3) : null}
+                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
                             />
                             <PropCell
-                              price={
+                              row={
                                 fk && sp && showProps
                                   ? matchupPrice(fk, sp.name, "most_significant_strikes_landed")
                                   : null
                               }
+                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
                             />
                             <PropCell
-                              price={
+                              row={
                                 fk && sp && showProps
                                   ? matchupPrice(fk, sp.name, "most_takedowns_landed")
                                   : null
                               }
+                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
                             />
                             <PropCell
-                              price={fk && sp && showProps ? scorecardRoundPrice(fk, sp.name, 1) : null}
+                              row={fk && sp && showProps ? scorecardRoundPrice(fk, sp.name, 1) : null}
+                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
                             />
                             <PropCell
-                              price={fk && sp && showProps ? scorecardRoundPrice(fk, sp.name, 2) : null}
+                              row={fk && sp && showProps ? scorecardRoundPrice(fk, sp.name, 2) : null}
+                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
                             />
                             <PropCell
-                              price={fk && sp && showProps ? scorecardRoundPrice(fk, sp.name, 3) : null}
+                              row={fk && sp && showProps ? scorecardRoundPrice(fk, sp.name, 3) : null}
+                              onPick={onAdd ? (row) => setBetPrompt({ p: row, f, ev }) : undefined}
                             />
                           </div>
                         );
