@@ -220,12 +220,9 @@ export function fmtLineDiff(n: number): string {
 // ---------------------------------------------------------------------------
 // Always-on core markets below. Each builds a synthetic PropRow for every
 // outcome the market can have, using propRowKey()/propRowLabel() for the
-// STORAGE key and label (unchanged - existing typed data still lands on the
-// exact same cells). The LIVE BOARD LOOKUP, however, goes through isFighter()
-// instead of an exact-string key match: BetOnline's scraped fighter label
-// isn't guaranteed byte-identical to the fight card's stored name, and a raw
-// key comparison silently drops the match (and the CLV chip) the moment it
-// isn't. This was the bug behind CLV never appearing on these five markets.
+// STORAGE key and label. The LIVE BOARD LOOKUP goes through isFighter()
+// instead of an exact-string key match, since BetOnline's scraped fighter
+// label isn't guaranteed byte-identical to the fight card's stored name.
 // ---------------------------------------------------------------------------
 
 function blankProp(over: Partial<PropRow>): PropRow {
@@ -342,4 +339,47 @@ export function buildMostMatchupRows(
     [f2Name, f1Name],
   ];
   return pairs.map(([name, other]) => toPresetRow(blankProp({ market, fighter: name }), props, other));
+}
+
+// ---------------------------------------------------------------------------
+// The reverse direction: given a REAL live board row (from OddsBoard), find
+// the exact key the Notes matrix stored the user's price/line under for that
+// same outcome - so the Odds page can color a prop price and populate a
+// chart's "Notes" stat from what was actually typed. Each case mirrors that
+// market's own key scheme above exactly. Total Sig Strikes is deliberately
+// excluded: its stored value is a LINE, not a price, so running it through
+// odds-based coloring would misread a line number as American odds.
+// ---------------------------------------------------------------------------
+export function noteKeyForBoardRow(row: PropRow, f1Name: string, f2Name: string): string | null {
+  const canon = (raw: string | null): string | null => {
+    if (raw === null) return null;
+    if (isFighter(raw, f1Name, f2Name)) return f1Name;
+    if (isFighter(raw, f2Name, f1Name)) return f2Name;
+    return null;
+  };
+  switch (row.market) {
+    case "total":
+      if (row.ou_side === null || row.ou_line === null) return null;
+      return `total|${row.ou_side}|${row.ou_line}`;
+    case "point_spread": {
+      const name = canon(row.fighter);
+      if (name === null || row.ou_line === null) return null;
+      return `point_spread|${name}|${Math.abs(row.ou_line)}`;
+    }
+    case "total_takedowns": {
+      const name = canon(row.fighter);
+      if (name === null || row.ou_side === null || row.ou_line === null) return null;
+      return `total_takedowns|${name}|${row.ou_side}|${row.ou_line}`;
+    }
+    case "method":
+    case "round":
+    case "method_round":
+    case "most_significant_strikes_landed":
+    case "most_takedowns_landed": {
+      const name = canon(row.fighter);
+      return propRowKey({ ...row, fighter: name });
+    }
+    default:
+      return null; // not one of the templated/priced markets - nothing to color
+  }
 }
