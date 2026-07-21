@@ -30,7 +30,12 @@ export function BetTracker({
   onRequestDelete: (id: string, requested: boolean, reason?: string) => void;
   onPublish: (id: string) => void;
 }) {
-  const [scope, setScope] = useState<"verified" | "all">("verified");
+  const [scope, setScope] = useState<"verified" | "unverified" | "all">("verified");
+  // second row, same shape as the Leaderboard's: a market filter and an
+  // (independent) sort applied to Picks History below, both persistent
+  // regardless of which scope button above is active
+  const [marketFilter, setMarketFilter] = useState<"all" | "ml" | "prop">("all");
+  const [sortBy, setSortBy] = useState<"profit" | "roi" | "clv" | null>(null);
   const [removalFor, setRemovalFor] = useState<string | null>(null);
   const [removalReason, setRemovalReason] = useState("");
 
@@ -76,8 +81,17 @@ export function BetTracker({
             event: events.find((ev) => ev.id === f.event_id) ?? null,
           }));
 
-  // "verified" = structured bets tied to a fight (auto-graded); "all" adds manual ones
-  const scoped = scope === "verified" ? bets.filter((b) => b.bet_type !== "other") : bets;
+  // "verified" = structured bets tied to a fight (auto-graded); "unverified" =
+  // manual entries only; "all" = both. betMarket matches the Leaderboard's own
+  // ml-vs-everything-else bucketing, so "Props" means the same thing everywhere.
+  function betMarket(bt: string | null): "ml" | "prop" {
+    return bt === "moneyline" ? "ml" : "prop";
+  }
+  const scoped = bets
+    .filter((b) =>
+      scope === "all" ? true : scope === "verified" ? b.bet_type !== "other" : b.bet_type === "other"
+    )
+    .filter((b) => marketFilter === "all" || betMarket(b.bet_type) === marketFilter);
   const settled = scoped.filter((b) => b.result !== "pending");
   const wins = settled.filter((b) => b.result === "win").length;
   const losses = settled.filter((b) => b.result === "loss").length;
@@ -104,14 +118,47 @@ export function BetTracker({
 
   return (
     <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <InfoButton open={showInfo} onClick={() => setShowInfo((v) => !v)} />
         <div className="flex gap-1">
           <button onClick={() => setScope("verified")} className={sideBtn(scope === "verified")}>
             Verified
           </button>
+          <button onClick={() => setScope("unverified")} className={sideBtn(scope === "unverified")}>
+            Unverified
+          </button>
           <button onClick={() => setScope("all")} className={sideBtn(scope === "all")}>
             All bets
+          </button>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex gap-1">
+          {(
+            [
+              ["all", "All"],
+              ["ml", "MLs"],
+              ["prop", "Props"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setMarketFilter(key)}
+              className={sideBtn(marketFilter === key)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => setSortBy("profit")} className={sideBtn(sortBy === "profit")}>
+            Profit
+          </button>
+          <button onClick={() => setSortBy("roi")} className={sideBtn(sortBy === "roi")}>
+            ROI
+          </button>
+          <button onClick={() => setSortBy("clv")} className={sideBtn(sortBy === "clv")}>
+            CLV
           </button>
         </div>
       </div>
@@ -560,7 +607,7 @@ export function BetTracker({
         );
       })}
 
-      <PicksHistoryPanel bets={bets} />
+      <PicksHistoryPanel bets={scoped} sortBy={sortBy} />
     </div>
   );
 }

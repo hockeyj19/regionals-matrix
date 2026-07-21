@@ -426,7 +426,7 @@ export function Leaderboard({
             UFC Only
           </button>
           <button onClick={() => setTier("sharp")} className={sideBtn(tier === "sharp")}>
-            Sharp books
+            BetOnline Verified
           </button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -461,19 +461,6 @@ export function Leaderboard({
         </div>
       </div>
       {showInfo && <ReadMePanel paragraphs={LEADERBOARD_README} />}
-      <div className="flex flex-wrap items-center gap-1">
-        <span className="text-[11px] text-neutral-500 uppercase tracking-wide mr-1">
-          {tier === "sharp" ? "Sharp board books" : "Soft board books"}
-        </span>
-        {(tier === "sharp" ? SHARP_BOOKS : SOFT_BOOKS).map((bk) => (
-          <span
-            key={bk}
-            className="rounded-full border border-emerald-800 bg-emerald-600/10 px-2 py-0.5 text-[11px] text-emerald-300"
-          >
-            {bookLabel(bk)}
-          </span>
-        ))}
-      </div>
 
       {loading && <p className="text-neutral-500">Loading leaderboard...</p>}
       {!loading && sorted.length === 0 && (

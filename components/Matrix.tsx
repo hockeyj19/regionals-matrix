@@ -220,7 +220,7 @@ export function Matrix({
     search: boolean;
     events: boolean;
     history: boolean;
-  }>({ search: false, events: false, history: false });
+  }>({ search: true, events: true, history: true });
   const [fighterSearchQ, setFighterSearchQ] = useState("");
   const [pendingScrollFightId, setPendingScrollFightId] = useState<string | null>(null);
   const [profileUser, setProfileUser] = useState<string | null>(initialProfileUser);
