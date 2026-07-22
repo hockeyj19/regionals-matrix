@@ -64,7 +64,40 @@ function aliasMatch(na: string, nb: string): boolean {
 // pagination is not stable across requests.
 const PAGE_ROWS = 1000;
 const MAX_PAGES = 20; // 20k-row circuit breaker against a runaway view
-const PAGE_WAVE = 4; // concurrent page reads once a view outgrows page 0
+const PAGE_WAVE = 4; // concurrent page reads per wave
+const FRESH_MS = 20_000; // rows younger than this skip the network entirely
+// Bump the version any time a board view's column shape changes, or a
+// returning browser will hydrate old-shaped rows into new-shaped renderers.
+const LS_PREFIX = "tapenotes:board:v1:";
+
+type Cached = { rows: unknown[]; at: number };
+const memCache = new Map<string, Cached>();
+const inflight = new Map<string, Promise<unknown[] | null>>();
+// last known row count per view - lets a refetch fire exactly the right
+// number of pages in ONE concurrent round trip instead of discovering the
+// size page by page
+const lastCount = new Map<string, number>();
+
+function readStored(view: string): unknown[] | null {
+  try {
+    if (typeof window === "undefined") return null;
+    const raw = window.localStorage.getItem(LS_PREFIX + view);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { rows?: unknown[] };
+    return Array.isArray(parsed.rows) && parsed.rows.length ? parsed.rows : null;
+  } catch {
+    return null; // corrupt/blocked storage must never take the board down
+  }
+}
+
+function writeStored(view: string, rows: unknown[]): void {
+  try {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(LS_PREFIX + view, JSON.stringify({ rows, at: Date.now() }));
+  } catch {
+    // quota or private mode - the app just loses instant-paint, nothing else
+  }
+}
 
 async function fetchPage<T>(
   view: string,
@@ -84,28 +117,27 @@ async function fetchPage<T>(
   return (data ?? []) as T[];
 }
 
-export async function fetchAllRows<T>(
-  view: string,
-  orderCol: string
-): Promise<T[] | null> {
-  // Page 0 alone covers most views (bol_board, fd_board) in one round trip.
-  const first = await fetchPage<T>(view, orderCol, 0);
-  if (first === null) return null;
-  const out: T[] = [...first];
-  if (first.length < PAGE_ROWS) return out;
-
-  // The view outgrew a single page (bol_current_props lives here). Fetch the
-  // remaining pages in concurrent waves instead of one-at-a-time - the old
-  // sequential walk re-executed the whole view per page, back to back.
-  // Rows must stay CONTIGUOUS: within each wave, results are consumed in
-  // page order and everything after the first short or failed page is
-  // discarded, so a mid-wave failure can never leave a silent gap.
-  for (let base = 1; base < MAX_PAGES; base += PAGE_WAVE) {
-    const count = Math.min(PAGE_WAVE, MAX_PAGES - base);
-    const wave = await Promise.all(
+// One full network read of a view. The first wave is sized from the view's
+// last known row count (or 4 blind pages on a first-ever read), so a view
+// of any size up to 4k rows completes in a single concurrent round trip.
+// Rows must stay CONTIGUOUS: wave results are consumed in page order and
+// everything after the first short or failed page is discarded, so a
+// mid-wave failure can never leave a silent gap.
+async function fetchFresh<T>(view: string, orderCol: string): Promise<T[] | null> {
+  const known = lastCount.get(view);
+  const firstWave = Math.min(
+    MAX_PAGES,
+    Math.max(1, known !== undefined ? Math.ceil(known / PAGE_ROWS) : PAGE_WAVE)
+  );
+  const out: T[] = [];
+  let base = 0;
+  let wave = firstWave;
+  while (base < MAX_PAGES) {
+    const count = Math.min(wave, MAX_PAGES - base);
+    const pages = await Promise.all(
       Array.from({ length: count }, (_, i) => fetchPage<T>(view, orderCol, base + i))
     );
-    for (const pageRows of wave) {
+    for (const pageRows of pages) {
       if (pageRows === null) {
         // partial board beats a blank one, but never fail in silence
         return out.length ? out : null;
@@ -113,8 +145,58 @@ export async function fetchAllRows<T>(
       out.push(...pageRows);
       if (pageRows.length < PAGE_ROWS) return out;
     }
+    base += count;
+    wave = PAGE_WAVE;
   }
   return out;
+}
+
+/**
+ * Cached board reads. Three layers, all failure-soft:
+ *  - rows fetched < 20s ago return instantly with no network at all, so
+ *    hopping between the Odds and Notes tabs never re-downloads the board
+ *  - older rows (memory or the last visit's localStorage copy) return
+ *    instantly for paint while a background refresh runs; fresh rows land
+ *    via onRefresh so the caller can swap them into state
+ *  - concurrent calls for the same view share one in-flight request, so
+ *    Matrix and OddsBoard mounting together fetch each board once
+ * The verified-bet price path (fetchFightProps / fetchFightBoard) does NOT
+ * go through this cache - a locked price is always read live.
+ */
+export async function fetchAllRows<T>(
+  view: string,
+  orderCol: string,
+  onRefresh?: (rows: T[]) => void
+): Promise<T[] | null> {
+  const mem = memCache.get(view);
+  if (mem && Date.now() - mem.at < FRESH_MS) return mem.rows as T[];
+
+  const refresh = (): Promise<T[] | null> => {
+    let p = inflight.get(view) as Promise<T[] | null> | undefined;
+    if (!p) {
+      p = fetchFresh<T>(view, orderCol)
+        .then((rows) => {
+          if (rows) {
+            memCache.set(view, { rows, at: Date.now() });
+            lastCount.set(view, rows.length);
+            writeStored(view, rows);
+          }
+          return rows;
+        })
+        .finally(() => inflight.delete(view));
+      inflight.set(view, p);
+    }
+    return p;
+  };
+
+  const stale = (mem?.rows as T[] | undefined) ?? (readStored(view) as T[] | null);
+  if (stale && stale.length) {
+    if (!lastCount.has(view)) lastCount.set(view, stale.length);
+    const p = refresh();
+    if (onRefresh) p.then((rows) => rows && onRefresh(rows));
+    return stale; // paint now - fresh rows follow through onRefresh
+  }
+  return refresh(); // first-ever read: nothing to paint, wait for the network
 }
 
 // Surname prefilter tokens for a set of fighters - the TS twin of the

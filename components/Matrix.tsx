@@ -277,11 +277,14 @@ export function Matrix({
         .order("placed_at", { ascending: false }),
       supabase.from("user_fight_matrix").select("fight_id, data"),
       // live BetOnline prices for the CLV chips (fail-soft: matrix works without them)
+      // Setters double as refresh sinks: a cached board paints instantly and
+      // fresh rows land here when the background read returns.
       fetchAllRows<{ fight_key: string; fighter1: string; fighter2: string; cur1: number | null; cur2: number | null }>(
         "bol_board",
-        "fight_key"
+        "fight_key",
+        setBoardRows
       ).catch(() => []),
-      fetchAllRows<PropRow>("bol_current_props", "fight_key").catch(() => []),
+      fetchAllRows<PropRow>("bol_current_props", "fight_key", setPropRows).catch(() => []),
       supabase.from("profiles").select("is_admin").eq("user_id", user.id),
     ]);
     setBoardRows(bol ?? []);

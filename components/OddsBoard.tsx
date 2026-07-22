@@ -398,10 +398,12 @@ export function OddsBoard({
     // is how the alphabetical tail of the prop board (RJ Harris...,
     // Stewart Nicoll...) vanished during fight week. fd_board still
     // soft-fails to [] until the FanDuel snapshot backend exists.
+    // The setters double as refresh sinks: a cached board paints
+    // instantly and fresh rows land here when the background read returns.
     const [b, fd, pr] = await Promise.all([
-      fetchAllRows<BoardRow>("bol_board", "fight_key"),
-      fetchAllRows<BoardRow>("fd_board", "fight_key"),
-      fetchAllRows<PropRow>("bol_current_props", "fight_key"),
+      fetchAllRows<BoardRow>("bol_board", "fight_key", setBoard),
+      fetchAllRows<BoardRow>("fd_board", "fight_key", setFdBoard),
+      fetchAllRows<PropRow>("bol_current_props", "fight_key", setProps),
     ]);
     setBoard(b ?? []);
     setFdBoard(fd ?? []);
