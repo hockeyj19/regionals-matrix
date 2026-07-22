@@ -390,8 +390,11 @@ export function Profile({
     }
     let alive = true;
     (async () => {
+      // user_bets_live computes close_odds/clv fresh from the board history
+      // the bots capture continuously, instead of whatever a local scraper
+      // run last wrote. RLS still scopes this to the caller's own rows.
       const { data } = await supabase
-        .from("user_bets")
+        .from("user_bets_live")
         .select(
           "id, selection, bet_type, event_context, event_date, event_start, published_at, odds, stake, book, result, placed_at, price_check, close_odds, clv"
         )

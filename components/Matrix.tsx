@@ -345,8 +345,14 @@ export function Matrix({
       supabase
         .from("user_fighter_notes")
         .select("fighter_id, fighter_name, notes, tags, updated_at"),
+      // user_bets_live: same rows, but close_odds/clv are computed fresh from
+      // the board history the bots already capture 24/7 - the app is no
+      // longer waiting on anyone to run a local scraper for these to be
+      // accurate. Falls back to the archived value once a fight ages out of
+      // the board history's rolling window. Mutations below still target
+      // user_bets directly - this view is read-only.
       supabase
-        .from("user_bets")
+        .from("user_bets_live")
         .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, settled_by, delete_requested_at, delete_reason, published_at, book, price_check, market_best, market_book, market_checked_at, close_odds, clv")
         .order("placed_at", { ascending: false }),
       supabase.from("user_fight_matrix").select("fight_id, data"),
