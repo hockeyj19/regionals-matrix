@@ -437,12 +437,30 @@ export function OddsBoard({
 
   // match one app fight to a ledger row (order-insensitive), keeping each
   // side's ledger side-number so the movement chart can be opened
+  // Board keys split once per board change, not once per lookup.
+  const boardParsed = useMemo(() => {
+    const out: { ra: string; rb: string; row: (typeof activeBoard)[number] }[] = [];
+    for (const row of activeBoard) {
+      const parts = String(row.fight_key).split(" vs ");
+      if (parts.length === 2) out.push({ ra: parts[0], rb: parts[1], row });
+    }
+    return out;
+  }, [activeBoard]);
+
+  // matchFight is a pure function of (fight, board), but it was being called
+  // once per RENDERED PROP ROW - each call rescanning the whole board. Cache
+  // the answer per fight; the cache is rebuilt whenever the board changes.
+  const matchCache = useMemo(
+    () => new Map<string, Matched | null>(),
+    [boardParsed]
+  );
+
   const matchFight = useCallback(
     (f: FightRow): Matched | null => {
-      for (const row of activeBoard) {
-        const parts = String(row.fight_key).split(" vs ");
-        if (parts.length !== 2) continue;
-        const [ra, rb] = parts;
+      const hit = matchCache.get(f.id);
+      if (hit !== undefined) return hit;
+      const found = ((): Matched | null => {
+      for (const { ra, rb, row } of boardParsed) {
         if (boutMatch(ra, rb, f.fighter1_name, f.fighter2_name)) {
           return {
             fightKey: row.fight_key,
@@ -459,22 +477,38 @@ export function OddsBoard({
         }
       }
       return null;
+      })();
+      matchCache.set(f.id, found);
+      return found;
     },
-    [activeBoard]
+    [boardParsed, matchCache]
   );
 
   // this fight's tape-note price/line for a real live board row, or null if
   // the user hasn't typed one (or the row's fighter/market doesn't resolve
   // to one of the templated markets). Defined here, after matchFight/props/
   // matrixData are all in scope, so its dependency array is always valid.
+  // Grouped once per props change. This was a full 2,244-row filter run for
+  // EVERY prop row on screen; grouping preserves each row's original order
+  // within its bout, so the array handed to noteForBoardRow is unchanged.
+  const propsByKey = useMemo(() => {
+    const m = new Map<string, PropRow[]>();
+    for (const p of props) {
+      const g = m.get(p.fight_key);
+      if (g) g.push(p);
+      else m.set(p.fight_key, [p]);
+    }
+    return m;
+  }, [props]);
+
   const notePriceFor = useCallback(
     (f: FightRow, row: PropRow): string | null => {
       const m = matchFight(f);
       const ml = m ? { cur1: m.a.cur, cur2: m.b.cur } : null;
-      const fightProps = props.filter((p) => p.fight_key === row.fight_key);
+      const fightProps = propsByKey.get(row.fight_key) ?? [];
       return noteForBoardRow(f, row, matrixData?.[f.id], ml, fightProps);
     },
-    [matchFight, props, matrixData]
+    [matchFight, propsByKey, matrixData]
   );
 
   // props now open the same chart-first modal MLs do, just keyed to that

@@ -406,33 +406,62 @@ export function Matrix({
     const byFight: Record<string, (marketKey: string) => MatrixBoardPrice> = {};
     const mlMap: Record<string, BoardML | null> = {};
     const propsMap: Record<string, PropRow[]> = {};
+
+    // Split each fight_key ONCE, not once per fight. The old loop re-split
+    // every board row for all 147 fights.
+    const boardParsed: { ra: string; rb: string; row: (typeof boardRows)[number] }[] = [];
+    for (const row of boardRows) {
+      const parts = String(row.fight_key).split(" vs ");
+      if (parts.length === 2) boardParsed.push({ ra: parts[0], rb: parts[1], row });
+    }
+
+    // 2,244 prop rows collapse to ~147 DISTINCT bouts. Matching each bout
+    // once instead of re-matching every row for every fight is where the
+    // bulk of the win is - the old filter() had no early exit, so it ran
+    // 147 x 2,244 name comparisons on every board refresh.
+    // Original row indices are kept so the output can be restored to exactly
+    // the order the old filter() produced.
+    const propGroups = new Map<
+      string,
+      { ra: string; rb: string; entries: { pr: PropRow; i: number }[] }
+    >();
+    propRows.forEach((pr, i) => {
+      const key = String(pr.fight_key);
+      let g = propGroups.get(key);
+      if (!g) {
+        const parts = key.split(" vs ");
+        if (parts.length !== 2) return; // same rows the old filter skipped
+        g = { ra: parts[0], rb: parts[1], entries: [] };
+        propGroups.set(key, g);
+      }
+      g.entries.push({ pr, i });
+    });
+
     for (const f of fights) {
+      const f1 = f.fighter1_name;
+      const f2 = f.fighter2_name;
       // find this fight's moneyline row + prop rows on the board
       let ml: BoardML | null = null;
-      for (const row of boardRows) {
-        const parts = String(row.fight_key).split(" vs ");
-        if (parts.length !== 2) continue;
-        const [ra, rb] = parts;
-        if (boutMatch(ra, rb, f.fighter1_name, f.fighter2_name)) {
+      for (const { ra, rb, row } of boardParsed) {
+        if (boutMatch(ra, rb, f1, f2)) {
           ml = { cur1: row.cur1, cur2: row.cur2 };
           break;
         }
-        if (boutMatch(rb, ra, f.fighter1_name, f.fighter2_name)) {
+        if (boutMatch(rb, ra, f1, f2)) {
           ml = { cur1: row.cur2, cur2: row.cur1 }; // board lists them reversed
           break;
         }
       }
-      const fightProps = propRows.filter((pr) => {
-        const parts = String(pr.fight_key).split(" vs ");
-        if (parts.length !== 2) return false;
-        const [ra, rb] = parts;
-        return (
-          boutMatch(ra, rb, f.fighter1_name, f.fighter2_name) ||
-          boutMatch(rb, ra, f.fighter1_name, f.fighter2_name)
-        );
-      });
+      const hits: { pr: PropRow; i: number }[] = [];
+      for (const g of propGroups.values()) {
+        if (boutMatch(g.ra, g.rb, f1, f2) || boutMatch(g.rb, g.ra, f1, f2)) {
+          hits.push(...g.entries);
+        }
+      }
+      hits.sort((a, b) => a.i - b.i); // exact filter() ordering
+      const fightProps = hits.map((h) => h.pr);
       byFight[f.id] = (marketKey: string) =>
-        boardPriceForMarket(marketKey, ml, fightProps, f.fighter1_name, f.fighter2_name);
+        boardPriceForMarket(marketKey, ml, fightProps, f1, f2);
       mlMap[f.id] = ml;
       propsMap[f.id] = fightProps;
     }
