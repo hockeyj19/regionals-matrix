@@ -124,14 +124,14 @@ export function BetTracker({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <InfoButton open={showInfo} onClick={() => setShowInfo((v) => !v)} />
         <div className="flex gap-1">
+          <button onClick={() => setScope("all")} className={sideBtn(scope === "all")}>
+            All
+          </button>
           <button onClick={() => setScope("verified")} className={sideBtn(scope === "verified")}>
             Verified
           </button>
           <button onClick={() => setScope("unverified")} className={sideBtn(scope === "unverified")}>
             Unverified
-          </button>
-          <button onClick={() => setScope("all")} className={sideBtn(scope === "all")}>
-            All bets
           </button>
         </div>
       </div>
