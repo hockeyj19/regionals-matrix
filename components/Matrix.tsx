@@ -682,7 +682,12 @@ export function Matrix({
       .single();
     if (error) return error.message;
     if (!b) return "The bet did not save - please try again.";
-    setBets((prev) => [b, ...prev]);
+    // user_bets itself has no live_clv column - it's computed only in the
+    // user_bets_live view - so a bet fresh off insert never carries one.
+    // That's correct: it's brand new and pending, nothing has computed a
+    // live number against it yet. The next full reload (loadData, which
+    // does read user_bets_live) will pick one up if the board has a price.
+    setBets((prev) => [{ ...b, live_clv: null }, ...prev]);
     return null;
   }
 
