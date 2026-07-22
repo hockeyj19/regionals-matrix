@@ -2,11 +2,18 @@ import { americanToImplied } from "@/lib/format";
 import { parseOddsInput } from "@/lib/format";
 
 /**
- * Connects the Notes matrix to the BetOnline board. Each matrix cell is a
- * price the user typed for a specific market; this finds the matching live
- * BetOnline price and reports the CLV between the two - same sign convention
- * as the platform's real CLV (positive = the user's price implies a lower
- * probability than the board, i.e. they beat it). Verified board rows only.
+ * Connects the Notes matrix to the BetOnline board. Each matrix cell is the
+ * price the USER BELIEVES IS FAIR for that market - not a price they found
+ * elsewhere. The chip reports whether betting that market at the board's
+ * real, live price would be good or bad value relative to that belief:
+ * positive = the board's price implies a LOWER win probability than the
+ * user's own fair-value price, so backing it at the board's number is good
+ * value; negative = the board is asking the user to pay for a HIGHER
+ * probability than they themselves believe is fair, so it's a bad bet at
+ * the board's real price even though the fighter may well be a big
+ * favorite. This is a value-betting signal, not "did you beat the market" -
+ * it is unrelated to the platform's real/live CLV, which compares a bet
+ * actually locked in against the eventual close.
  */
 
 export type MatrixBoardPrice = {
@@ -156,5 +163,9 @@ export function cellClv(typed: string | undefined, board: number | null): number
   if (board === null) return null;
   const yours = parseOddsInput(typed ?? "");
   if (yours === null) return null;
-  return (americanToImplied(board) - americanToImplied(yours)) * 100;
+  // positive = the board's real price is asking for less win probability
+  // than the user's own fair-value price implies - good value to bet at
+  // the board's number. Negative = the board wants MORE win probability
+  // than the user believes is fair - bad value even on a big favorite.
+  return (americanToImplied(yours) - americanToImplied(board)) * 100;
 }
