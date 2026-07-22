@@ -648,7 +648,7 @@ export function BetTracker({
         );
       })}
 
-      <PicksHistoryPanel bets={scoped} />
+      <PicksHistoryPanel bets={bets} />
     </div>
   );
 }
