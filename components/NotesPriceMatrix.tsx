@@ -58,7 +58,7 @@ function ClvChip({ typed, board }: { typed: string | undefined; board: number | 
       className={`block text-[9px] leading-tight text-center font-medium ${
         up ? "text-emerald-400" : "text-red-400"
       }`}
-      title="Your price vs BetOnline's live price"
+      title="Value of betting this at BetOnline's live price, given the price you think is fair"
     >
       {up ? "+" : ""}
       {clv.toFixed(1)}%
