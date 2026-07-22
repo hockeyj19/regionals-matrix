@@ -52,25 +52,26 @@ export function Leaderboard({
   const [loading, setLoading] = useState(true);
   const [showInfo, setShowInfo] = useState(false);
   const [allPublic, setAllPublic] = useState<PublicBet[]>([]);
+  const [avatarByUsername, setAvatarByUsername] = useState<Record<string, string | null>>({});
   const [collapsedPublic, setCollapsedPublic] = useState<Set<string>>(new Set());
   const [picksView, setPicksView] = useState<"public" | "consensus" | "results">("public");
 
   useEffect(() => {
     let alive = true;
     async function load() {
-      const { data: lb } = await supabase.from("leaderboard_rows").select("*");
-      const { data: me } = await supabase
-        .from("profiles")
-        .select("username")
-        .eq("user_id", user.id);
-      const { data: pubs } = await supabase
-        .from("public_bets")
-        .select("*")
-        .order("placed_at", { ascending: false });
+      const [{ data: lb }, { data: me }, { data: pubs }, { data: avatars }] = await Promise.all([
+        supabase.from("leaderboard_rows").select("*"),
+        supabase.from("profiles").select("username").eq("user_id", user.id),
+        supabase.from("public_bets").select("*").order("placed_at", { ascending: false }),
+        supabase.from("public_profiles").select("username, avatar_url"),
+      ]);
       if (!alive) return;
       setRaw(lb ?? []);
       setUsername(me && me.length > 0 ? me[0].username : null);
       setAllPublic(pubs ?? []);
+      const avMap: Record<string, string | null> = {};
+      (avatars ?? []).forEach((a: { username: string; avatar_url: string | null }) => (avMap[a.username] = a.avatar_url));
+      setAvatarByUsername(avMap);
       setLoading(false);
     }
     load();
@@ -163,6 +164,10 @@ export function Leaderboard({
         .filter((r) => r.username === username)
         .reduce((s, r) => s + Number(r.bets), 0)
     : 0;
+
+  // same fallback Profile.tsx already uses for a user with no uploaded picture
+  const avatarSrc = (u: string) =>
+    avatarByUsername[u] ?? `https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(u)}`;
 
   const rankColor = (i: number) =>
     i === 0
@@ -330,19 +335,35 @@ export function Leaderboard({
           >
             {rank !== null ? rank + 1 : "-"}
           </span>
-          <span className="hidden sm:block flex-1 text-sm font-medium truncate">
-            {r.username}
-            {r.username === username && <span className="text-neutral-600"> (you)</span>}
+          <span className="hidden sm:flex flex-1 items-center gap-2 min-w-0 text-sm font-medium">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={avatarSrc(r.username)}
+              alt=""
+              className="h-6 w-6 shrink-0 rounded-full border border-neutral-800 bg-neutral-900 object-cover"
+            />
+            <span className="truncate">
+              {r.username}
+              {r.username === username && <span className="text-neutral-600"> (you)</span>}
+            </span>
           </span>
           <button
             onClick={(e) => {
               e.stopPropagation();
               onOpenProfile(r.username);
             }}
-            className="sm:hidden flex-1 min-w-0 text-left text-sm font-medium truncate hover:text-emerald-400"
+            className="sm:hidden flex-1 flex items-center gap-2 min-w-0 text-left text-sm font-medium hover:text-emerald-400"
           >
-            {r.username}
-            {r.username === username && <span className="text-neutral-600"> (you)</span>}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={avatarSrc(r.username)}
+              alt=""
+              className="h-6 w-6 shrink-0 rounded-full border border-neutral-800 bg-neutral-900 object-cover"
+            />
+            <span className="truncate">
+              {r.username}
+              {r.username === username && <span className="text-neutral-600"> (you)</span>}
+            </span>
           </button>
           <span className="hidden sm:inline text-xs text-neutral-500 shrink-0 w-14 text-right">
             {r.wins}-{r.losses}-{r.pushes}
@@ -657,6 +678,12 @@ export function Leaderboard({
                   >
                     {rk !== undefined ? rk + 1 : "-"}
                   </span>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={avatarSrc(u)}
+                    alt=""
+                    className="h-6 w-6 shrink-0 rounded-full border border-neutral-800 bg-neutral-900 object-cover"
+                  />
                   <span className="flex-1 text-sm font-medium truncate">
                     {u}
                     {u === username && <span className="text-neutral-600"> (you)</span>}

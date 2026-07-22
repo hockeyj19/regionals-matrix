@@ -153,8 +153,15 @@ function DiffRow({
 }
 
 function SectionHeader({ title }: { title: string }) {
+  // every section here is a prop category EXCEPT the synthesized "Moneyline"
+  // header above them - that one isn't a prop, so it keeps the original color.
+  const isMoneyline = title === "Moneyline";
   return (
-    <div className="bg-neutral-900/80 px-2 py-1 text-[11px] font-bold text-neutral-100 border-b border-neutral-800">
+    <div
+      className={`bg-neutral-900/80 px-2 py-1 text-[11px] font-bold border-b border-neutral-800 ${
+        isMoneyline ? "text-neutral-100" : "text-yellow-400"
+      }`}
+    >
       {title}
     </div>
   );
