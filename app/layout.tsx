@@ -28,6 +28,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        {/* Every byte of data comes from this one origin - warm up DNS + TLS
+            while the JS bundle is still downloading, so the first Supabase
+            call on a cold load doesn't pay connection setup on top. */}
+        <link rel="preconnect" href="https://fsnhqboyiegzpppdopuj.supabase.co" />
+        <link rel="dns-prefetch" href="https://fsnhqboyiegzpppdopuj.supabase.co" />
+      </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         {children}
       </body>
