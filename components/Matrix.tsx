@@ -32,30 +32,61 @@ import { Profile } from "@/components/Profile";
 // notes grid) before anything could paint, which was most of the
 // cold-start wait.
 const tabLoading = () => <p className="p-4 text-sm text-neutral-500">Loading…</p>;
+// Named loaders so the chunks can also be warmed ahead of a click (below).
+// The bundler dedupes by module, so a warmed chunk makes the click instant.
+const loadNotesPriceMatrix = () => import("@/components/NotesPriceMatrix");
+const loadNotesHistoryPanel = () => import("@/components/NotesHistoryPanel");
+const loadBetTracker = () => import("@/components/BetTracker");
+const loadOddsBoard = () => import("@/components/OddsBoard");
+const loadLeaderboard = () => import("@/components/Leaderboard");
+const loadAdminPanel = () => import("@/components/AdminPanel");
+
 const NotesPriceMatrix = dynamic(
-  () => import("@/components/NotesPriceMatrix").then((m) => m.NotesPriceMatrix),
+  () => loadNotesPriceMatrix().then((m) => m.NotesPriceMatrix),
   { ssr: false, loading: tabLoading }
 );
 const NotesHistoryPanel = dynamic(
-  () => import("@/components/NotesHistoryPanel").then((m) => m.NotesHistoryPanel),
+  () => loadNotesHistoryPanel().then((m) => m.NotesHistoryPanel),
   { ssr: false, loading: tabLoading }
 );
-const BetTracker = dynamic(
-  () => import("@/components/BetTracker").then((m) => m.BetTracker),
-  { ssr: false, loading: tabLoading }
-);
-const OddsBoard = dynamic(
-  () => import("@/components/OddsBoard").then((m) => m.OddsBoard),
-  { ssr: false, loading: tabLoading }
-);
-const Leaderboard = dynamic(
-  () => import("@/components/Leaderboard").then((m) => m.Leaderboard),
-  { ssr: false, loading: tabLoading }
-);
-const AdminPanel = dynamic(
-  () => import("@/components/AdminPanel").then((m) => m.AdminPanel),
-  { ssr: false, loading: tabLoading }
-);
+const BetTracker = dynamic(() => loadBetTracker().then((m) => m.BetTracker), {
+  ssr: false,
+  loading: tabLoading,
+});
+const OddsBoard = dynamic(() => loadOddsBoard().then((m) => m.OddsBoard), {
+  ssr: false,
+  loading: tabLoading,
+});
+const Leaderboard = dynamic(() => loadLeaderboard().then((m) => m.Leaderboard), {
+  ssr: false,
+  loading: tabLoading,
+});
+const AdminPanel = dynamic(() => loadAdminPanel().then((m) => m.AdminPanel), {
+  ssr: false,
+  loading: tabLoading,
+});
+
+// Splitting the tabs out made the app open instantly but moved the download
+// to the moment of the click. So: once Profile has painted, quietly pull the
+// other tabs in the background, in the order they're most likely to be
+// clicked. Sequential, so parsing one chunk never janks the main thread, and
+// each failure is swallowed - a chunk that doesn't warm simply loads on click.
+async function warmTabChunks(): Promise<void> {
+  const loaders = [
+    loadNotesPriceMatrix,
+    loadNotesHistoryPanel,
+    loadOddsBoard,
+    loadBetTracker,
+    loadLeaderboard,
+  ];
+  for (const load of loaders) {
+    try {
+      await load();
+    } catch {
+      // offline or a cache miss - the click path still works
+    }
+  }
+}
 import { EVENTS_README, InfoButton, ReadMePanel } from "@/components/ReadMe";
 
 // per-promotion accent color for event headers
@@ -273,8 +304,28 @@ export function Matrix({
   const [loadingData, setLoadingData] = useState(true);
   const [ufcOnly, setUfcOnly] = useState(false);
 
+  // The price boards feed the CLV chips and the notes price grid - display
+  // only. Verified prices are locked from a LIVE read in QuickBet
+  // (fetchFightBoard / fetchFightProps), never from these rows, so letting
+  // them arrive a beat late costs nothing but a moment of empty chips.
+  // They are deliberately NOT awaited by loadData: the fight list used to
+  // sit behind the 2,244-row props board it does not need to render.
+  const loadBoards = useCallback(() => {
+    fetchAllRows<{ fight_key: string; fighter1: string; fighter2: string; cur1: number | null; cur2: number | null }>(
+      "bol_board",
+      "fight_key",
+      setBoardRows
+    )
+      .then((rows) => rows && setBoardRows(rows))
+      .catch(() => {});
+    fetchAllRows<PropRow>("bol_current_props", "fight_key", setPropRows)
+      .then((rows) => rows && setPropRows(rows))
+      .catch(() => {});
+  }, []);
+
   const loadData = useCallback(async () => {
     setLoadingData(true);
+    loadBoards(); // fires now, paints whenever it lands - never gates the list
     // One parallel burst instead of a sequential waterfall: none of these
     // reads depends on another's result, but they used to run one-at-a-time,
     // so the page paid seven network round trips back to back before it
@@ -286,8 +337,6 @@ export function Matrix({
       { data: fn },
       { data: bt },
       { data: mx },
-      bol,
-      bprops,
       { data: prof },
     ] = await Promise.all([
       supabase.from("events").select("*").order("event_date", { ascending: true }),
@@ -301,19 +350,8 @@ export function Matrix({
         .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, settled_by, delete_requested_at, delete_reason, published_at, book, price_check, market_best, market_book, market_checked_at, close_odds, clv")
         .order("placed_at", { ascending: false }),
       supabase.from("user_fight_matrix").select("fight_id, data"),
-      // live BetOnline prices for the CLV chips (fail-soft: matrix works without them)
-      // Setters double as refresh sinks: a cached board paints instantly and
-      // fresh rows land here when the background read returns.
-      fetchAllRows<{ fight_key: string; fighter1: string; fighter2: string; cur1: number | null; cur2: number | null }>(
-        "bol_board",
-        "fight_key",
-        setBoardRows
-      ).catch(() => []),
-      fetchAllRows<PropRow>("bol_current_props", "fight_key", setPropRows).catch(() => []),
       supabase.from("profiles").select("is_admin").eq("user_id", user.id),
     ]);
-    setBoardRows(bol ?? []);
-    setPropRows(bprops ?? []);
     setEvents(sortEvents(ev ?? []));
     setFights(fg ?? []);
     const map: Record<string, UserData> = {};
@@ -333,11 +371,33 @@ export function Matrix({
     // open all events by default
     setOpenEvents({});
     setLoadingData(false);
-  }, [user.id]);
+  }, [user.id, loadBoards]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Warm the other tabs once the app has painted, so clicking one within the
+  // first few seconds no longer waits on a cold chunk download.
+  useEffect(() => {
+    const w = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+    };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (w.requestIdleCallback) {
+      w.requestIdleCallback(() => void warmTabChunks(), { timeout: 1000 });
+    } else {
+      timer = setTimeout(() => void warmTabChunks(), 300);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
+
+  // Admins get one more chunk; everyone else is spared the bytes.
+  useEffect(() => {
+    if (isAdmin) void loadAdminPanel().catch(() => {});
+  }, [isAdmin]);
 
   // For each fight, a function marketKey -> board prices for its two sides.
   // Matched to the board the same way the Odds board matches (surname-aware
