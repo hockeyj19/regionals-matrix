@@ -300,13 +300,13 @@ export function BetTracker({
             onClick={() => setManualEntryMode("board")}
             className={sideBtn(manualEntryMode === "board")}
           >
-            From the board
+            Upcoming
           </button>
           <button
             onClick={() => setManualEntryMode("type")}
             className={sideBtn(manualEntryMode === "type")}
           >
-            Type it in
+            Manual
           </button>
         </div>
         {manualEntryMode === "board" ? (
@@ -376,9 +376,9 @@ export function BetTracker({
             onAdd={onAdd}
           />
         )}
-        {manualEntryMode === "type" && manualEventName.trim() && (
+        {manualEntryMode === "type" && (
           <ManualBet
-            key={`${manualEventName}|${manualMatchup}`}
+            key="manual-entry"
             placeholderName={manualMatchup.trim() || undefined}
             eventLabel={manualEventName.trim()}
             eventDate={manualEventDate || null}
