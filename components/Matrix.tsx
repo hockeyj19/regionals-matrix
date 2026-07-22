@@ -250,53 +250,54 @@ export function Matrix({
 
   const loadData = useCallback(async () => {
     setLoadingData(true);
-    const { data: ev } = await supabase
-      .from("events")
-      .select("*")
-      .order("event_date", { ascending: true });
-    const { data: fg } = await supabase
-      .from("fights")
-      .select("*")
-      .order("bout_order", { ascending: true });
-    const { data: ud } = await supabase
-      .from("user_fight_data")
-      .select("fight_id, price1, price2, notes1, notes2");
-    const { data: fn } = await supabase
-      .from("user_fighter_notes")
-      .select("fighter_id, fighter_name, notes, tags, updated_at");
-    const { data: bt } = await supabase
-      .from("user_bets")
-      .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, settled_by, delete_requested_at, delete_reason, published_at, book, price_check, market_best, market_book, market_checked_at, close_odds, clv")
-      .order("placed_at", { ascending: false });
-    const { data: mx } = await supabase
-      .from("user_fight_matrix")
-      .select("fight_id, data");
-    // live BetOnline prices for the CLV chips (fail-soft: matrix works without them)
-    const [bol, bprops] = await Promise.all([
+    // One parallel burst instead of a sequential waterfall: none of these
+    // reads depends on another's result, but they used to run one-at-a-time,
+    // so the page paid seven network round trips back to back before it
+    // could paint. That waterfall WAS most of the load delay.
+    const [
+      { data: ev },
+      { data: fg },
+      { data: ud },
+      { data: fn },
+      { data: bt },
+      { data: mx },
+      bol,
+      bprops,
+      { data: prof },
+    ] = await Promise.all([
+      supabase.from("events").select("*").order("event_date", { ascending: true }),
+      supabase.from("fights").select("*").order("bout_order", { ascending: true }),
+      supabase.from("user_fight_data").select("fight_id, price1, price2, notes1, notes2"),
+      supabase
+        .from("user_fighter_notes")
+        .select("fighter_id, fighter_name, notes, tags, updated_at"),
+      supabase
+        .from("user_bets")
+        .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, settled_by, delete_requested_at, delete_reason, published_at, book, price_check, market_best, market_book, market_checked_at, close_odds, clv")
+        .order("placed_at", { ascending: false }),
+      supabase.from("user_fight_matrix").select("fight_id, data"),
+      // live BetOnline prices for the CLV chips (fail-soft: matrix works without them)
       fetchAllRows<{ fight_key: string; fighter1: string; fighter2: string; cur1: number | null; cur2: number | null }>(
         "bol_board",
         "fight_key"
       ).catch(() => []),
       fetchAllRows<PropRow>("bol_current_props", "fight_key").catch(() => []),
+      supabase.from("profiles").select("is_admin").eq("user_id", user.id),
     ]);
     setBoardRows(bol ?? []);
     setPropRows(bprops ?? []);
-    const { data: prof } = await supabase
-      .from("profiles")
-      .select("is_admin")
-      .eq("user_id", user.id);
     setEvents(sortEvents(ev ?? []));
     setFights(fg ?? []);
     const map: Record<string, UserData> = {};
-    (ud ?? []).forEach((row) => (map[row.fight_id] = row));
+    (ud ?? []).forEach((row: UserData) => (map[row.fight_id] = row));
     setUserData(map);
 
     const nmap: Record<string, FighterNote> = {};
-    (fn ?? []).forEach((row) => (nmap[row.fighter_id] = row));
+    (fn ?? []).forEach((row: FighterNote) => (nmap[row.fighter_id] = row));
     setFighterNotes(nmap);
     setBets(bt ?? []);
     const mmap: Record<string, MatrixData> = {};
-    (mx ?? []).forEach((row) => (mmap[row.fight_id] = row.data ?? {}));
+    (mx ?? []).forEach((row: { fight_id: string; data: MatrixData | null }) => (mmap[row.fight_id] = row.data ?? {}));
     matrixRef.current = mmap;
     setMatrixData(mmap);
     setIsAdmin(prof && prof.length > 0 ? !!prof[0].is_admin : false);

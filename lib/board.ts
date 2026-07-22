@@ -64,27 +64,55 @@ function aliasMatch(na: string, nb: string): boolean {
 // pagination is not stable across requests.
 const PAGE_ROWS = 1000;
 const MAX_PAGES = 20; // 20k-row circuit breaker against a runaway view
+const PAGE_WAVE = 4; // concurrent page reads once a view outgrows page 0
+
+async function fetchPage<T>(
+  view: string,
+  orderCol: string,
+  page: number
+): Promise<T[] | null> {
+  const from = page * PAGE_ROWS;
+  const { data, error } = await supabase
+    .from(view)
+    .select("*")
+    .order(orderCol, { ascending: true })
+    .range(from, from + PAGE_ROWS - 1);
+  if (error) {
+    console.error(`[board] ${view} page ${page} read failed:`, error.message);
+    return null;
+  }
+  return (data ?? []) as T[];
+}
 
 export async function fetchAllRows<T>(
   view: string,
   orderCol: string
 ): Promise<T[] | null> {
-  const out: T[] = [];
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const from = page * PAGE_ROWS;
-    const { data, error } = await supabase
-      .from(view)
-      .select("*")
-      .order(orderCol, { ascending: true })
-      .range(from, from + PAGE_ROWS - 1);
-    if (error) {
-      // partial board beats a blank one, but never fail in silence
-      console.error(`[board] ${view} page ${page} read failed:`, error.message);
-      return out.length ? out : null;
+  // Page 0 alone covers most views (bol_board, fd_board) in one round trip.
+  const first = await fetchPage<T>(view, orderCol, 0);
+  if (first === null) return null;
+  const out: T[] = [...first];
+  if (first.length < PAGE_ROWS) return out;
+
+  // The view outgrew a single page (bol_current_props lives here). Fetch the
+  // remaining pages in concurrent waves instead of one-at-a-time - the old
+  // sequential walk re-executed the whole view per page, back to back.
+  // Rows must stay CONTIGUOUS: within each wave, results are consumed in
+  // page order and everything after the first short or failed page is
+  // discarded, so a mid-wave failure can never leave a silent gap.
+  for (let base = 1; base < MAX_PAGES; base += PAGE_WAVE) {
+    const count = Math.min(PAGE_WAVE, MAX_PAGES - base);
+    const wave = await Promise.all(
+      Array.from({ length: count }, (_, i) => fetchPage<T>(view, orderCol, base + i))
+    );
+    for (const pageRows of wave) {
+      if (pageRows === null) {
+        // partial board beats a blank one, but never fail in silence
+        return out.length ? out : null;
+      }
+      out.push(...pageRows);
+      if (pageRows.length < PAGE_ROWS) return out;
     }
-    if (!data || data.length === 0) break;
-    out.push(...(data as T[]));
-    if (data.length < PAGE_ROWS) break;
   }
   return out;
 }
