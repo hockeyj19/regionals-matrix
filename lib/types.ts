@@ -75,6 +75,11 @@ export type BetRow = NewBet & {
   delete_requested_at: string | null;
   delete_reason: string | null; // owner asked for removal (verified bets)
   published_at: string | null; // owner made the pick public before event start
+  // Unrealized CLV against the board's CURRENT price, moneyline-only, and
+  // only ever set while result === "pending" - the database guarantees this
+  // is never non-null at the same time as clv, so it can never be summed
+  // into a settled-stats average by accident.
+  live_clv: number | null;
 };
 
 // Notes price matrix: one typed price per exact board row, keyed by that
@@ -141,4 +146,6 @@ export type PublicBet = {
   market_best: number | null;
   market_book: string | null;
   clv: number | null;
+  // See BetRow.live_clv - same guarantee, same moneyline/pending-only scope.
+  live_clv: number | null;
 };

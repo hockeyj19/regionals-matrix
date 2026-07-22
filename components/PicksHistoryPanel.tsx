@@ -189,6 +189,15 @@ export function PicksHistoryPanel({ bets }: { bets: BetRow[] }) {
                         </span>
                       </>
                     )}
+                    {b.clv === null && b.live_clv !== null && (
+                      <>
+                        {" · live CLV "}
+                        <span className={Number(b.live_clv) >= 0 ? "text-emerald-400" : "text-red-400"}>
+                          {Number(b.live_clv) >= 0 ? "+" : ""}
+                          {Number(b.live_clv).toFixed(1)}
+                        </span>
+                      </>
+                    )}
                     {b.result !== "pending" && (
                       <>
                         {" · "}

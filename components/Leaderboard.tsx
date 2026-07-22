@@ -285,6 +285,18 @@ export function Leaderboard({
                           </span>
                         </span>
                       )}
+                      {/* Unrealized - the board's CURRENT price vs the locked odds, not the
+                          eventual close. "live" is spelled out so it never reads as the real,
+                          final CLV once the pick settles. */}
+                      {b.clv === null && b.live_clv !== null && (
+                        <span className="text-neutral-500">
+                          {" · live CLV "}
+                          <span className={Number(b.live_clv) >= 0 ? "text-emerald-400" : "text-red-400"}>
+                            {Number(b.live_clv) >= 0 ? "+" : ""}
+                            {Number(b.live_clv).toFixed(1)}%
+                          </span>
+                        </span>
+                      )}
                     </span>
                   </span>
                   <span className="flex items-center gap-1 shrink-0">

@@ -517,6 +517,15 @@ export function BetTracker({
                     </span>
                   </p>
                 )}
+                {b.clv === null && b.live_clv !== null && (
+                  <p className="text-[11px] text-neutral-500">
+                    live CLV{" "}
+                    <span className={Number(b.live_clv) >= 0 ? "text-emerald-400" : "text-red-400"}>
+                      {Number(b.live_clv) >= 0 ? "+" : ""}
+                      {Number(b.live_clv).toFixed(2)}
+                    </span>
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 {b.result !== "pending" && (

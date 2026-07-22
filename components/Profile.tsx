@@ -396,7 +396,7 @@ export function Profile({
       const { data } = await supabase
         .from("user_bets_live")
         .select(
-          "id, selection, bet_type, event_context, event_date, event_start, published_at, odds, stake, book, result, placed_at, price_check, close_odds, clv"
+          "id, selection, bet_type, event_context, event_date, event_start, published_at, odds, stake, book, result, placed_at, price_check, close_odds, clv, live_clv"
         )
         .eq("user_id", user.id)
         .order("placed_at", { ascending: false });
@@ -720,6 +720,19 @@ export function Profile({
                             {b.selection}{" "}
                             <span className="text-emerald-400">
                               {fmtOdds(b.odds)} · {Number(b.stake)}u
+                              {b.live_clv !== null && (
+                                <span className="text-neutral-500">
+                                  {" · live CLV "}
+                                  <span
+                                    className={
+                                      Number(b.live_clv) >= 0 ? "text-emerald-400" : "text-red-400"
+                                    }
+                                  >
+                                    {Number(b.live_clv) >= 0 ? "+" : ""}
+                                    {Number(b.live_clv).toFixed(2)}%
+                                  </span>
+                                </span>
+                              )}
                             </span>
                           </span>
                           {resultTag(b)}
@@ -845,6 +858,19 @@ export function Profile({
                                       {b.selection}{" "}
                                       <span className="text-emerald-400">
                                         {fmtOdds(b.odds)} · {Number(b.stake)}u
+                                        {b.clv !== null && b.clv !== undefined && (
+                                          <span className="text-neutral-500">
+                                            {" · CLV "}
+                                            <span
+                                              className={
+                                                Number(b.clv) >= 0 ? "text-emerald-400" : "text-red-400"
+                                              }
+                                            >
+                                              {Number(b.clv) >= 0 ? "+" : ""}
+                                              {Number(b.clv).toFixed(1)}%
+                                            </span>
+                                          </span>
+                                        )}
                                       </span>
                                     </span>
                                     {resultTag(b)}

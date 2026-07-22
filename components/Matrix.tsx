@@ -353,7 +353,7 @@ export function Matrix({
       // user_bets directly - this view is read-only.
       supabase
         .from("user_bets_live")
-        .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, settled_by, delete_requested_at, delete_reason, published_at, book, price_check, market_best, market_book, market_checked_at, close_odds, clv")
+        .select("id, selection, event_context, event_date, event_start, fighter_id, bet_type, prop_method, prop_round, ou_line, event_source_url, odds, stake, result, placed_at, grade_note, settled_by, delete_requested_at, delete_reason, published_at, book, price_check, market_best, market_book, market_checked_at, close_odds, clv, live_clv")
         .order("placed_at", { ascending: false }),
       supabase.from("user_fight_matrix").select("fight_id, data"),
       supabase.from("profiles").select("is_admin").eq("user_id", user.id),
