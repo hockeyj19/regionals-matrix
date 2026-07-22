@@ -50,7 +50,18 @@ export function Profile({
   target: string | null; // username to show; null = own profile
   onViewUser: (username: string | null) => void;
 }) {
-  const [selfName, setSelfName] = useState<string | null>(null);
+  // Seeded from the last visit: knowing the username at t=0 lets the
+  // public-profile and own-ledger reads fire in PARALLEL with the identity
+  // read instead of chaining behind it. The effect below re-verifies and
+  // re-stores it, so a renamed account self-heals on the next paint.
+  const [selfName, setSelfName] = useState<string | null>(() => {
+    try {
+      if (typeof window === "undefined") return null;
+      return window.localStorage.getItem(`tapenotes:selfname:v1:${user.id}`);
+    } catch {
+      return null;
+    }
+  });
   const [selfLoaded, setSelfLoaded] = useState(false);
   const [picks, setPicks] = useState<PublicBet[]>([]);
   const [ownBets, setOwnBets] = useState<PublicBet[]>([]);   // self only: the FULL ledger
@@ -122,14 +133,23 @@ export function Profile({
   useEffect(() => {
     let alive = true;
     (async () => {
-      const { data } = await supabase.from("profiles").select("*").eq("user_id", user.id);
-      const [notesRes, histRes] = await Promise.all([
+      // one round trip, not two - nothing here depends on anything else
+      const [profRes, notesRes, histRes] = await Promise.all([
+        supabase.from("profiles").select("*").eq("user_id", user.id),
         supabase.from("user_fighter_notes").select("fighter_id, notes, tags").eq("user_id", user.id),
         supabase.from("user_fighter_note_history").select("fighter_id").eq("user_id", user.id),
       ]);
       if (!alive) return;
+      const data = profRes.data;
       const row = data && data.length > 0 ? data[0] : null;
       setSelfName(row ? row.username : null);
+      try {
+        const key = `tapenotes:selfname:v1:${user.id}`;
+        if (row?.username) window.localStorage.setItem(key, row.username);
+        else window.localStorage.removeItem(key);
+      } catch {
+        // storage blocked - only instant-start is lost
+      }
       setBio(row && typeof row.bio === "string" ? row.bio : "");
       // count fighters with a real note, tags, or history - the same rule the
       // Library uses, so an emptied row can't inflate this the way a raw count did
@@ -178,16 +198,49 @@ export function Profile({
 
   const shown = target ?? selfName;
 
+  // Monotonic guard: only the newest load() may write state, so switching
+  // profiles mid-flight can never let a slow older read overwrite a newer one.
+  const loadSeq = useRef(0);
+
   const load = useCallback(async (username: string) => {
-    const { data } = await supabase
-      .from("public_bets")
-      .select("*")
-      .eq("username", username)
-      .order("placed_at", { ascending: false });
-    const { data: prof } = await supabase
-      .from("public_profiles")
-      .select("*")
-      .eq("username", username);
+    const seq = ++loadSeq.current;
+    const cacheKey = `tapenotes:profile:v1:${username}`;
+    // Paint the last visit's copy of this profile instantly while the
+    // fresh read runs - same stale-then-refresh pattern as the odds board.
+    try {
+      if (typeof window !== "undefined") {
+        const raw = window.localStorage.getItem(cacheKey);
+        if (raw) {
+          const c = JSON.parse(raw) as {
+            picks?: PublicBet[];
+            avatarUrl?: string | null;
+            joined?: string | null;
+            bio?: string;
+          };
+          if (Array.isArray(c.picks)) {
+            setPicks(c.picks);
+            setAvatarUrl(c.avatarUrl ?? null);
+            setShownJoin(c.joined ?? null);
+            setShownBio(typeof c.bio === "string" ? c.bio : "");
+            setLoadedFor(username); // spinner off - a real page is on screen
+          }
+        }
+      }
+    } catch {
+      // corrupt cache must never block the live read
+    }
+    // one round trip, not two - the reads are independent
+    const [betsRes, profRes] = await Promise.all([
+      supabase
+        .from("public_bets")
+        .select("*")
+        .eq("username", username)
+        .order("placed_at", { ascending: false }),
+      supabase.from("public_profiles").select("*").eq("username", username),
+    ]);
+    if (seq !== loadSeq.current) return; // a newer profile superseded this read
+    const data = betsRes.data;
+    const prof = profRes.data;
     const p = prof && prof.length > 0 ? prof[0] : null;
     setAvatarUrl(p?.avatar_url ?? null);
     // created_at is only here once the public_profiles view exposes it; falls
@@ -197,6 +250,19 @@ export function Profile({
     setShownBio(typeof p?.bio === "string" ? p.bio : "");
     setPicks(data ?? []);
     setLoadedFor(username);
+    try {
+      window.localStorage.setItem(
+        cacheKey,
+        JSON.stringify({
+          picks: data ?? [],
+          avatarUrl: p?.avatar_url ?? null,
+          joined: typeof p?.created_at === "string" ? p.created_at : null,
+          bio: typeof p?.bio === "string" ? p.bio : "",
+        })
+      );
+    } catch {
+      // quota or private mode - the page just loses instant-paint next visit
+    }
   }, []);
 
   useEffect(() => {

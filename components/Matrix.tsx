@@ -24,13 +24,38 @@ import {
   type MatrixBoardPrice,
 } from "@/lib/matrixBoard";
 import { type PropRow } from "@/lib/propBet";
-import { NotesPriceMatrix } from "@/components/NotesPriceMatrix";
-import { NotesHistoryPanel } from "@/components/NotesHistoryPanel";
-import { BetTracker } from "@/components/BetTracker";
+import dynamic from "next/dynamic";
 import { Profile } from "@/components/Profile";
-import { OddsBoard } from "@/components/OddsBoard";
-import { Leaderboard } from "@/components/Leaderboard";
-import { AdminPanel } from "@/components/AdminPanel";
+// Only the landing tab (Profile) ships in the boot bundle. Every other
+// tab is its own chunk, downloaded on first visit to that tab - the app
+// used to ship ALL of them (odds board, bet tracker, leaderboard, admin,
+// notes grid) before anything could paint, which was most of the
+// cold-start wait.
+const tabLoading = () => <p className="p-4 text-sm text-neutral-500">Loading…</p>;
+const NotesPriceMatrix = dynamic(
+  () => import("@/components/NotesPriceMatrix").then((m) => m.NotesPriceMatrix),
+  { ssr: false, loading: tabLoading }
+);
+const NotesHistoryPanel = dynamic(
+  () => import("@/components/NotesHistoryPanel").then((m) => m.NotesHistoryPanel),
+  { ssr: false, loading: tabLoading }
+);
+const BetTracker = dynamic(
+  () => import("@/components/BetTracker").then((m) => m.BetTracker),
+  { ssr: false, loading: tabLoading }
+);
+const OddsBoard = dynamic(
+  () => import("@/components/OddsBoard").then((m) => m.OddsBoard),
+  { ssr: false, loading: tabLoading }
+);
+const Leaderboard = dynamic(
+  () => import("@/components/Leaderboard").then((m) => m.Leaderboard),
+  { ssr: false, loading: tabLoading }
+);
+const AdminPanel = dynamic(
+  () => import("@/components/AdminPanel").then((m) => m.AdminPanel),
+  { ssr: false, loading: tabLoading }
+);
 import { EVENTS_README, InfoButton, ReadMePanel } from "@/components/ReadMe";
 
 // per-promotion accent color for event headers
