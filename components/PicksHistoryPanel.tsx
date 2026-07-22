@@ -120,19 +120,6 @@ export function PicksHistoryPanel({ bets }: { bets: BetRow[] }) {
           {(
             [
               ["all", "All"],
-              ["ml", "MLs"],
-              ["prop", "Props"],
-            ] as const
-          ).map(([key, label]) => (
-            <button key={key} onClick={() => setHistFilter(key)} className={sideBtn(histFilter === key)}>
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="flex flex-wrap gap-1">
-          {(
-            [
-              ["all", "All"],
               ["verified", "Verified"],
               ["unverified", "Unverified"],
             ] as const
@@ -142,6 +129,19 @@ export function PicksHistoryPanel({ bets }: { bets: BetRow[] }) {
               onClick={() => setVerifyFilter(key)}
               className={sideBtn(verifyFilter === key)}
             >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {(
+            [
+              ["all", "All"],
+              ["ml", "MLs"],
+              ["prop", "Props"],
+            ] as const
+          ).map(([key, label]) => (
+            <button key={key} onClick={() => setHistFilter(key)} className={sideBtn(histFilter === key)}>
               {label}
             </button>
           ))}
