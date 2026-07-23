@@ -408,41 +408,54 @@ export function noteForBoardRow(
       candidates = buildMostMatchupRows(allProps, f1, f2, row.market);
       break;
     default:
-      return null; // not a templated/priced market - nothing to color
+      candidates = []; // not template-backed - handled by the fallback below
   }
 
-  // find the candidate whose OWN key we'd have built for this exact board row
-  const name = whichFighter();
-  const target = (() => {
-    switch (row.market) {
-      case "moneyline":
-        if (name === null) return null;
-        return propRowKey({ ...blankProp({}), market: "moneyline", fighter: name });
-      case "total":
-        if (row.ou_side === null || row.ou_line === null) return null;
-        return `total|${row.ou_side}|${row.ou_line}`;
-      case "point_spread":
-        if (name === null || row.ou_line === null) return null;
-        return `point_spread|${name}|${Math.abs(row.ou_line)}`;
-      case "total_takedowns":
-        if (name === null || row.ou_side === null || row.ou_line === null) return null;
-        return `total_takedowns|${name}|${row.ou_side}|${row.ou_line}`;
-      case "method":
-      case "round":
-      case "method_round":
-      case "most_significant_strikes_landed":
-      case "most_takedowns_landed":
-        if (name === null) return null;
-        return propRowKey({ ...blankProp({}), market: row.market, fighter: name, method: row.method, round: row.round });
-      default:
-        return null;
+  // 1. Template-backed markets. The Notes page renders these from its own
+  //    always-on templates, keyed by the CARD's fighter names, which can
+  //    differ from the book's own labels - so the board row has to be
+  //    mapped onto the template's key rather than read directly.
+  if (candidates.length) {
+    const name = whichFighter();
+    const target = (() => {
+      switch (row.market) {
+        case "moneyline":
+          if (name === null) return null;
+          return propRowKey({ ...blankProp({}), market: "moneyline", fighter: name });
+        case "total":
+          if (row.ou_side === null || row.ou_line === null) return null;
+          return `total|${row.ou_side}|${row.ou_line}`;
+        case "point_spread":
+          if (name === null || row.ou_line === null) return null;
+          return `point_spread|${name}|${Math.abs(row.ou_line)}`;
+        case "total_takedowns":
+          if (name === null || row.ou_side === null || row.ou_line === null) return null;
+          return `total_takedowns|${name}|${row.ou_side}|${row.ou_line}`;
+        case "method":
+        case "round":
+        case "method_round":
+        case "most_significant_strikes_landed":
+        case "most_takedowns_landed":
+          if (name === null) return null;
+          return propRowKey({ ...blankProp({}), market: row.market, fighter: name, method: row.method, round: row.round });
+        default:
+          return null;
+      }
+    })();
+    if (target !== null) {
+      // confirm the target key is one the builder actually produced (guards
+      // against a board row that has no matching template row), then read it
+      const matched = candidates.find((c) => c.key === target);
+      if (matched) return fightData[matched.key] ?? null;
     }
-  })();
-  if (target === null) return null;
+  }
 
-  // confirm the target key is one the builder actually produced (guards
-  // against a board row that has no matching template row), then read it
-  const matched = candidates.find((c) => c.key === target);
-  if (!matched) return null;
-  return fightData[matched.key] ?? null;
+  // 2. Everything else - Goes The Distance, How Will Fight End, Double
+  //    Chance, the scorecard markets, and anything BetOnline adds later -
+  //    is rendered straight off THIS SAME live feed on the Notes page, row
+  //    object for row object. Its note is therefore stored under the board
+  //    row's own key, so the lookup is direct. Falling through to this
+  //    rather than listing the live markets explicitly means a new market
+  //    on the feed lights up on both pages with no code change.
+  return fightData[propRowKey(row)] ?? null;
 }
