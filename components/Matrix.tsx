@@ -12,11 +12,10 @@ import type {
   BetRow,
   MatrixData,
 } from "@/lib/types";
-import { eventStarted, sortEvents, formatEventMeta, displayTypedOdds, normalizeTypedOdds } from "@/lib/format";
-import { GridIcon, DollarIcon, UserIcon } from "@/components/icons";
+import { eventStarted, sortEvents, formatEventMeta } from "@/lib/format";
+import { UserIcon } from "@/components/icons";
 import { GrowingTextarea } from "@/components/GrowingTextarea";
 import { NOTE_TEMPLATES } from "@/lib/noteTemplates";
-import { QuickBet } from "@/components/QuickBet";
 import { fetchAllRows, boutMatch } from "@/lib/board";
 import {
   boardPriceForMarket,
@@ -221,13 +220,6 @@ function Section({
   );
 }
 
-function fightHasMatrix(d?: MatrixData): boolean {
-  if (!d) return false;
-  return Object.values(d).some((m) =>
-    Object.values(m).some((v) => (v ?? "").trim() !== "")
-  );
-}
-
 function AccountMenu({ email }: { email: string | undefined }) {
   const [open, setOpen] = useState(false);
   return (
@@ -293,8 +285,6 @@ export function Matrix({
   // each matrix cell's CLV vs the board. Shape mirrors the Odds board.
  const [boardRows, setBoardRows] = useState<{ fight_key: string; fighter1: string; fighter2: string; cur1: number | null; cur2: number | null }[]>([]);
   const [propRows, setPropRows] = useState<PropRow[]>([]);
-  const [openMatrix, setOpenMatrix] = useState<Record<string, boolean>>({});
-  const [openBet, setOpenBet] = useState<Record<string, boolean>>({});
   const [openNotes, setOpenNotes] = useState<Record<string, boolean>>({});
   // always-current mirror of matrixData + ordered save queue: rapid tabbing
   // between cells must never snapshot stale data or land upserts out of order
@@ -305,9 +295,9 @@ export function Matrix({
   const [ufcOnly, setUfcOnly] = useState(false);
 
   // The price boards feed the CLV chips and the notes price grid - display
-  // only. Verified prices are locked from a LIVE read in QuickBet
-  // (fetchFightBoard / fetchFightProps), never from these rows, so letting
-  // them arrive a beat late costs nothing but a moment of empty chips.
+  // only. Verified prices are still locked from a LIVE read on the Bets
+  // page (fetchFightBoard / fetchFightProps), never from these rows, so
+  // letting them arrive a beat late costs nothing but a moment of empty chips.
   // They are deliberately NOT awaited by loadData: the fight list used to
   // sit behind the 2,244-row props board it does not need to render.
   const loadBoards = useCallback(() => {
@@ -971,30 +961,10 @@ export function Matrix({
                     const d = userData[f.id];
                     const f1id = f.fighter1_id;
                     const f2id = f.fighter2_id;
-                    const hasMx = fightHasMatrix(matrixData[f.id]);
-                    const hasFightBets = bets.some(
-                      (b) =>
-                        b.fighter_id &&
-                        b.event_source_url === ev.source_url &&
-                        (b.fighter_id === f.fighter1_id || b.fighter_id === f.fighter2_id)
-                    );
-                    // a fight's workspace (prices, notes, tools) stays folded
-                    // away until it's touched - unless it already holds work
-                    const noteA = f1id
-                      ? noteFor(f1id).trim()
-                      : (d?.notes1 ?? "").trim();
-                    const noteB = f2id
-                      ? noteFor(f2id).trim()
-                      : (d?.notes2 ?? "").trim();
-                    const hasWork = !!(
-                      (d?.price1 ?? "").trim() ||
-                      (d?.price2 ?? "").trim() ||
-                      noteA ||
-                      noteB ||
-                      hasMx ||
-                      hasFightBets
-                    );
-                    const expanded = openNotes[f.id] ?? hasWork;
+                    // Every matchup starts collapsed, even ones that already
+                    // hold notes, prices, or logged bets - only an explicit
+                    // click opens one.
+                    const expanded = openNotes[f.id] ?? false;
                     return (
                       <div
                         key={f.id}
@@ -1026,42 +996,6 @@ export function Matrix({
                               strokeLinecap="round" strokeLinejoin="round" />
                           </svg>
                         </button>
-                        {expanded && (
-                        <div className="absolute left-2 top-2 flex gap-1">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setOpenMatrix((prev) => ({ ...prev, [f.id]: !prev[f.id] }));
-                            }}
-                            title="Handicapping matrix"
-                            className={`rounded-md border p-1.5 ${
-                              openMatrix[f.id]
-                                ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
-                                : hasMx
-                                ? "border-emerald-700 text-emerald-400 hover:bg-neutral-900"
-                                : "border-neutral-700 text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900"
-                            }`}
-                          >
-                            <GridIcon />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setOpenBet((prev) => ({ ...prev, [f.id]: !prev[f.id] }));
-                            }}
-                            title="Log a bet"
-                            className={`rounded-md border p-1.5 ${
-                              openBet[f.id]
-                                ? "border-emerald-500 bg-emerald-600/20 text-emerald-300"
-                                : hasFightBets
-                                ? "border-emerald-700 text-emerald-400 hover:bg-neutral-900"
-                                : "border-neutral-700 text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900"
-                            }`}
-                          >
-                            <DollarIcon />
-                          </button>
-                        </div>
-                        )}
                         {f.is_main_event && (
                           <div className="text-[10px] font-bold text-amber-400 uppercase tracking-wider text-center">
                             Main Event
@@ -1073,28 +1007,12 @@ export function Matrix({
                             <span className="w-full text-sm font-medium text-center truncate">
                               {f.fighter1_name}
                             </span>
-                            {expanded && (
-                              <input
-                                defaultValue={displayTypedOdds(d?.price1 ?? "")}
-                                onClick={(e) => e.stopPropagation()}
-                                onBlur={(e) => saveField(f.id, "price1", normalizeTypedOdds(e.target.value))}
-                                className="w-16 text-center rounded-md bg-neutral-800 border border-neutral-700 px-1 py-1 text-sm focus:border-emerald-500 outline-none"
-                              />
-                            )}
                           </div>
                           <span className="text-neutral-600 text-xs px-1 pt-0.5">VS</span>
                           <div className="flex-1 min-w-0 flex flex-col items-center gap-1">
                             <span className="w-full text-sm font-medium text-center truncate">
                               {f.fighter2_name}
                             </span>
-                            {expanded && (
-                              <input
-                                defaultValue={displayTypedOdds(d?.price2 ?? "")}
-                                onClick={(e) => e.stopPropagation()}
-                                onBlur={(e) => saveField(f.id, "price2", normalizeTypedOdds(e.target.value))}
-                                className="w-16 text-center rounded-md bg-neutral-800 border border-neutral-700 px-1 py-1 text-sm focus:border-emerald-500 outline-none"
-                              />
-                            )}
                           </div>
                         </div>
                         {f.weight_class && (
@@ -1135,7 +1053,7 @@ export function Matrix({
                           )}
                         </div>
                         )}
-                        {expanded && openMatrix[f.id] && (
+                        {expanded && (
                           <div onClick={(e) => e.stopPropagation()}>
                             <NotesPriceMatrix
                               fight={f}
@@ -1144,20 +1062,6 @@ export function Matrix({
                               props={propsByFight[f.id] ?? []}
                               data={matrixData[f.id] ?? {}}
                               onSave={(rowKey, value) => saveMatrixCell(f.id, rowKey, value)}
-                            />
-                          </div>
-                        )}
-                        {expanded && openBet[f.id] && (
-                          <div onClick={(e) => e.stopPropagation()}>
-                            <QuickBet
-                              fight={f}
-                              eventLabel={`${ev.org} — ${ev.event_name}`}
-                              eventDate={ev.event_date}
-                              eventTime={ev.event_time}
-                              eventSourceUrl={ev.source_url}
-                              onAdd={addBet}
-                              fighterNotes={fighterNotes}
-                              embedded
                             />
                           </div>
                         )}
