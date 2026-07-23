@@ -775,15 +775,33 @@ export function OddsBoard({
                           f.is_main_event ||
                           (i === 0 && !evFights.some((x) => x.is_main_event));
                         const totals = fk && showProps ? totalsFor(fk) : [];
-                        const ud = userData[f.id];
                         const fighterRow = (
                           name: string,
                           sp: SidePrice | undefined,
                           dim: boolean,
-                          myPrice: string | null,
                           totalSide: "over" | "under",
                           midSlot: ReactNode
-                        ) => (
+                        ) => {
+                          // The ML note now comes from the same notes-matrix
+                          // system every other market column already reads
+                          // from - it used to read the old, separate
+                          // price1/price2 fields, which the Notes page no
+                          // longer has any way to set at all.
+                          const mlRow: PropRow | null = fk
+                            ? {
+                                fight_key: fk,
+                                market: "moneyline",
+                                fighter: name,
+                                method: null,
+                                round: null,
+                                ou_side: null,
+                                ou_line: null,
+                                odds: sp?.cur ?? 0,
+                                outcome: null,
+                              }
+                            : null;
+                          const myPrice = mlRow ? notePriceFor(f, mlRow) : null;
+                          return (
                           <div className="grid grid-cols-[minmax(10rem,1fr)_1.75rem_3.2rem_3.4rem_3.8rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem_3rem_3.2rem_3.2rem_3.2rem] items-center gap-x-1 py-0.5">
                             <span className={`text-sm truncate ${dim ? "text-neutral-300" : ""}`}>
                               {name}
@@ -953,7 +971,8 @@ export function OddsBoard({
                               noteFor={(row) => notePriceFor(f, row)}
                             />
                           </div>
-                        );
+                          );
+                        };
                         const canProps =
                           showProps && !!fk && props.some((p) => p.fight_key === fk);
                         // the expand chevron now lives in the gutter between the
@@ -1006,8 +1025,8 @@ export function OddsBoard({
                               </div>
                               <div className="flex items-stretch">
                                 <div className="min-w-0 grow">
-                                  {fighterRow(f.fighter1_name, m?.a, false, ud?.price1 ?? null, "over", chevronEl)}
-                                  {fighterRow(f.fighter2_name, m?.b, true, ud?.price2 ?? null, "under", null)}
+                                  {fighterRow(f.fighter1_name, m?.a, false, "over", chevronEl)}
+                                  {fighterRow(f.fighter2_name, m?.b, true, "under", null)}
                                 </div>
                               </div>
                             </div>

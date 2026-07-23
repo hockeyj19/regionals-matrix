@@ -377,6 +377,12 @@ export function noteForBoardRow(
 
   let candidates: PresetPriceRow[] = [];
   switch (row.market) {
+    case "moneyline":
+      candidates = [
+        { key: propRowKey({ ...blankProp({}), market: "moneyline", fighter: f1 }), label: f1, board: ml?.cur1 ?? null },
+        { key: propRowKey({ ...blankProp({}), market: "moneyline", fighter: f2 }), label: f2, board: ml?.cur2 ?? null },
+      ];
+      break;
     case "total":
       candidates = buildTotalRoundsRows(allProps, fiveRound);
       break;
@@ -409,6 +415,9 @@ export function noteForBoardRow(
   const name = whichFighter();
   const target = (() => {
     switch (row.market) {
+      case "moneyline":
+        if (name === null) return null;
+        return propRowKey({ ...blankProp({}), market: "moneyline", fighter: name });
       case "total":
         if (row.ou_side === null || row.ou_line === null) return null;
         return `total|${row.ou_side}|${row.ou_line}`;
