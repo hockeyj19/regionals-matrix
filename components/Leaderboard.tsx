@@ -7,13 +7,11 @@ import type { LeaderboardRow, PublicBet } from "@/lib/types";
 import {
   SHARP_BOOKS,
   SOFT_BOOKS,
-  americanToImplied,
   bookLabel,
   bookTier,
   fmtDate,
   fmtOdds,
   fmtUnits,
-  percentToAmerican,
   sideBtn,
 } from "@/lib/format";
 import { InfoButton, LEADERBOARD_README, ReadMePanel } from "@/components/ReadMe";
@@ -30,6 +28,18 @@ type Agg = {
   profit: number;
   clv_sum: number;
   clv_n: number;
+};
+
+// One row per consensus_groups row - computed entirely in the database now,
+// same source the Consensus Bot itself reads to materialize its own bets.
+type ConsensusGroup = {
+  group_key: string;
+  selection: string;
+  event_context: string | null;
+  n_users: number;
+  odds: number;
+  total_real_stake: string | number;
+  usernames: string[];
 };
 
 export function Leaderboard({
@@ -55,15 +65,20 @@ export function Leaderboard({
   const [avatarByUsername, setAvatarByUsername] = useState<Record<string, string | null>>({});
   const [collapsedPublic, setCollapsedPublic] = useState<Set<string>>(new Set());
   const [picksView, setPicksView] = useState<"public" | "consensus" | "results">("public");
+  const [consensusGroups, setConsensusGroups] = useState<ConsensusGroup[]>([]);
 
   useEffect(() => {
     let alive = true;
     async function load() {
-      const [{ data: lb }, { data: me }, { data: pubs }, { data: avatars }] = await Promise.all([
+      const [{ data: lb }, { data: me }, { data: pubs }, { data: avatars }, { data: cons }] = await Promise.all([
         supabase.from("leaderboard_rows").select("*"),
         supabase.from("profiles").select("username").eq("user_id", user.id),
         supabase.from("public_bets").select("*").order("placed_at", { ascending: false }),
         supabase.from("public_profiles").select("username, avatar_url"),
+        // one live view, computed in the database - the same one the
+        // Consensus Bot itself materializes from, so this list and the
+        // bot's own picks can never quietly disagree again.
+        supabase.from("consensus_groups").select("*"),
       ]);
       if (!alive) return;
       setRaw(lb ?? []);
@@ -72,6 +87,7 @@ export function Leaderboard({
       const avMap: Record<string, string | null> = {};
       (avatars ?? []).forEach((a: { username: string; avatar_url: string | null }) => (avMap[a.username] = a.avatar_url));
       setAvatarByUsername(avMap);
+      setConsensusGroups(cons ?? []);
       setLoading(false);
     }
     load();
@@ -183,20 +199,6 @@ export function Leaderboard({
   sorted.forEach((r, i) => {
     rankIndex[r.username] = i;
   });
-  // Consensus: every public pick grouped by what was actually taken. Prices are
-  // averaged as implied PROBABILITY, not raw American odds - averaging -200 and
-  // +200 arithmetically gives 0, which is nonsense. Groups with open picks float
-  // to the top: what the room is on right now is the useful part.
-  type Cons = {
-    key: string;
-    selection: string;
-    event: string;
-    n: number;
-    open: number;
-    probSum: number;
-    units: number;
-    users: string[];
-  };
   // Public = what the room is on right now. Results = the last 14 days, graded.
   const DAY_MS = 86400000;
   const viewPicks =
@@ -208,38 +210,25 @@ export function Leaderboard({
         )
       : allPublic.filter((b) => b.result === "pending");
 
-  const consMap: Record<string, Cons> = {};
-  for (const b of allPublic) {
-    if (b.username === "Consensus_Bot") continue; // the bot mirrors consensus - never let it count itself
-    const key = `${b.event_context ?? ""}||${b.selection}`;
-    const c =
-      consMap[key] ??
-      (consMap[key] = {
-        key,
-        selection: b.selection,
-        event: b.event_context ?? "",
-        n: 0,
-        open: 0,
-        probSum: 0,
-        units: 0,
-        users: [],
-      });
-    c.n += 1;
-    if (b.result === "pending") c.open += 1;
-    c.probSum += americanToImplied(b.odds);
-    c.units += Number(b.stake) || 0;
-    if (!c.users.includes(b.username)) c.users.push(b.username);
-  }
-  const consensusRows = Object.values(consMap)
-    .filter((c) => c.users.length >= 2) // consensus = 2+ distinct users on the same pick
-    .map((c) => ({ ...c, avgOdds: percentToAmerican((c.probSum / c.n) * 100) }))
+  // consensus_groups already applied the 2+-distinct-user rule and the
+  // identity-aware grouping in the database - this is display formatting
+  // only, not a second implementation of the grouping itself.
+  const consensusRows = [...consensusGroups]
     .sort(
       (a, b) =>
-        (b.open > 0 ? 1 : 0) - (a.open > 0 ? 1 : 0) ||
-        b.n - a.n ||
-        b.units - a.units ||
+        b.n_users - a.n_users ||
+        Number(b.total_real_stake) - Number(a.total_real_stake) ||
         a.selection.localeCompare(b.selection)
-    );
+    )
+    .map((c) => ({
+      key: c.group_key,
+      selection: c.selection,
+      event: c.event_context ?? "",
+      n: c.n_users,
+      units: Number(c.total_real_stake) || 0,
+      avgOdds: c.odds,
+      users: c.usernames,
+    }));
 
   const publicByUser: Record<string, PublicBet[]> = {};  // of the chosen view
   for (const b of viewPicks) {
@@ -645,7 +634,6 @@ export function Leaderboard({
               <p className="text-[11px] text-neutral-500 truncate">
                 {c.event ? `${c.event} · ` : ""}
                 avg {fmtOdds(c.avgOdds)} · {fmtUnits(c.units).replace("+", "")} staked
-                {c.open > 0 && <span className="text-sky-300"> · {c.open} open</span>}
               </p>
               <div className="mt-1.5 flex flex-wrap gap-1">
                 {c.users.map((u) => (

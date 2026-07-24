@@ -26,10 +26,11 @@ import {
   type PresetPriceRow,
 } from "@/lib/manualProps";
 
-// Moneyline is synthesized separately below. Goes The Distance and the rest
-// of the outcome-list exotics stay live-only for now - see the note in
-// manualProps.ts about the propRowKey collision on those markets.
-const CORE_ONLY_TITLES = new Set(["Moneyline", "Goes The Distance"]);
+// Moneyline now renders as its own always-on PresetSection, unconditionally,
+// for every org - see the mlRows block below. Goes The Distance and the
+// rest of the outcome-list exotics stay live-only for now - see the note
+// in manualProps.ts about the propRowKey collision on those markets.
+const CORE_ONLY_TITLES = new Set(["Goes The Distance"]);
 
 // These markets are rendered entirely by the always-on template blocks below
 // instead of straight off the live feed, and Specials never renders at all -
@@ -213,37 +214,20 @@ export function NotesPriceMatrix({
   const liveOnlyProps = props.filter((p) => !FULLY_MANUAL_MARKETS.has(p.market));
   let sections: PropSection[] = propFightKey ? buildPropSections(liveOnlyProps, propFightKey) : [];
 
-  // moneyline isn't in the props feed at all (separate table) - synthesize
-  // its own section from the board row and put it first, matching how a
-  // sportsbook's own page always leads with the moneyline.
-  const mlRows: PropRow[] = [];
-  if (ml?.cur1 !== null && ml?.cur1 !== undefined) {
-    mlRows.push({
-      fight_key: fight.id,
-      market: "moneyline",
-      fighter: f1,
-      method: null,
-      round: null,
-      ou_side: null,
-      ou_line: null,
-      odds: ml.cur1,
-      outcome: null,
-    });
-  }
-  if (ml?.cur2 !== null && ml?.cur2 !== undefined) {
-    mlRows.push({
-      fight_key: fight.id,
-      market: "moneyline",
-      fighter: f2,
-      method: null,
-      round: null,
-      ou_side: null,
-      ou_line: null,
-      odds: ml.cur2,
-      outcome: null,
-    });
-  }
-  if (mlRows.length) sections = [{ title: "Moneyline", rows: mlRows }, ...sections];
+  // Moneyline isn't in the props feed at all (separate table) - synthesize
+  // its own section, ALWAYS with both fighters present, matching how a
+  // sportsbook's own page always leads with the moneyline. This must be a
+  // PresetPriceRow (board: number | null), not a PropRow (odds: number) -
+  // a PropRow-based row required a live board price to exist just to be
+  // constructed at all, so any fight the board hadn't posted a moneyline
+  // for yet lost the WHOLE section, not just a blank price, and every
+  // matchup for every non-UFC org (which never gets this far past the
+  // CORE_ONLY_TITLES filter otherwise) silently started at Method of
+  // Victory instead.
+  const mlRows: PresetPriceRow[] = [
+    { key: propRowKey({ fight_key: fight.id, market: "moneyline", fighter: f1, method: null, round: null, ou_side: null, ou_line: null, odds: 0, outcome: null }), label: f1, board: ml?.cur1 ?? null },
+    { key: propRowKey({ fight_key: fight.id, market: "moneyline", fighter: f2, method: null, round: null, ou_side: null, ou_line: null, odds: 0, outcome: null }), label: f2, board: ml?.cur2 ?? null },
+  ];
 
   if (!isUFC) sections = sections.filter((sec) => CORE_ONLY_TITLES.has(sec.title));
 
@@ -268,6 +252,8 @@ export function NotesPriceMatrix({
 
   return (
     <div className="rounded-md border border-neutral-800 bg-neutral-900/60 overflow-hidden">
+      <PresetSection title="Moneyline" rows={mlRows} data={data} onSave={onSave} />
+
       {sections.map((sec) => (
         <div key={sec.title}>
           <SectionHeader title={sec.title} />
